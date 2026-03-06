@@ -1,24 +1,22 @@
 #!/usr/bin/env zsh
 # claude-switch — Claude Code multi-account wrapper
-# Instant account switching via macOS Keychain token swap (no logout, no browser)
+# Instant account switching by swapping oauthAccount in ~/.claude.json
 
-set -euo pipefail
+set -uo pipefail
 
 ACCOUNTS_DIR="$HOME/.claude/accounts"
-KEYCHAIN_SERVICE="Claude Code-credentials"
+CLAUDE_JSON="$HOME/.claude.json"
 
 # --- Find the real claude binary ---
 find_real_claude() {
   local self_path
   self_path="$(realpath "$0" 2>/dev/null || echo "$0")"
 
-  # If CLAUDE_SWITCH_BIN is set, use it
   if [[ -n "${CLAUDE_SWITCH_BIN:-}" ]]; then
     echo "$CLAUDE_SWITCH_BIN"
     return
   fi
 
-  # Search PATH, skipping this wrapper
   for dir in $(echo "$PATH" | tr ':' '\n'); do
     local candidate="$dir/claude"
     if [[ -x "$candidate" ]] && [[ "$(realpath "$candidate" 2>/dev/null)" != "$self_path" ]]; then
@@ -35,56 +33,68 @@ CLAUDE_BIN="$(find_real_claude)"
 
 # --- Helpers ---
 get_current_email() {
-  "$CLAUDE_BIN" auth status 2>&1 | python3 -c "
-import sys, json
+  python3 -c "
+import json
 try:
-    d = json.load(sys.stdin)
-    print(d.get('email', ''))
+    with open('$CLAUDE_JSON') as f:
+        print(json.load(f).get('oauthAccount', {}).get('emailAddress', ''))
 except:
     pass
 " 2>/dev/null
 }
 
-get_current_creds() {
-  security find-generic-password -s "$KEYCHAIN_SERVICE" -w 2>/dev/null
-}
-
 save_account() {
   local email="$1"
   mkdir -p "$ACCOUNTS_DIR"
-  get_current_creds > "$ACCOUNTS_DIR/$email.json"
+  chmod 700 "$ACCOUNTS_DIR"
+  python3 -c "
+import json
+with open('$CLAUDE_JSON') as f:
+    d = json.load(f)
+with open('$ACCOUNTS_DIR/$email.json', 'w') as f:
+    json.dump(d.get('oauthAccount', {}), f, indent=2)
+" 2>/dev/null
   chmod 600 "$ACCOUNTS_DIR/$email.json"
 }
 
 load_account() {
   local email="$1"
-  local creds_file="$ACCOUNTS_DIR/$email.json"
+  local account_file="$ACCOUNTS_DIR/$email.json"
 
-  if [[ ! -f "$creds_file" ]]; then
-    echo "Error: no saved credentials for $email" >&2
+  if [[ ! -f "$account_file" ]]; then
+    echo "Error: no saved account for $email" >&2
     return 1
   fi
 
-  local creds
-  creds=$(<"$creds_file")
-
-  # Delete old entry and write new one
-  security delete-generic-password -s "$KEYCHAIN_SERVICE" >/dev/null 2>&1 || true
-  security add-generic-password -s "$KEYCHAIN_SERVICE" -a "Claude Code-credentials" -w "$creds"
+  python3 << PYEOF
+import json
+with open('$CLAUDE_JSON') as f:
+    d = json.load(f)
+with open('$account_file') as f:
+    d['oauthAccount'] = json.load(f)
+with open('$CLAUDE_JSON', 'w') as f:
+    json.dump(d, f, separators=(',', ':'))
+PYEOF
 }
 
 list_accounts() {
   local current_email
   current_email="$(get_current_email)"
 
-  if [[ ! -d "$ACCOUNTS_DIR" ]] || [[ -z "$(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null)" ]]; then
+  local has_accounts=false
+  for f in "$ACCOUNTS_DIR"/*.json(N); do
+    has_accounts=true
+    break
+  done
+
+  if [[ "$has_accounts" == "false" ]]; then
     echo "No saved accounts. Run: claude switch add"
     return
   fi
 
   echo "Saved accounts:"
   echo ""
-  for f in "$ACCOUNTS_DIR"/*.json; do
+  for f in "$ACCOUNTS_DIR"/*.json(N); do
     local email="${${f:t}%.json}"
     if [[ "$email" == "$current_email" ]]; then
       echo "  * $email (active)"
@@ -104,12 +114,10 @@ switch_to() {
     return 0
   fi
 
-  # Save current credentials before switching
   if [[ -n "$current_email" ]]; then
     save_account "$current_email"
   fi
 
-  # Load target credentials
   load_account "$target_email"
   echo "Switched to $target_email"
 }
@@ -118,15 +126,15 @@ switch_interactive() {
   local current_email
   current_email="$(get_current_email)"
 
-  if [[ ! -d "$ACCOUNTS_DIR" ]] || [[ -z "$(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null)" ]]; then
+  local accounts=()
+  for f in "$ACCOUNTS_DIR"/*.json(N); do
+    accounts+=("${${f:t}%.json}")
+  done
+
+  if [[ ${#accounts[@]} -eq 0 ]]; then
     echo "No saved accounts. Run: claude switch add"
     return 1
   fi
-
-  local accounts=()
-  for f in "$ACCOUNTS_DIR"/*.json; do
-    accounts+=("${${f:t}%.json}")
-  done
 
   if [[ ${#accounts[@]} -lt 2 ]]; then
     echo "Only one account saved. Run: claude switch add"
@@ -161,7 +169,6 @@ add_account() {
   local current_email
   current_email="$(get_current_email)"
 
-  # Save current account first
   if [[ -n "$current_email" ]]; then
     save_account "$current_email"
     echo "Saved current account: $current_email"
@@ -181,7 +188,6 @@ add_account() {
     echo "Added and saved: $new_email"
   else
     echo "Login failed or cancelled."
-    # Restore previous account
     if [[ -n "$current_email" ]]; then
       load_account "$current_email"
     fi
@@ -191,10 +197,9 @@ add_account() {
 
 remove_account() {
   local email="$1"
-  local creds_file="$ACCOUNTS_DIR/$email.json"
 
-  if [[ ! -f "$creds_file" ]]; then
-    echo "No saved credentials for $email"
+  if [[ ! -f "$ACCOUNTS_DIR/$email.json" ]]; then
+    echo "No saved account for $email"
     return 1
   fi
 
@@ -206,7 +211,7 @@ remove_account() {
     return 1
   fi
 
-  rm "$creds_file"
+  rm -f "$ACCOUNTS_DIR/$email.json"
   echo "Removed: $email"
 }
 
@@ -231,18 +236,15 @@ case "${1:-}" in
         switch_interactive
         ;;
       *)
-        # Direct switch to a specific account
         switch_to "$2"
         ;;
     esac
     ;;
 
-  # Native commands: pass through directly
   auth|--help|-h|--version)
     exec "$CLAUDE_BIN" "$@"
     ;;
 
-  # Everything else: show active account, then run claude
   *)
     email="$(get_current_email)"
     if [[ -n "$email" ]]; then
