@@ -1,15 +1,23 @@
 # claude-switch
 
-A lightweight Zsh wrapper for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that adds seamless account switching.
+Instant multi-account switching for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on macOS.
 
-Claude Code doesn't have a built-in way to switch between accounts (e.g., personal and work). This wrapper adds a simple `claude switch` command that handles logout, re-login, and account verification in one step.
+Claude Code doesn't support multiple accounts. This wrapper lets you save multiple accounts and switch between them **instantly** — no logout, no browser, no re-authentication.
+
+## How it works
+
+Claude Code stores OAuth tokens in the macOS Keychain. This wrapper:
+
+1. **Saves** each account's tokens to `~/.claude/accounts/<email>.json`
+2. **Swaps** tokens in the Keychain when you switch
+3. Never calls `logout` — tokens stay valid
 
 ## Features
 
-- **`claude switch`** — Log out of the current account and log in to a different one, all in a single command
-- **Account indicator** — Every time you run `claude`, it shows which account is active before starting the session
-- **No-account warning** — If no account is connected, it reminds you to run `claude switch` instead of failing silently
-- **Transparent passthrough** — Native commands like `claude auth`, `claude --help`, and `claude --version` work exactly as expected
+- **Instant switch** — swap accounts in under a second, no browser needed
+- **Account indicator** — shows the active account every time you run `claude`
+- **Works everywhere** — standalone script, works in terminals and VS Code
+- **One-time setup** — log in via browser once per account, then never again
 
 ## Installation
 
@@ -19,13 +27,20 @@ Claude Code doesn't have a built-in way to switch between accounts (e.g., person
    git clone https://github.com/SIRTHEO/claude-switch.git ~/.claude-switch
    ```
 
-2. **Source it from your `.zshrc`:**
+2. **Run the installer:**
 
    ```bash
-   echo 'source "$HOME/.claude-switch/claude-switch.zsh"' >> ~/.zshrc
+   ~/.claude-switch/install.sh
    ```
 
-3. **Reload your shell:**
+3. **Ensure `~/bin` comes before the real claude binary in your PATH.** Add to `.zshrc`:
+
+   ```bash
+   export PATH="$HOME/.local/bin:$PATH"
+   export PATH="$HOME/bin:$PATH"
+   ```
+
+4. **Reload your shell:**
 
    ```bash
    source ~/.zshrc
@@ -33,16 +48,51 @@ Claude Code doesn't have a built-in way to switch between accounts (e.g., person
 
 ## Usage
 
+### Add accounts
+
+Add your first account (saves the currently logged-in account):
+
+```bash
+claude switch add
+```
+
+This opens the browser for login. Do this once per account.
+
 ### Switch account
+
+Interactive menu:
 
 ```bash
 claude switch
 ```
 
-This will:
-1. Log out of the current Claude account
-2. Open the browser for you to log in with a different account
-3. Verify the login and display the active email
+```
+Accounts:
+
+  1) work@company.com (active)
+  2) personal@gmail.com
+
+Switch to [1-2]: 2
+Switched to personal@gmail.com
+```
+
+Or switch directly:
+
+```bash
+claude switch personal@gmail.com
+```
+
+### List accounts
+
+```bash
+claude switch list
+```
+
+### Remove an account
+
+```bash
+claude switch remove old@email.com
+```
 
 ### Normal usage
 
@@ -50,10 +100,10 @@ This will:
 claude
 ```
 
-Before starting the interactive session, it displays the active account:
+Shows the active account before starting:
 
 ```
-🔑 you@example.com
+🔑 work@company.com
 
 ╭──────────────────────────────────────╮
 │ ✻ Welcome to Claude Code!            │
@@ -63,24 +113,32 @@ Before starting the interactive session, it displays the active account:
 
 ### Native commands (passthrough)
 
-These are passed directly to Claude Code without any wrapping:
-
 ```bash
 claude auth status
 claude --help
 claude --version
 ```
 
-## How it works
+## Custom binary path
 
-The script defines a `claude()` Zsh function that intercepts calls to `claude`. It uses `command claude` internally to call the real binary, avoiding infinite recursion.
+If your claude binary is not in the default location:
 
-The account detection relies on `claude auth status`, which outputs JSON containing the logged-in email. The wrapper parses this to display the active account.
+```bash
+export CLAUDE_SWITCH_BIN="/custom/path/to/claude"
+```
 
 ## Requirements
 
+- macOS (uses Keychain for token storage)
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed
 - Zsh shell
+- Python 3 (for JSON parsing)
+
+## Security
+
+- Account tokens are stored in `~/.claude/accounts/` with `600` permissions (owner-only)
+- No tokens are ever sent anywhere — everything stays local
+- No `logout` is performed — tokens are never invalidated
 
 ## License
 
