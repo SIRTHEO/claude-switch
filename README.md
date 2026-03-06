@@ -6,11 +6,9 @@ Claude Code doesn't support multiple accounts. This wrapper lets you save multip
 
 ## How it works
 
-Claude Code stores OAuth tokens in the macOS Keychain. This wrapper:
+Claude Code determines the active account from the `oauthAccount` field in `~/.claude.json`. OAuth tokens in the macOS Keychain are shared across accounts. Switching is just a JSON field swap — instant and offline.
 
-1. **Saves** each account's tokens to `~/.claude/accounts/<email>.json`
-2. **Swaps** tokens in the Keychain when you switch
-3. Never calls `logout` — tokens stay valid
+The **browser is only needed once per account**, during the initial setup (`claude switch add`). This is the standard Claude Code OAuth flow: browser opens, you enter your email, click the magic link from your inbox, and authorize. After that, the account profile is saved locally and switching never touches the browser again.
 
 ## Features
 
@@ -18,6 +16,7 @@ Claude Code stores OAuth tokens in the macOS Keychain. This wrapper:
 - **Account indicator** — shows the active account every time you run `claude`
 - **Works everywhere** — standalone script, works in terminals and VS Code
 - **One-time setup** — log in via browser once per account, then never again
+- **No logout** — tokens are never invalidated, accounts stay ready
 
 ## Installation
 
@@ -33,6 +32,8 @@ Claude Code stores OAuth tokens in the macOS Keychain. This wrapper:
    ~/.claude-switch/install.sh
    ```
 
+   This creates a symlink at `~/bin/claude` pointing to the wrapper script.
+
 3. **Ensure `~/bin` comes before the real claude binary in your PATH.** Add to `.zshrc`:
 
    ```bash
@@ -40,23 +41,43 @@ Claude Code stores OAuth tokens in the macOS Keychain. This wrapper:
    export PATH="$HOME/bin:$PATH"
    ```
 
+   The last `export` wins, so `~/bin` ends up first in the PATH.
+
 4. **Reload your shell:**
 
    ```bash
    source ~/.zshrc
    ```
 
-## Usage
+## Initial setup
 
-### Add accounts
+The browser is needed **only during this initial setup** — once per account.
 
-Add your first account (saves the currently logged-in account):
+### 1. Save your current account
+
+If you're already logged in to Claude Code, save it:
 
 ```bash
 claude switch add
 ```
 
-This opens the browser for login. Do this once per account.
+This saves the currently active account without requiring a new login.
+
+### 2. Add a second account
+
+Run `claude switch add` again. This time it will open the browser for the OAuth flow:
+
+1. Browser opens with the Claude login page
+2. Enter the email for the new account
+3. Check your inbox and click the magic link
+4. Click "Authorize" in the browser
+5. The terminal shows "Login successful"
+
+The account is now saved. **You won't need the browser for this account again.**
+
+Repeat for as many accounts as you need.
+
+## Usage
 
 ### Switch account
 
@@ -76,7 +97,7 @@ Switch to [1-2]: 2
 Switched to personal@gmail.com
 ```
 
-Or switch directly:
+Or switch directly by email:
 
 ```bash
 claude switch personal@gmail.com
@@ -86,6 +107,19 @@ claude switch personal@gmail.com
 
 ```bash
 claude switch list
+```
+
+```
+Saved accounts:
+
+  * work@company.com (active)
+    personal@gmail.com
+```
+
+### Check active account
+
+```bash
+claude auth status
 ```
 
 ### Remove an account
@@ -119,6 +153,12 @@ claude --help
 claude --version
 ```
 
+## Good to know
+
+- **Already-open sessions are not affected.** Switching changes which account new sessions use. Sessions that were already running keep their original account.
+- **The browser is only needed once per account**, during `claude switch add`. After that, switching is instant and fully offline.
+- **No logout is ever performed.** Tokens stay valid. Switching is just a local config change.
+
 ## Custom binary path
 
 If your claude binary is not in the default location:
@@ -129,15 +169,15 @@ export CLAUDE_SWITCH_BIN="/custom/path/to/claude"
 
 ## Requirements
 
-- macOS (uses Keychain for token storage)
+- macOS
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed
 - Zsh shell
 - Python 3 (for JSON parsing)
 
 ## Security
 
-- Account tokens are stored in `~/.claude/accounts/` with `600` permissions (owner-only)
-- No tokens are ever sent anywhere — everything stays local
+- Account profiles are stored in `~/.claude/accounts/` with `600` permissions (owner-only)
+- No data is sent anywhere — everything stays local
 - No `logout` is performed — tokens are never invalidated
 
 ## License
