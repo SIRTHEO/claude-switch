@@ -9,17 +9,21 @@ CLAUDE_JSON="$HOME/.claude.json"
 
 # --- Find the real claude binary ---
 find_real_claude() {
-  local self_path
-  self_path="$(realpath "$0" 2>/dev/null || echo "$0")"
-
   if [[ -n "${CLAUDE_SWITCH_BIN:-}" ]]; then
     echo "$CLAUDE_SWITCH_BIN"
     return
   fi
 
-  for dir in $(echo "$PATH" | tr ':' '\n'); do
+  # Resolve this script's real path (works with symlinks)
+  local self_path="${0:A}"
+
+  for dir in ${(s/:/)PATH}; do
     local candidate="$dir/claude"
-    if [[ -x "$candidate" ]] && [[ "$(realpath "$candidate" 2>/dev/null)" != "$self_path" ]]; then
+    [[ -x "$candidate" ]] || continue
+    # Skip if candidate resolves to this script
+    [[ "${candidate:A}" != "$self_path" ]] || continue
+    # Skip if candidate is a shell script (we want the real binary)
+    if file -b "$candidate" 2>/dev/null | grep -q 'Mach-O\|ELF'; then
       echo "$candidate"
       return
     fi
