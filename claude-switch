@@ -297,6 +297,21 @@ case "${1:-}" in
         fi
         remove_account "$3"
         ;;
+      help|--help|-h)
+        echo "claude-switch — multi-account wrapper for Claude Code"
+        echo ""
+        echo "Usage:"
+        echo "  claude switch              Switch account (interactive menu)"
+        echo "  claude switch <email>      Switch to a specific account"
+        echo "  claude switch add          Add a new account (opens browser)"
+        echo "  claude switch list         List saved accounts"
+        echo "  claude switch remove <email>  Remove a saved account"
+        echo "  claude switch help         Show this help"
+        echo ""
+        echo "All other commands are passed through to the real claude binary."
+        echo ""
+        echo "On first run, your current account is detected and saved automatically."
+        ;;
       "")
         switch_interactive
         ;;
