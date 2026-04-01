@@ -100,6 +100,31 @@ claude switch status
 claude switch remove old@email.com
 ```
 
+### Account aliases
+
+Set a short name for an account:
+
+```bash
+claude switch alias work work@company.com
+claude switch alias p personal@gmail.com
+```
+
+Then switch by alias:
+
+```bash
+claude switch work
+claude switch p
+```
+
+List and remove aliases:
+
+```bash
+claude switch alias --list
+claude switch alias --remove work
+```
+
+Aliases are also set during `claude switch add` when prompted.
+
 ### Normal usage
 
 ```bash
@@ -116,6 +141,17 @@ Shows the active account before starting:
 │ ...                                  │
 ╰──────────────────────────────────────╯
 ```
+
+### Temporary switch (`--as`)
+
+Use a different account for a single command without changing the active account:
+
+```bash
+claude --as personal "review this code"
+claude --as work
+```
+
+The original account is automatically restored after the command finishes. If the process is interrupted, the account is restored on the next `claude` invocation.
 
 ## Shell completions
 
@@ -147,6 +183,29 @@ claude switch completions powershell >> $PROFILE
 - **The browser is only needed once per account**, during `claude switch add`. After that, switching is instant and fully offline.
 - **No logout is ever performed.** Tokens stay valid. Switching is just a local config change.
 - **Cross-platform.** Works on macOS, Linux, and Windows.
+
+### Token health
+
+Check if your token is still valid:
+
+```bash
+claude switch status
+```
+
+```
+Active account: work@company.com
+  Alias: work
+  Token: valid (expires in 3 days)
+```
+
+## VS Code
+
+claude-switch works with Claude Code in VS Code. The switch changes which account new sessions use:
+
+1. Switch in the integrated terminal: `claude switch work`
+2. Restart your Claude Code session in VS Code
+
+Already-open sessions keep their original account.
 
 ## Custom binary path
 
