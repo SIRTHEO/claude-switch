@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getCurrent, save, load, list, remove } from '../src/accounts.js';
-import { switchTo, fuzzyMatch } from '../src/switcher.js';
+import { switchTo, fuzzyMatch, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switcher.js';
+import { setAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
 
 describe('integration: full account lifecycle', () => {
   let tmpDir: string;
@@ -144,5 +145,95 @@ describe('integration: error cases', () => {
 
   it('getCurrent returns empty on missing file', () => {
     assert.equal(getCurrent(path.join(tmpDir, 'nonexistent.json')), '');
+  });
+});
+
+describe('integration: aliases', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-int-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'work@co.com', token: 'tok-w' }
+    }));
+    save('work@co.com', claudeJson, accDir);
+    fs.writeFileSync(path.join(accDir, 'personal@gmail.com.json'), JSON.stringify({
+      emailAddress: 'personal@gmail.com', token: 'tok-p'
+    }));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('alias resolves and switches correctly', () => {
+    setAlias('p', 'personal@gmail.com', accDir);
+    const resolved = resolveAlias('p', accDir);
+    assert.equal(resolved, 'personal@gmail.com');
+    const msg = switchTo(resolved, claudeJson, accDir);
+    assert.match(msg, /switched to personal@gmail.com/i);
+  });
+
+  it('getAliasesForEmail returns all aliases for an email', () => {
+    setAlias('work', 'work@co.com', accDir);
+    setAlias('w', 'work@co.com', accDir);
+    setAlias('personal', 'personal@gmail.com', accDir);
+    const aliases = getAliasesForEmail('work@co.com', accDir);
+    assert.deepEqual(aliases.sort(), ['w', 'work']);
+  });
+});
+
+describe('integration: pending restore (--as crash recovery)', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-int-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'work@co.com', token: 'tok-w' }
+    }));
+    save('work@co.com', claudeJson, accDir);
+    fs.writeFileSync(path.join(accDir, 'personal@gmail.com.json'), JSON.stringify({
+      emailAddress: 'personal@gmail.com', token: 'tok-p'
+    }));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('saves and restores pending account', () => {
+    savePendingRestore('work@co.com', accDir);
+
+    switchTo('personal@gmail.com', claudeJson, accDir);
+    assert.equal(getCurrent(claudeJson), 'personal@gmail.com');
+
+    const restored = checkPendingRestore(claudeJson, accDir);
+    assert.equal(restored, 'work@co.com');
+    assert.equal(getCurrent(claudeJson), 'work@co.com');
+
+    assert.ok(!fs.existsSync(path.join(accDir, '.pending-restore')));
+  });
+
+  it('clearPendingRestore removes file', () => {
+    savePendingRestore('work@co.com', accDir);
+    clearPendingRestore(accDir);
+    assert.ok(!fs.existsSync(path.join(accDir, '.pending-restore')));
+  });
+
+  it('checkPendingRestore returns null when no file', () => {
+    const result = checkPendingRestore(claudeJson, accDir);
+    assert.equal(result, null);
   });
 });
