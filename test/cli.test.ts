@@ -70,4 +70,24 @@ describe('parseCommand', () => {
   it('parses empty args as passthrough', () => {
     assert.deepEqual(parseCommand([]), { action: 'passthrough', args: [] });
   });
+
+  it('parses "switch alias work work@co.com"', () => {
+    assert.deepEqual(parseCommand(['switch', 'alias', 'work', 'work@co.com']),
+      { action: 'alias-set', name: 'work', email: 'work@co.com' });
+  });
+
+  it('parses "switch alias --list"', () => {
+    assert.deepEqual(parseCommand(['switch', 'alias', '--list']),
+      { action: 'alias-list' });
+  });
+
+  it('parses "switch alias --remove work"', () => {
+    assert.deepEqual(parseCommand(['switch', 'alias', '--remove', 'work']),
+      { action: 'alias-remove', name: 'work' });
+  });
+
+  it('parses "switch alias" with no args as alias-list', () => {
+    assert.deepEqual(parseCommand(['switch', 'alias']),
+      { action: 'alias-list' });
+  });
 });
