@@ -22,6 +22,25 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
   }
 }
 
+export function list(accountsDirPath: string): string[] {
+  try {
+    const files = fs.readdirSync(accountsDirPath);
+    return files
+      .filter(f => f.endsWith('.json'))
+      .map(f => f.replace(/\.json$/, ''));
+  } catch {
+    return [];
+  }
+}
+
+export function remove(email: string, accountsDirPath: string): void {
+  const accountFile = path.join(accountsDirPath, `${email}.json`);
+  if (!fs.existsSync(accountFile)) {
+    throw new Error(`No saved account for ${email}`);
+  }
+  fs.unlinkSync(accountFile);
+}
+
 export function load(email: string, claudeJsonPath: string, accountsDirPath: string): void {
   const accountFile = path.join(accountsDirPath, `${email}.json`);
 
