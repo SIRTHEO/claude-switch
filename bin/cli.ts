@@ -77,13 +77,17 @@ function showHelp(): void {
   console.log(`claude-switch — multi-account wrapper for Claude Code
 
 Usage:
-  claude switch                  Switch account (interactive menu)
-  claude switch <email>          Switch to a specific account (fuzzy match)
-  claude switch add              Add a new account (opens browser)
-  claude switch list             List saved accounts
-  claude switch remove <email>   Remove a saved account
-  claude switch status           Show active account
-  claude switch help             Show this help
+  claude switch                    Switch account (interactive menu)
+  claude switch <alias|email>      Switch to account (alias or fuzzy match)
+  claude switch add                Add a new account (opens browser)
+  claude switch list               List saved accounts
+  claude switch remove <email>     Remove a saved account
+  claude switch status             Show active account and token health
+  claude switch alias <n> <email>  Set an alias
+  claude switch alias --list       List aliases
+  claude switch alias --remove <n> Remove an alias
+  claude switch help               Show this help
+  claude --as <alias|email> ...    Use account temporarily
   claude switch --completions <shell>  Generate shell completions
 
 All other commands are passed through to the real claude binary.`);
