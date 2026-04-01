@@ -61,19 +61,17 @@ If you're already logged in to Claude Code, save it:
 claude switch add
 ```
 
-This saves the currently active account without requiring a new login.
+When prompted for an email, enter the email of your current account (or press Enter to skip). This saves the currently active account without requiring a new login.
 
 ### 2. Add a second account
 
-Run `claude switch add` again. This time it will open the browser for the OAuth flow:
+Run `claude switch add` again and enter the email of the new account:
 
-1. Browser opens with the Claude login page
-2. Enter the email for the new account
-3. Check your inbox and click the magic link
-4. Click "Authorize" in the browser
-5. The terminal shows "Login successful"
+```
+Email da aggiungere (invio per saltare): personal@gmail.com
+```
 
-The account is now saved. **You won't need the browser for this account again.**
+This opens the browser for the OAuth flow. If you accidentally authorize with a different email, the account is still saved — and you're offered the chance to retry for the original email.
 
 Repeat for as many accounts as you need.
 
