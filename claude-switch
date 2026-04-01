@@ -72,14 +72,14 @@ save_and_report() {
   save_account "$email"
 
   if [[ "$email" == "$active_email" ]]; then
-    echo "Autenticato: $email (gia' l'account attivo)"
-    echo "Token aggiornato."
+    echo "Authenticated: $email (already the active account)"
+    echo "Token refreshed."
   elif [[ "$already_exists" == "true" ]]; then
-    echo "Autenticato: $email"
-    echo "Aggiornato: $email (account gia' presente)"
+    echo "Authenticated: $email"
+    echo "Updated: $email (account already existed)"
   else
-    echo "Autenticato: $email"
-    echo "Salvato: $email"
+    echo "Authenticated: $email"
+    echo "Saved: $email"
   fi
 }
 
@@ -199,9 +199,9 @@ add_account() {
   local current_email
   current_email="$(get_current_email)"
 
-  # Chiedi email attesa (opzionale)
+  # Ask for expected email (optional)
   local expected_email=""
-  printf "Email da aggiungere (invio per saltare): "
+  printf "Email to add (press Enter to skip): "
   read -r expected_email
 
   if [[ -n "$current_email" ]]; then
@@ -209,7 +209,7 @@ add_account() {
   fi
 
   echo ""
-  echo "Apri il browser e autorizza l'account."
+  echo "Log in with the new account in your browser."
   echo ""
   "$CLAUDE_BIN" auth login
 
@@ -217,7 +217,7 @@ add_account() {
   new_email="$(get_current_email)"
 
   if [[ -z "$new_email" ]]; then
-    echo "Login fallito o annullato."
+    echo "Login failed or cancelled."
     if [[ -n "$current_email" ]]; then
       load_account "$current_email"
     fi
@@ -227,17 +227,17 @@ add_account() {
   echo ""
   save_and_report "$new_email" "$current_email"
 
-  # Se c'era un'email attesa e non corrisponde, offri retry
+  # If expected email was set and doesn't match, offer retry
   if [[ -n "$expected_email" && "$new_email" != "$expected_email" ]]; then
     echo ""
-    echo "(diverso da $expected_email)"
+    echo "(expected $expected_email)"
     echo ""
-    printf "Riprovare il login per $expected_email? [y/N]: "
+    printf "Retry login for $expected_email? [y/N]: "
     read -r retry_choice
 
     if [[ "$retry_choice" == "y" || "$retry_choice" == "Y" ]]; then
       echo ""
-      echo "Apri il browser e autorizza l'account."
+      echo "Log in with the new account in your browser."
       echo ""
       "$CLAUDE_BIN" auth login
 
@@ -245,7 +245,7 @@ add_account() {
       retry_email="$(get_current_email)"
 
       if [[ -z "$retry_email" ]]; then
-        echo "Login fallito o annullato."
+        echo "Login failed or cancelled."
         return 1
       fi
 
@@ -254,7 +254,7 @@ add_account() {
 
       if [[ "$retry_email" != "$expected_email" ]]; then
         echo ""
-        echo "(diverso da $expected_email — nessun ulteriore retry)"
+        echo "(expected $expected_email — no further retries)"
       fi
     fi
   fi
@@ -313,6 +313,12 @@ case "${1:-}" in
   *)
     email="$(get_current_email)"
     if [[ -n "$email" ]]; then
+      # Auto-save on first run if no accounts exist yet
+      if [[ ! -d "$ACCOUNTS_DIR" ]] || ! ls "$ACCOUNTS_DIR"/*.json &>/dev/null; then
+        save_account "$email"
+        echo "Detected existing account: $email (saved automatically)"
+        echo ""
+      fi
       echo "🔑 $email"
       echo ""
     else
