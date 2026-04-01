@@ -90,4 +90,19 @@ describe('parseCommand', () => {
     assert.deepEqual(parseCommand(['switch', 'alias']),
       { action: 'alias-list' });
   });
+
+  it('parses "--as work" as temporary-switch', () => {
+    assert.deepEqual(parseCommand(['--as', 'work', 'do', 'stuff']),
+      { action: 'temporary-switch', target: 'work', args: ['do', 'stuff'] });
+  });
+
+  it('parses "--as work" with no extra args', () => {
+    assert.deepEqual(parseCommand(['--as', 'work']),
+      { action: 'temporary-switch', target: 'work', args: [] });
+  });
+
+  it('parses "--as" with no target', () => {
+    assert.deepEqual(parseCommand(['--as']),
+      { action: 'temporary-switch', target: undefined, args: [] });
+  });
 });

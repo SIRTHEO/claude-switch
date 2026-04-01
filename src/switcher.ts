@@ -1,6 +1,8 @@
 // src/switcher.ts
 import readline from 'node:readline';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getCurrent, save, load, list } from './accounts.js';
 import { setAlias } from './aliases.js';
 import { ExitError } from './errors.js';
@@ -69,6 +71,32 @@ export async function switchInteractive(claudeJsonPath: string, accountsDirPath:
   }
 
   console.log(switchTo(accounts[index - 1], claudeJsonPath, accountsDirPath));
+}
+
+export function savePendingRestore(email: string, accountsDirPath: string): void {
+  const filePath = path.join(accountsDirPath, '.pending-restore');
+  fs.mkdirSync(accountsDirPath, { recursive: true });
+  fs.writeFileSync(filePath, email);
+}
+
+export function checkPendingRestore(claudeJsonPath: string, accountsDirPath: string): string | null {
+  const filePath = path.join(accountsDirPath, '.pending-restore');
+  try {
+    const email = fs.readFileSync(filePath, 'utf-8').trim();
+    if (email) {
+      load(email, claudeJsonPath, accountsDirPath);
+      fs.unlinkSync(filePath);
+      return email;
+    }
+  } catch {
+    // No pending restore
+  }
+  return null;
+}
+
+export function clearPendingRestore(accountsDirPath: string): void {
+  const filePath = path.join(accountsDirPath, '.pending-restore');
+  try { fs.unlinkSync(filePath); } catch { /* ignore */ }
 }
 
 export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string): Promise<void> {
