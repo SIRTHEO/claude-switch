@@ -2,6 +2,7 @@
 import readline from 'node:readline';
 import { spawnSync } from 'node:child_process';
 import { getCurrent, save, load, list } from './accounts.js';
+import { setAlias } from './aliases.js';
 import { ExitError } from './errors.js';
 
 function ask(question: string): Promise<string> {
@@ -97,6 +98,12 @@ export async function addAccount(claudeBin: string, claudeJsonPath: string, acco
 
     if (list(accountsDirPath).length === 1) {
       console.log('\nFirst account saved! Add another with: claude switch add');
+    }
+
+    const aliasName = await ask('Alias (press Enter to skip): ');
+    if (aliasName) {
+      setAlias(aliasName, newEmail, accountsDirPath);
+      console.log(`Alias set: ${aliasName} → ${newEmail}`);
     }
 
     if (!expectedEmail || newEmail === expectedEmail) break;
