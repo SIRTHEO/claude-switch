@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getCurrent, save, load } from '../src/accounts.js';
+import { getCurrent, save, load, list, remove } from '../src/accounts.js';
 
 describe('getCurrent', () => {
   let tmpDir: string;
@@ -107,5 +107,60 @@ describe('load', () => {
   it('throws when account file does not exist', () => {
     fs.writeFileSync(claudeJson, JSON.stringify({}));
     assert.throws(() => load('nope@x.com', claudeJson, accDir), /no saved account/i);
+  });
+});
+
+describe('list', () => {
+  let tmpDir: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns list of saved emails', () => {
+    fs.writeFileSync(path.join(accDir, 'a@b.com.json'), '{}');
+    fs.writeFileSync(path.join(accDir, 'c@d.com.json'), '{}');
+    const result = list(accDir);
+    assert.deepEqual(result.sort(), ['a@b.com', 'c@d.com']);
+  });
+
+  it('returns empty array when no accounts', () => {
+    assert.deepEqual(list(accDir), []);
+  });
+
+  it('returns empty array when dir does not exist', () => {
+    assert.deepEqual(list(path.join(tmpDir, 'nope')), []);
+  });
+});
+
+describe('remove', () => {
+  let tmpDir: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('removes account file', () => {
+    fs.writeFileSync(path.join(accDir, 'a@b.com.json'), '{}');
+    remove('a@b.com', accDir);
+    assert.ok(!fs.existsSync(path.join(accDir, 'a@b.com.json')));
+  });
+
+  it('throws when account does not exist', () => {
+    assert.throws(() => remove('nope@x.com', accDir), /no saved account/i);
   });
 });
