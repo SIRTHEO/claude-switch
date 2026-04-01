@@ -8,6 +8,8 @@ import { fuzzyMatch, switchTo, switchInteractive, addAccount } from '../src/swit
 import { run as proxyRun } from '../src/proxy.js';
 import { claudeJsonPath, accountsDir } from '../src/paths.js';
 import { generateBash, generateZsh, generateFish, generatePowerShell } from '../src/completions.js';
+import { VERSION } from '../src/version.js';
+import { ExitError } from '../src/errors.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -17,6 +19,7 @@ export type Command =
   | { action: 'remove'; email: string | undefined }
   | { action: 'status' }
   | { action: 'help' }
+  | { action: 'version' }
   | { action: 'completions'; shell: string | undefined }
   | { action: 'passthrough'; args: string[] };
 
@@ -38,6 +41,8 @@ export function parseCommand(args: string[]): Command {
     case 'help':
     case '--help':
     case '-h': return { action: 'help' };
+    case '--version':
+    case '-v': return { action: 'version' };
     case '--completions': return { action: 'completions', shell: args[2] };
     default: return { action: 'switch-to', target: sub };
   }
@@ -122,20 +127,18 @@ async function main(): Promise<void> {
 
     case 'remove':
       if (!cmd.email) {
-        console.log('Usage: claude switch remove <email>');
-        process.exit(1);
+        throw new ExitError('Usage: claude switch remove <email>');
       }
       try {
         const current = getCurrent(cJson);
         if (cmd.email === current) {
-          console.log('Cannot remove the active account. Switch to another account first.');
-          process.exit(1);
+          throw new ExitError('Cannot remove the active account. Switch to another account first.');
         }
         removeAccount(cmd.email, aDir);
         console.log(`Removed: ${cmd.email}`);
       } catch (e) {
-        console.error((e as Error).message);
-        process.exit(1);
+        if (e instanceof ExitError) throw e;
+        throw new ExitError((e as Error).message);
       }
       break;
 
@@ -158,12 +161,15 @@ async function main(): Promise<void> {
       };
       const gen = cmd.shell ? generators[cmd.shell] : undefined;
       if (!gen) {
-        console.log('Usage: claude switch --completions <bash|zsh|fish|powershell>');
-        process.exit(1);
+        throw new ExitError('Usage: claude switch --completions <bash|zsh|fish|powershell>');
       }
       console.log(gen());
       break;
     }
+
+    case 'version':
+      console.log(`claude-switch ${VERSION}`);
+      break;
 
     case 'help':
       showHelp();
@@ -181,8 +187,7 @@ async function main(): Promise<void> {
         }
         console.log(`🔑 ${email}\n`);
       } else {
-        console.error('⚠️  No account connected. Run: claude switch add');
-        process.exit(1);
+        throw new ExitError('No account connected. Run: claude switch add');
       }
 
       proxyRun(claudeBin, cmd.args);
@@ -191,15 +196,22 @@ async function main(): Promise<void> {
   }
 }
 
-// Only run main() when executed directly
 const selfUrl = new URL(import.meta.url).pathname;
 const invoked = process.argv[1];
 if (invoked) {
   try {
     if (fs.realpathSync(invoked) === fs.realpathSync(selfUrl)) {
-      main();
+      main().catch(handleError);
     }
   } catch {
     // If realpathSync fails, we're likely being imported for testing
   }
+}
+
+function handleError(e: unknown): void {
+  if (e instanceof ExitError) {
+    console.error(e.message);
+    process.exit(e.code);
+  }
+  throw e;
 }

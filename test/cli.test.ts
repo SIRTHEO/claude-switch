@@ -55,6 +55,14 @@ describe('parseCommand', () => {
     assert.deepEqual(parseCommand(['switch', 'a@b.com']), { action: 'switch-to', target: 'a@b.com' });
   });
 
+  it('parses "switch --version"', () => {
+    assert.deepEqual(parseCommand(['switch', '--version']), { action: 'version' });
+  });
+
+  it('parses "switch -v"', () => {
+    assert.deepEqual(parseCommand(['switch', '-v']), { action: 'version' });
+  });
+
   it('parses non-switch commands as passthrough', () => {
     assert.deepEqual(parseCommand(['--help']), { action: 'passthrough', args: ['--help'] });
   });
