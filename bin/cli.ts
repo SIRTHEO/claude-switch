@@ -10,6 +10,8 @@ import { claudeJsonPath, accountsDir } from '../src/paths.js';
 import { generateBash, generateZsh, generateFish, generatePowerShell } from '../src/completions.js';
 import { VERSION } from '../src/version.js';
 import { ExitError } from '../src/errors.js';
+import { setAlias, listAliases, removeAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
+import { getTokenHealth } from '../src/token.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -21,7 +23,10 @@ export type Command =
   | { action: 'help' }
   | { action: 'version' }
   | { action: 'completions'; shell: string | undefined }
-  | { action: 'passthrough'; args: string[] };
+  | { action: 'passthrough'; args: string[] }
+  | { action: 'alias-set'; name: string; email: string }
+  | { action: 'alias-list' }
+  | { action: 'alias-remove'; name: string | undefined };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] !== 'switch') {
@@ -44,6 +49,12 @@ export function parseCommand(args: string[]): Command {
     case '--version':
     case '-v': return { action: 'version' };
     case '--completions': return { action: 'completions', shell: args[2] };
+    case 'alias': {
+      const sub2 = args[2];
+      if (!sub2 || sub2 === '--list') return { action: 'alias-list' };
+      if (sub2 === '--remove') return { action: 'alias-remove', name: args[3] };
+      return { action: 'alias-set', name: sub2, email: args[3] };
+    }
     default: return { action: 'switch-to', target: sub };
   }
 }
@@ -90,8 +101,9 @@ async function main(): Promise<void> {
       break;
 
     case 'switch-to': {
+      const resolved = resolveAlias(cmd.target, aDir);
       const accounts = listAccounts(aDir);
-      const matches = fuzzyMatch(cmd.target, accounts);
+      const matches = fuzzyMatch(resolved, accounts);
       if (matches.length === 1) {
         console.log(switchTo(matches[0], cJson, aDir));
       } else if (matches.length > 1) {
@@ -118,9 +130,50 @@ async function main(): Promise<void> {
       } else {
         console.log('Saved accounts:\n');
         for (const email of accounts) {
-          const marker = email === current ? '  * ' : '    ';
-          console.log(`${marker}${email}${email === current ? ' (active)' : ''}`);
+          const isActive = email === current;
+          const marker = isActive ? '  * ' : '    ';
+          const activeLabel = isActive ? ' (active)' : '';
+          const emailAliases = getAliasesForEmail(email, aDir);
+          const aliasLabel = emailAliases.length > 0 ? ` [${emailAliases.join(', ')}]` : '';
+          console.log(`${marker}${email}${activeLabel}${aliasLabel}`);
         }
+      }
+      break;
+    }
+
+    case 'alias-set': {
+      if (!cmd.email) {
+        throw new ExitError('Usage: claude switch alias <name> <email>');
+      }
+      setAlias(cmd.name, cmd.email, aDir);
+      console.log(`Alias set: ${cmd.name} → ${cmd.email}`);
+      break;
+    }
+
+    case 'alias-list': {
+      const aliases = listAliases(aDir);
+      const entries = Object.entries(aliases);
+      if (entries.length === 0) {
+        console.log('No aliases. Set one with: claude switch alias <name> <email>');
+      } else {
+        console.log('Aliases:\n');
+        for (const [name, email] of entries) {
+          console.log(`  ${name} → ${email}`);
+        }
+      }
+      break;
+    }
+
+    case 'alias-remove': {
+      if (!cmd.name) {
+        throw new ExitError('Usage: claude switch alias --remove <name>');
+      }
+      try {
+        removeAlias(cmd.name, aDir);
+        console.log(`Alias removed: ${cmd.name}`);
+      } catch (e) {
+        if (e instanceof ExitError) throw e;
+        throw new ExitError((e as Error).message);
       }
       break;
     }
@@ -144,10 +197,32 @@ async function main(): Promise<void> {
 
     case 'status': {
       const current = getCurrent(cJson);
-      if (current) {
-        console.log(current);
-      } else {
+      if (!current) {
         console.log('No account connected. Run: claude switch add');
+        break;
+      }
+
+      const health = getTokenHealth(cJson);
+      const emailAliases = getAliasesForEmail(current, aDir);
+
+      console.log(`Active account: ${current}`);
+      if (emailAliases.length > 0) {
+        console.log(`  Alias: ${emailAliases.join(', ')}`);
+      }
+
+      switch (health.status) {
+        case 'valid':
+          console.log(`  Token: valid (expires ${health.expiresIn})`);
+          break;
+        case 'expired':
+          console.log(`  Token: expired (${health.expiresIn}) — run: claude switch add`);
+          break;
+        case 'present':
+          console.log('  Token: present');
+          break;
+        case 'missing':
+          console.log('  Token: missing — run: claude switch add');
+          break;
       }
       break;
     }
