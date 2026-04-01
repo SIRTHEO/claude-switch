@@ -1,4 +1,4 @@
-// test/paths.test.js
+// test/paths.test.ts
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { claudeJsonPath, accountsDir } from '../src/paths.js';
