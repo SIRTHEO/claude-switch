@@ -212,6 +212,12 @@ async function main(): Promise<void> {
         break;
       }
 
+      // Auto-save if active account not yet saved
+      if (!listAccounts(aDir).includes(current)) {
+        save(current, cJson, aDir);
+        console.log(`Detected account: ${current} (saved automatically)\n`);
+      }
+
       const health = getTokenHealth(cJson);
       const emailAliases = getAliasesForEmail(current, aDir);
 
@@ -315,9 +321,9 @@ async function main(): Promise<void> {
 
       if (email) {
         const accounts = listAccounts(aDir);
-        if (accounts.length === 0) {
+        if (!accounts.includes(email)) {
           save(email, cJson, aDir);
-          console.log(`Detected existing account: ${email} (saved automatically)\n`);
+          console.log(`Detected account: ${email} (saved automatically)\n`);
         }
         console.log(`🔑 ${email}\n`);
       } else {
