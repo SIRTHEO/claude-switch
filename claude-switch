@@ -2,6 +2,7 @@
 # claude-switch — Claude Code multi-account wrapper
 # Instant account switching by swapping oauthAccount in ~/.claude.json
 
+# -e omitted intentionally: errors are handled explicitly per-command
 set -uo pipefail
 
 ACCOUNTS_DIR="$HOME/.claude/accounts"
@@ -22,11 +23,10 @@ find_real_claude() {
     [[ -x "$candidate" ]] || continue
     # Skip if candidate resolves to this script
     [[ "${candidate:A}" != "$self_path" ]] || continue
-    # Skip if candidate is a shell script (we want the real binary)
-    if file -b "$candidate" 2>/dev/null | grep -q 'Mach-O\|ELF'; then
-      echo "$candidate"
-      return
-    fi
+    # Skip other claude-switch wrappers
+    head -5 "$candidate" 2>/dev/null | grep -q 'claude-switch' && continue
+    echo "$candidate"
+    return
   done
 
   echo "Error: could not find the real claude binary in PATH." >&2
@@ -37,12 +37,12 @@ CLAUDE_BIN="$(find_real_claude)"
 
 # --- Helpers ---
 get_current_email() {
-  python3 -c "
-import json
+  CLAUDE_JSON="$CLAUDE_JSON" python3 -c "
+import json, os
 try:
-    with open('$CLAUDE_JSON') as f:
+    with open(os.environ['CLAUDE_JSON']) as f:
         print(json.load(f).get('oauthAccount', {}).get('emailAddress', ''))
-except:
+except Exception:
     pass
 " 2>/dev/null
 }
@@ -51,14 +51,36 @@ save_account() {
   local email="$1"
   mkdir -p "$ACCOUNTS_DIR"
   chmod 700 "$ACCOUNTS_DIR"
-  python3 -c "
-import json
-with open('$CLAUDE_JSON') as f:
+  local dest="$ACCOUNTS_DIR/$email.json"
+  CLAUDE_JSON="$CLAUDE_JSON" DEST="$dest" python3 -c "
+import json, os
+with open(os.environ['CLAUDE_JSON']) as f:
     d = json.load(f)
-with open('$ACCOUNTS_DIR/$email.json', 'w') as f:
+with open(os.environ['DEST'], 'w') as f:
     json.dump(d.get('oauthAccount', {}), f, indent=2)
 " 2>/dev/null
-  chmod 600 "$ACCOUNTS_DIR/$email.json"
+  chmod 600 "$dest"
+}
+
+save_and_report() {
+  local email="$1"
+  local active_email="$2"
+  local already_exists=false
+
+  [[ -f "$ACCOUNTS_DIR/$email.json" ]] && already_exists=true
+
+  save_account "$email"
+
+  if [[ "$email" == "$active_email" ]]; then
+    echo "Autenticato: $email (gia' l'account attivo)"
+    echo "Token aggiornato."
+  elif [[ "$already_exists" == "true" ]]; then
+    echo "Autenticato: $email"
+    echo "Aggiornato: $email (account gia' presente)"
+  else
+    echo "Autenticato: $email"
+    echo "Salvato: $email"
+  fi
 }
 
 load_account() {
@@ -70,15 +92,19 @@ load_account() {
     return 1
   fi
 
-  python3 << PYEOF
-import json
-with open('$CLAUDE_JSON') as f:
+  CLAUDE_JSON="$CLAUDE_JSON" ACCOUNT_FILE="$account_file" python3 << 'PYEOF'
+import json, os
+claude_json = os.environ['CLAUDE_JSON']
+with open(claude_json) as f:
     d = json.load(f)
-with open('$account_file') as f:
+with open(os.environ['ACCOUNT_FILE']) as f:
     d['oauthAccount'] = json.load(f)
-with open('$CLAUDE_JSON', 'w') as f:
+tmp = claude_json + '.tmp'
+with open(tmp, 'w') as f:
     json.dump(d, f, separators=(',', ':'))
+os.replace(tmp, claude_json)
 PYEOF
+  chmod 600 "$CLAUDE_JSON"
 }
 
 list_accounts() {
