@@ -140,6 +140,66 @@ describe('list', () => {
   });
 });
 
+describe('save - validation', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'x@y.com' } }));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('rejects email with unsafe filesystem characters', () => {
+    assert.throws(() => save('user/admin@x.com', claudeJson, accDir), /unsafe for filenames/i);
+  });
+
+  it('accepts email with + character', () => {
+    save('user+tag@gmail.com', claudeJson, accDir);
+    assert.ok(fs.existsSync(path.join(accDir, 'user+tag@gmail.com.json')));
+  });
+
+  it('throws clear error on corrupted claude.json', () => {
+    fs.writeFileSync(claudeJson, '{invalid json!!!');
+    assert.throws(() => save('a@b.com', claudeJson, accDir), /invalid JSON/i);
+  });
+});
+
+describe('load - validation', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('throws clear error on corrupted claude.json', () => {
+    fs.writeFileSync(claudeJson, 'not json');
+    fs.writeFileSync(path.join(accDir, 'a@b.com.json'), '{}');
+    assert.throws(() => load('a@b.com', claudeJson, accDir), /invalid JSON/i);
+  });
+
+  it('throws clear error on corrupted account file', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: {} }));
+    fs.writeFileSync(path.join(accDir, 'a@b.com.json'), 'not json');
+    assert.throws(() => load('a@b.com', claudeJson, accDir), /invalid JSON/i);
+  });
+});
+
 describe('remove', () => {
   let tmpDir: string;
   let accDir: string;
