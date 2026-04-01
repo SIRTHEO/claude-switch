@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export function getCurrent(claudeJsonPath) {
+export function getCurrent(claudeJsonPath: string): string {
   try {
     const data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
     return data?.oauthAccount?.emailAddress || '';
@@ -10,7 +10,7 @@ export function getCurrent(claudeJsonPath) {
   }
 }
 
-export function save(email, claudeJsonPath, accountsDirPath) {
+export function save(email: string, claudeJsonPath: string, accountsDirPath: string): void {
   fs.mkdirSync(accountsDirPath, { recursive: true, mode: 0o700 });
 
   const data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
@@ -22,7 +22,7 @@ export function save(email, claudeJsonPath, accountsDirPath) {
   }
 }
 
-export function load(email, claudeJsonPath, accountsDirPath) {
+export function load(email: string, claudeJsonPath: string, accountsDirPath: string): void {
   const accountFile = path.join(accountsDirPath, `${email}.json`);
 
   if (!fs.existsSync(accountFile)) {

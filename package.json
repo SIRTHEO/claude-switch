@@ -4,21 +4,32 @@
   "description": "Instant multi-account switching for Claude Code — cross-platform",
   "type": "module",
   "bin": {
-    "claude": "./bin/cli.js"
+    "claude": "./dist/bin/cli.js"
   },
   "scripts": {
-    "test": "node --test test/**/*.test.js"
+    "build": "tsc",
+    "test": "tsc && node --test dist/test/**/*.test.js",
+    "prepublishOnly": "npm run build"
   },
-  "keywords": ["claude", "claude-code", "multi-account", "switch"],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "multi-account",
+    "switch"
+  ],
   "author": "SIRTHEO",
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
   },
   "files": [
-    "bin/",
-    "src/",
+    "dist/bin/",
+    "dist/src/",
     "LICENSE",
     "README.md"
-  ]
+  ],
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^6.0.2"
+  }
 }

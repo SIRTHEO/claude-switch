@@ -6,8 +6,8 @@ import path from 'node:path';
 import { getCurrent, save, load } from '../src/accounts.js';
 
 describe('getCurrent', () => {
-  let tmpDir;
-  let claudeJson;
+  let tmpDir: string;
+  let claudeJson: string;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
@@ -36,9 +36,9 @@ describe('getCurrent', () => {
 });
 
 describe('save', () => {
-  let tmpDir;
-  let claudeJson;
-  let accDir;
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
@@ -75,9 +75,9 @@ describe('save', () => {
 });
 
 describe('load', () => {
-  let tmpDir;
-  let claudeJson;
-  let accDir;
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
