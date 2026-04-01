@@ -11,9 +11,22 @@ export function getCurrent(claudeJsonPath: string): string {
 }
 
 export function save(email: string, claudeJsonPath: string, accountsDirPath: string): void {
+  const UNSAFE_FILENAME_CHARS = /[/\\:*?"<>|]/;
+  if (UNSAFE_FILENAME_CHARS.test(email)) {
+    throw new Error(`Email contains characters unsafe for filenames: ${email}`);
+  }
+
   fs.mkdirSync(accountsDirPath, { recursive: true, mode: 0o700 });
 
-  const data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      throw new Error(`${claudeJsonPath} contains invalid JSON. Please fix or delete it.`);
+    }
+    throw e;
+  }
   const accountFile = path.join(accountsDirPath, `${email}.json`);
 
   fs.writeFileSync(accountFile, JSON.stringify(data.oauthAccount || {}, null, 2));
@@ -48,8 +61,25 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
     throw new Error(`No saved account for ${email}`);
   }
 
-  const accountData = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
-  const data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
+  let accountData;
+  try {
+    accountData = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      throw new Error(`${accountFile} contains invalid JSON. Please fix or delete it.`);
+    }
+    throw e;
+  }
+
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      throw new Error(`${claudeJsonPath} contains invalid JSON. Please fix or delete it.`);
+    }
+    throw e;
+  }
   data.oauthAccount = accountData;
 
   const tmp = claudeJsonPath + '.tmp';
