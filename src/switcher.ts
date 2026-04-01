@@ -2,6 +2,7 @@
 import readline from 'node:readline';
 import { spawnSync } from 'node:child_process';
 import { getCurrent, save, load, list } from './accounts.js';
+import { ExitError } from './errors.js';
 
 function ask(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -63,8 +64,7 @@ export async function switchInteractive(claudeJsonPath: string, accountsDirPath:
   const index = parseInt(choice, 10);
 
   if (isNaN(index) || index < 1 || index > accounts.length) {
-    console.log('Invalid choice.');
-    process.exit(1);
+    throw new ExitError('Invalid choice.');
   }
 
   console.log(switchTo(accounts[index - 1], claudeJsonPath, accountsDirPath));
@@ -85,16 +85,19 @@ export async function addAccount(claudeBin: string, claudeJsonPath: string, acco
 
     const newEmail = getCurrent(claudeJsonPath);
     if (!newEmail) {
-      console.log('Login failed or cancelled.');
       if (currentEmail) {
         load(currentEmail, claudeJsonPath, accountsDirPath);
       }
-      process.exit(1);
+      throw new ExitError('Login failed or cancelled.');
     }
 
     console.log(`\nAuthenticated: ${newEmail}`);
     save(newEmail, claudeJsonPath, accountsDirPath);
     console.log(`Saved: ${newEmail}`);
+
+    if (list(accountsDirPath).length === 1) {
+      console.log('\nFirst account saved! Add another with: claude switch add');
+    }
 
     if (!expectedEmail || newEmail === expectedEmail) break;
 
