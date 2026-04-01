@@ -120,6 +120,12 @@ export async function addAccount(claudeBin: string, claudeJsonPath: string, acco
       throw new ExitError('Login failed or cancelled.');
     }
 
+    // If email didn't change, login was cancelled (browser closed)
+    if (newEmail === currentEmail) {
+      console.log('\nLogin cancelled (account unchanged).');
+      return;
+    }
+
     console.log(`\nAuthenticated: ${newEmail}`);
     save(newEmail, claudeJsonPath, accountsDirPath);
     console.log(`Saved: ${newEmail}`);
