@@ -1,5 +1,17 @@
 // src/switcher.ts
-import { getCurrent, save, load } from './accounts.js';
+import readline from 'node:readline';
+import { spawnSync } from 'node:child_process';
+import { getCurrent, save, load, list } from './accounts.js';
+
+function ask(question: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => {
+    rl.question(question, (answer: string) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
 
 export function switchTo(targetEmail: string, claudeJsonPath: string, accountsDirPath: string): string {
   const currentEmail = getCurrent(claudeJsonPath);
@@ -25,4 +37,71 @@ export function fuzzyMatch(input: string, accounts: string[]): string[] {
 
   // Partial match (case-insensitive)
   return accounts.filter(a => a.toLowerCase().includes(lower));
+}
+
+export async function switchInteractive(claudeJsonPath: string, accountsDirPath: string): Promise<void> {
+  const accounts = list(accountsDirPath);
+  const currentEmail = getCurrent(claudeJsonPath);
+
+  if (accounts.length === 0) {
+    console.log('No saved accounts. Run: claude switch add');
+    return;
+  }
+
+  if (accounts.length < 2) {
+    console.log('Only one account saved. Run: claude switch add');
+    return;
+  }
+
+  console.log('Accounts:\n');
+  accounts.forEach((email, i) => {
+    const marker = email === currentEmail ? ' (active)' : '';
+    console.log(`  ${i + 1}) ${email}${marker}`);
+  });
+
+  const choice = await ask(`\nSwitch to [1-${accounts.length}]: `);
+  const index = parseInt(choice, 10);
+
+  if (isNaN(index) || index < 1 || index > accounts.length) {
+    console.log('Invalid choice.');
+    process.exit(1);
+  }
+
+  console.log(switchTo(accounts[index - 1], claudeJsonPath, accountsDirPath));
+}
+
+export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string): Promise<void> {
+  const currentEmail = getCurrent(claudeJsonPath);
+  const expectedEmail = await ask('Email to add (press Enter to skip): ');
+
+  if (currentEmail) {
+    save(currentEmail, claudeJsonPath, accountsDirPath);
+  }
+
+  console.log('\nLog in with the new account in your browser.\n');
+
+  while (true) {
+    spawnSync(claudeBin, ['auth', 'login'], { stdio: 'inherit' });
+
+    const newEmail = getCurrent(claudeJsonPath);
+    if (!newEmail) {
+      console.log('Login failed or cancelled.');
+      if (currentEmail) {
+        load(currentEmail, claudeJsonPath, accountsDirPath);
+      }
+      process.exit(1);
+    }
+
+    console.log(`\nAuthenticated: ${newEmail}`);
+    save(newEmail, claudeJsonPath, accountsDirPath);
+    console.log(`Saved: ${newEmail}`);
+
+    if (!expectedEmail || newEmail === expectedEmail) break;
+
+    console.log(`\n(expected ${expectedEmail})`);
+    const retry = await ask(`Retry login for ${expectedEmail}? [y/N]: `);
+    if (retry.toLowerCase() !== 'y') break;
+
+    console.log('\nLog in with the new account in your browser.\n');
+  }
 }
