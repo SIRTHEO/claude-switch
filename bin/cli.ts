@@ -3,9 +3,10 @@
 
 import fs from 'node:fs';
 import { resolve } from '../src/resolver.js';
-import { getCurrent, save, list as listAccounts, remove as removeAccount } from '../src/accounts.js';
-import { fuzzyMatch, switchTo, switchInteractive, addAccount } from '../src/switcher.js';
-import { run as proxyRun } from '../src/proxy.js';
+import { getCurrent, save, load, list as listAccounts, remove as removeAccount } from '../src/accounts.js';
+import { fuzzyMatch, switchTo, switchInteractive, addAccount, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switcher.js';
+import { run as proxyRun, buildSpawnArgs } from '../src/proxy.js';
+import { spawnSync } from 'node:child_process';
 import { claudeJsonPath, accountsDir } from '../src/paths.js';
 import { generateBash, generateZsh, generateFish, generatePowerShell } from '../src/completions.js';
 import { VERSION } from '../src/version.js';
@@ -26,9 +27,14 @@ export type Command =
   | { action: 'passthrough'; args: string[] }
   | { action: 'alias-set'; name: string; email: string }
   | { action: 'alias-list' }
-  | { action: 'alias-remove'; name: string | undefined };
+  | { action: 'alias-remove'; name: string | undefined }
+  | { action: 'temporary-switch'; target: string | undefined; args: string[] };
 
 export function parseCommand(args: string[]): Command {
+  if (args[0] === '--as') {
+    return { action: 'temporary-switch', target: args[1], args: args.slice(2) };
+  }
+
   if (args[0] !== 'switch') {
     return { action: 'passthrough', args };
   }
@@ -254,7 +260,56 @@ async function main(): Promise<void> {
       showHelp();
       break;
 
+    case 'temporary-switch': {
+      if (!cmd.target) {
+        throw new ExitError('Usage: claude --as <account> [args...]');
+      }
+
+      const claudeBin = findClaude();
+      const resolved = resolveAlias(cmd.target, aDir);
+      const accounts = listAccounts(aDir);
+      const matches = fuzzyMatch(resolved, accounts);
+
+      if (matches.length === 0) {
+        throw new ExitError(`No account matching "${cmd.target}". Run: claude switch list`);
+      }
+      if (matches.length > 1) {
+        throw new ExitError(`Multiple matches for "${cmd.target}":\n${matches.map(m => `  ${m}`).join('\n')}\nBe more specific.`);
+      }
+
+      const targetEmail = matches[0];
+      const currentEmail = getCurrent(cJson);
+
+      if (targetEmail === currentEmail) {
+        proxyRun(claudeBin, cmd.args);
+        break;
+      }
+
+      if (currentEmail) {
+        savePendingRestore(currentEmail, aDir);
+        save(currentEmail, cJson, aDir);
+      }
+
+      load(targetEmail, cJson, aDir);
+      console.log(`🔑 ${targetEmail} (temporary)\n`);
+
+      const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, cmd.args, process.platform);
+      const result = spawnSync(command, spawnArgs, options);
+
+      if (currentEmail) {
+        load(currentEmail, cJson, aDir);
+        clearPendingRestore(aDir);
+      }
+
+      process.exit(result.status ?? 1);
+    }
+
     case 'passthrough': {
+      const restored = checkPendingRestore(cJson, aDir);
+      if (restored) {
+        console.log(`Restored account: ${restored} (from interrupted --as)\n`);
+      }
+
       const claudeBin = findClaude();
       const email = getCurrent(cJson);
 
