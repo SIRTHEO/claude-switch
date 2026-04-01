@@ -2,13 +2,22 @@
 
 Instant multi-account switching for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — cross-platform.
 
-Claude Code doesn't support multiple accounts. This tool lets you save multiple accounts and switch between them **instantly** — no logout, no browser, no re-authentication.
+Claude Code doesn't support multiple accounts. This wrapper lets you save multiple accounts and switch between them **instantly** — no logout, no browser, no re-authentication.
+
+## Features
+
+- **Instant switch** — swap accounts in milliseconds, no browser needed
+- **Aliases** — `claude switch work` instead of typing full emails
+- **Fuzzy match** — `claude switch pers` finds `personal@gmail.com`
+- **Temporary switch** — `claude --as work "do something"` without changing active account
+- **Token health** — see if your token is valid, expired, or missing
+- **Shell completions** — tab completion for bash, zsh, fish, PowerShell
+- **Cross-platform** — macOS, Linux, Windows
+- **Auto-detect** — active account is saved automatically on first run
 
 ## How it works
 
-Claude Code determines the active account from the `oauthAccount` field in `~/.claude.json`. OAuth tokens are shared across accounts. Switching is just a JSON field swap — instant and offline.
-
-The **browser is only needed once per account**, during the initial setup (`claude switch add`). This is the standard Claude Code OAuth flow: browser opens, you log in, and authorize. After that, the account profile is saved locally and switching never touches the browser again.
+Claude Code stores the active account in `~/.claude.json`. Switching is just a JSON field swap — instant and offline. The browser is only needed once per account during initial setup.
 
 ## Installation
 
@@ -16,130 +25,67 @@ The **browser is only needed once per account**, during the initial setup (`clau
 npm install -g claude-switch
 ```
 
-Verify the installation:
+Verify:
 
 ```bash
-claude switch help
+claude switch --version
 ```
 
-## Migration from shell script
+> **Note:** The npm global bin directory must come before the real `claude` binary in your PATH. npm usually handles this automatically.
 
-Account files are fully compatible with the previous shell script version. To migrate:
+### Upgrading from the shell script
 
-1. Remove the old symlink created by `install.sh` (usually `~/bin/claude`)
-2. Run `npm install -g claude-switch`
+Your saved accounts in `~/.claude/accounts/` are fully compatible:
 
-Your saved accounts in `~/.claude/accounts/` are preserved and ready to use.
+```bash
+rm ~/bin/claude          # remove old symlink
+npm install -g claude-switch
+```
 
-## Setup
+## Quick start
 
-The browser is needed **only during this initial setup** — once per account.
+### 1. Your current account is saved automatically
 
-### Save your current account
+Just run `claude` — if you're already logged in, the active account is detected and saved:
 
-If you're already logged in to Claude Code, save it:
+```
+Detected account: work@company.com (saved automatically)
+
+🔑 work@company.com
+```
+
+### 2. Add another account
 
 ```bash
 claude switch add
 ```
 
-When prompted for an email, enter the email of your current account (or press Enter to skip). This saves the currently active account without requiring a new login.
-
-### Add more accounts
-
-Run `claude switch add` again and enter the email of the new account. This opens the browser for the OAuth flow. After authorization, the account is saved and you can switch to it instantly at any time.
-
-Repeat for as many accounts as you need.
-
-## Usage
-
-### Interactive menu
-
-```bash
-claude switch
-```
+This opens the browser for OAuth. After authorization, you're prompted for an alias:
 
 ```
-Accounts:
-
-  1) work@company.com (active)
-  2) personal@gmail.com
-
-Switch to [1-2]: 2
-Switched to personal@gmail.com
+Authenticated: personal@gmail.com
+Saved: personal@gmail.com
+Alias (press Enter to skip): personal
+Alias set: personal → personal@gmail.com
 ```
 
-### Fuzzy match by name or email
+### 3. Switch
 
 ```bash
 claude switch personal
 ```
 
-### List saved accounts
+Done. That's it.
+
+## Usage
+
+### Switch accounts
 
 ```bash
-claude switch list
-```
-
-```
-Saved accounts:
-
-  * work@company.com (active)
-    personal@gmail.com
-```
-
-### Check active account
-
-```bash
-claude switch status
-```
-
-### Remove an account
-
-```bash
-claude switch remove old@email.com
-```
-
-### Account aliases
-
-Set a short name for an account:
-
-```bash
-claude switch alias work work@company.com
-claude switch alias p personal@gmail.com
-```
-
-Then switch by alias:
-
-```bash
-claude switch work
-claude switch p
-```
-
-List and remove aliases:
-
-```bash
-claude switch alias --list
-claude switch alias --remove work
-```
-
-Aliases are also set during `claude switch add` when prompted.
-
-### Normal usage
-
-```bash
-claude
-```
-
-Shows the active account before starting:
-
-```
-🔑 work@company.com
-
-╭──────────────────────────────────────╮
-│ ✻ Welcome to Claude Code!            │
-│ ...                                  │
-╰──────────────────────────────────────╯
+claude switch              # interactive menu
+claude switch work         # by alias
+claude switch personal@gmail.com  # by email
+claude switch pers         # fuzzy match
 ```
 
 ### Temporary switch (`--as`)
@@ -151,42 +97,22 @@ claude --as personal "review this code"
 claude --as work
 ```
 
-The original account is automatically restored after the command finishes. If the process is interrupted, the account is restored on the next `claude` invocation.
+The original account is automatically restored when the command finishes. If the process is interrupted, the account is restored on the next `claude` invocation.
 
-## Shell completions
+### List accounts
 
-Enable tab completion for your shell:
-
-**Bash:**
 ```bash
-claude switch completions bash >> ~/.bashrc
+claude switch list
 ```
 
-**Zsh:**
-```bash
-claude switch completions zsh >> ~/.zshrc
+```
+Saved accounts:
+
+  * work@company.com (active) [work, w]
+    personal@gmail.com [personal]
 ```
 
-**Fish:**
-```bash
-claude switch completions fish > ~/.config/fish/completions/claude-switch.fish
-```
-
-**PowerShell:**
-```powershell
-claude switch completions powershell >> $PROFILE
-```
-
-## Good to know
-
-- **Already-open sessions are not affected.** Switching changes which account new sessions use. Sessions already running keep their original account.
-- **The browser is only needed once per account**, during `claude switch add`. After that, switching is instant and fully offline.
-- **No logout is ever performed.** Tokens stay valid. Switching is just a local config change.
-- **Cross-platform.** Works on macOS, Linux, and Windows.
-
-### Token health
-
-Check if your token is still valid:
+### Account status
 
 ```bash
 claude switch status
@@ -198,18 +124,57 @@ Active account: work@company.com
   Token: valid (expires in 3 days)
 ```
 
+### Aliases
+
+```bash
+claude switch alias work work@company.com    # set alias
+claude switch alias w work@company.com       # multiple aliases per account
+claude switch alias --list                   # list all
+claude switch alias --remove w               # remove
+```
+
+### Manage accounts
+
+```bash
+claude switch add                   # add new account (opens browser)
+claude switch remove old@email.com  # remove saved account
+```
+
+### Shell completions
+
+```bash
+# Bash
+claude switch --completions bash >> ~/.bashrc
+
+# Zsh
+claude switch --completions zsh >> ~/.zshrc
+
+# Fish
+claude switch --completions fish > ~/.config/fish/completions/claude.fish
+
+# PowerShell
+claude switch --completions powershell >> $PROFILE
+```
+
 ## VS Code
 
-claude-switch works with Claude Code in VS Code. The switch changes which account new sessions use:
+claude-switch works with Claude Code in VS Code:
 
 1. Switch in the integrated terminal: `claude switch work`
-2. Restart your Claude Code session in VS Code
+2. Restart your Claude Code session
 
 Already-open sessions keep their original account.
 
+## Good to know
+
+- **Sessions are not affected.** Switching changes which account new sessions use.
+- **Browser only once per account** — during `claude switch add`.
+- **No logout.** Tokens stay valid. Switching is just a local config change.
+- **Auto-save.** Active accounts are detected and saved automatically.
+
 ## Custom binary path
 
-If your `claude` binary is not in the default location:
+If the real `claude` binary can't be found automatically:
 
 ```bash
 export CLAUDE_SWITCH_BIN="/custom/path/to/claude"
@@ -218,13 +183,13 @@ export CLAUDE_SWITCH_BIN="/custom/path/to/claude"
 ## Requirements
 
 - Node.js >= 18
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
 
 ## Security
 
-- Account profiles are stored in `~/.claude/accounts/` with `600` permissions (owner-only)
-- No data is sent anywhere — everything stays local
-- No `logout` is performed — tokens are never invalidated
+- Account profiles stored in `~/.claude/accounts/` with `600` permissions (owner-only)
+- No data sent anywhere — everything stays local
+- No logout performed — tokens are never invalidated
 
 ## License
 
