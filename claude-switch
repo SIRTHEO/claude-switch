@@ -199,29 +199,64 @@ add_account() {
   local current_email
   current_email="$(get_current_email)"
 
+  # Chiedi email attesa (opzionale)
+  local expected_email=""
+  printf "Email da aggiungere (invio per saltare): "
+  read -r expected_email
+
   if [[ -n "$current_email" ]]; then
     save_account "$current_email"
-    echo "Saved current account: $current_email"
-    echo ""
   fi
 
-  echo "Log in with the new account in your browser."
+  echo ""
+  echo "Apri il browser e autorizza l'account."
   echo ""
   "$CLAUDE_BIN" auth login
 
   local new_email
   new_email="$(get_current_email)"
 
-  if [[ -n "$new_email" ]]; then
-    save_account "$new_email"
-    echo ""
-    echo "Added and saved: $new_email"
-  else
-    echo "Login failed or cancelled."
+  if [[ -z "$new_email" ]]; then
+    echo "Login fallito o annullato."
     if [[ -n "$current_email" ]]; then
       load_account "$current_email"
     fi
     return 1
+  fi
+
+  echo ""
+  save_and_report "$new_email" "$current_email"
+
+  # Se c'era un'email attesa e non corrisponde, offri retry
+  if [[ -n "$expected_email" && "$new_email" != "$expected_email" ]]; then
+    echo ""
+    echo "(diverso da $expected_email)"
+    echo ""
+    printf "Riprovare il login per $expected_email? [y/N]: "
+    read -r retry_choice
+
+    if [[ "$retry_choice" == "y" || "$retry_choice" == "Y" ]]; then
+      echo ""
+      echo "Apri il browser e autorizza l'account."
+      echo ""
+      "$CLAUDE_BIN" auth login
+
+      local retry_email
+      retry_email="$(get_current_email)"
+
+      if [[ -z "$retry_email" ]]; then
+        echo "Login fallito o annullato."
+        return 1
+      fi
+
+      echo ""
+      save_and_report "$retry_email" "$current_email"
+
+      if [[ "$retry_email" != "$expected_email" ]]; then
+        echo ""
+        echo "(diverso da $expected_email — nessun ulteriore retry)"
+      fi
+    fi
   fi
 }
 
