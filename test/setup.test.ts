@@ -175,13 +175,34 @@ describe('patchShellConfig', () => {
     const content = fs.readFileSync(profile, 'utf-8');
     assert.ok(content.includes('$env:PATH'));
   });
+
+  it('returns false and does not patch when npmBinDir contains unsafe characters', () => {
+    const zshrc = path.join(tmpDir, '.zshrc');
+    fs.writeFileSync(zshrc, '');
+    const result = patchShellConfig(zshrc, '/path/with"quote');
+    assert.equal(result, false);
+    const content = fs.readFileSync(zshrc, 'utf-8');
+    assert.ok(!content.includes('claude-switch'));
+  });
 });
 
 describe('findRealClaude', () => {
   let origPath: string | undefined;
+  let origClaudeSwitchBin: string | undefined;
 
-  beforeEach(() => { origPath = process.env.PATH; });
-  afterEach(() => { process.env.PATH = origPath; });
+  beforeEach(() => {
+    origPath = process.env.PATH;
+    origClaudeSwitchBin = process.env.CLAUDE_SWITCH_BIN;
+    delete process.env.CLAUDE_SWITCH_BIN;
+  });
+  afterEach(() => {
+    process.env.PATH = origPath;
+    if (origClaudeSwitchBin !== undefined) {
+      process.env.CLAUDE_SWITCH_BIN = origClaudeSwitchBin;
+    } else {
+      delete process.env.CLAUDE_SWITCH_BIN;
+    }
+  });
 
   it('returns null when no claude binary exists in PATH', () => {
     process.env.PATH = '';

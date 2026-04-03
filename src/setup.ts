@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { resolve } from './resolver.js';
-import { claudeBinFile, accountsDir } from './paths.js';
+import { claudeBinFile } from './paths.js';
 
 const BLOCK_START = '# claude-switch';
 const BLOCK_END = '# end claude-switch';
@@ -30,9 +30,9 @@ export function saveClaudeBin(binPath: string, binFile?: string): void {
 }
 
 export function findRealClaude(selfPath: string): string | null {
-  const fromPath = resolve({ envBin: '', selfPath, pathEnv: process.env.PATH || '' });
+  const fromPath = resolve({ envBin: process.env.CLAUDE_SWITCH_BIN || '', selfPath, pathEnv: process.env.PATH || '' });
   if (fromPath) return fromPath;
-  return resolve({ envBin: '', selfPath, pathEnv: undefined });
+  return resolve({ envBin: process.env.CLAUDE_SWITCH_BIN || '', selfPath, pathEnv: undefined });
 }
 
 export function getNpmBinDir(): string | null {
@@ -64,6 +64,9 @@ export function detectShellConfigs(home?: string): string[] {
 }
 
 export function patchShellConfig(filePath: string, npmBinDir: string): boolean {
+  if (/["\n`$]/.test(npmBinDir)) {
+    return false;
+  }
   try {
     const content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : '';
     if (content.includes(BLOCK_START)) return false;
