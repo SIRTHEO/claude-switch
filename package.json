@@ -1,6 +1,6 @@
 {
   "name": "@sirtheo/claude-switch",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Instant multi-account switching for Claude Code — cross-platform",
   "type": "module",
   "bin": {
@@ -13,7 +13,8 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc",
     "test": "npm run build && node --test dist/test/**/*.test.js",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm test",
+    "postinstall": "node postinstall.js"
   },
   "keywords": [
     "claude",
@@ -35,7 +36,8 @@
     "dist/bin/",
     "dist/src/",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "postinstall.js"
   ],
   "devDependencies": {
     "@types/node": "^25.5.0",
