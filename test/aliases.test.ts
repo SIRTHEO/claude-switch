@@ -42,7 +42,9 @@ describe('aliases', () => {
     setAlias('work', 'work@company.com', accDir);
     setAlias('personal', 'me@gmail.com', accDir);
     const aliases = listAliases(accDir);
-    assert.deepEqual(aliases, { work: 'work@company.com', personal: 'me@gmail.com' });
+    assert.equal(aliases['work'], 'work@company.com');
+    assert.equal(aliases['personal'], 'me@gmail.com');
+    assert.equal(Object.keys(aliases).length, 2);
   });
 
   it('listAliases returns empty object when no aliases', () => {
@@ -80,5 +82,22 @@ describe('aliases', () => {
     setAlias('work', 'work@company.com', accDir);
     const stat = fs.statSync(path.join(accDir, 'aliases.json'));
     assert.equal(stat.mode & 0o777, 0o600);
+  });
+
+  it('does not leave .tmp file after write', () => {
+    setAlias('work', 'work@company.com', accDir);
+    assert.ok(!fs.existsSync(path.join(accDir, 'aliases.json.tmp')));
+  });
+
+  it('ignores non-string values in corrupted aliases.json', () => {
+    fs.writeFileSync(path.join(accDir, 'aliases.json'), JSON.stringify({ work: { nested: 'obj' }, valid: 'user@co.com' }));
+    const aliases = listAliases(accDir);
+    assert.equal(aliases['work'], undefined);
+    assert.equal(aliases['valid'], 'user@co.com');
+  });
+
+  it('returns empty object for malformed aliases.json', () => {
+    fs.writeFileSync(path.join(accDir, 'aliases.json'), '["not","an","object"]');
+    assert.deepEqual(listAliases(accDir), {});
   });
 });

@@ -2,6 +2,7 @@
 // claude-switch — Claude Code multi-account wrapper
 
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { resolve } from '../src/resolver.js';
 import { getCurrent, save, load, list as listAccounts, remove as removeAccount } from '../src/accounts.js';
 import { fuzzyMatch, switchTo, switchInteractive, addAccount, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switcher.js';
@@ -302,11 +303,16 @@ async function main(): Promise<void> {
       const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, cmd.args, process.platform);
       const result = spawnSync(command, spawnArgs, options);
 
+      // Always restore original account before exiting
       if (currentEmail) {
         load(currentEmail, cJson, aDir);
         clearPendingRestore(aDir);
       }
 
+      if (result.error) {
+        console.error(`Error: could not run claude: ${result.error.message}`);
+        process.exit(1);
+      }
       process.exit(result.status ?? 1);
     }
 
@@ -336,7 +342,7 @@ async function main(): Promise<void> {
   }
 }
 
-const selfUrl = new URL(import.meta.url).pathname;
+const selfUrl = fileURLToPath(import.meta.url);
 const invoked = process.argv[1];
 if (invoked) {
   try {

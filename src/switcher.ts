@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getCurrent, save, load, list } from './accounts.js';
 import { setAlias } from './aliases.js';
+import { buildSpawnArgs } from './proxy.js';
 import { ExitError } from './errors.js';
 
 function ask(question: string): Promise<string> {
@@ -77,6 +78,9 @@ export function savePendingRestore(email: string, accountsDirPath: string): void
   const filePath = path.join(accountsDirPath, '.pending-restore');
   fs.mkdirSync(accountsDirPath, { recursive: true });
   fs.writeFileSync(filePath, email);
+  if (process.platform !== 'win32') {
+    fs.chmodSync(filePath, 0o600);
+  }
 }
 
 export function checkPendingRestore(claudeJsonPath: string, accountsDirPath: string): string | null {
@@ -110,7 +114,8 @@ export async function addAccount(claudeBin: string, claudeJsonPath: string, acco
   console.log('\nLog in with the new account in your browser.\n');
 
   while (true) {
-    spawnSync(claudeBin, ['auth', 'login'], { stdio: 'inherit' });
+    const { command: loginCmd, args: loginArgs, options: loginOpts } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform);
+    spawnSync(loginCmd, loginArgs, loginOpts);
 
     const newEmail = getCurrent(claudeJsonPath);
     if (!newEmail) {

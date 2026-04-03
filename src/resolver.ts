@@ -28,14 +28,16 @@ function getKnownPaths(): string[] {
 }
 
 function isClaudeSwitchWrapper(filePath: string): boolean {
+  let fd: number | undefined;
   try {
-    const fd = fs.openSync(filePath, 'r');
+    fd = fs.openSync(filePath, 'r');
     const buf = Buffer.alloc(512);
     fs.readSync(fd, buf, 0, 512, 0);
-    fs.closeSync(fd);
     return buf.toString('utf-8').includes('claude-switch');
   } catch {
     return false;
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* ignore */ }
   }
 }
 

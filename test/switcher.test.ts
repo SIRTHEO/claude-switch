@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fuzzyMatch, switchTo } from '../src/switcher.js';
+import { fuzzyMatch, switchTo, savePendingRestore } from '../src/switcher.js';
 
 describe('fuzzyMatch', () => {
   const accounts = ['work@company.com', 'personal@gmail.com', 'test@company.com'];
@@ -81,5 +81,26 @@ describe('switchTo', () => {
 
     const msg = switchTo('a@x.com', claudeJson, accDir);
     assert.match(msg, /already on/i);
+  });
+});
+
+describe('savePendingRestore', () => {
+  let tmpDir: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-switch-'));
+    accDir = path.join(tmpDir, 'accounts');
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('sets 0o600 permissions on .pending-restore (unix)', () => {
+    if (process.platform === 'win32') return;
+    savePendingRestore('a@x.com', accDir);
+    const stat = fs.statSync(path.join(accDir, '.pending-restore'));
+    assert.equal(stat.mode & 0o777, 0o600);
   });
 });

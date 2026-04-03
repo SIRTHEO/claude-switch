@@ -11,6 +11,7 @@ describe('completions', () => {
     assert.ok(output.includes('list'));
     assert.ok(output.includes('remove'));
     assert.ok(output.includes('status'));
+    assert.ok(output.includes('alias'));
   });
 
   it('zsh completion contains subcommands', () => {
