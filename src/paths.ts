@@ -9,3 +9,7 @@ export function claudeJsonPath(): string {
 export function accountsDir(): string {
   return path.join(os.homedir(), '.claude', 'accounts');
 }
+
+export function claudeBinFile(): string {
+  return path.join(os.homedir(), '.claude', 'accounts', '.claude-bin');
+}
