@@ -105,4 +105,8 @@ describe('parseCommand', () => {
     assert.deepEqual(parseCommand(['--as']),
       { action: 'temporary-switch', target: undefined, args: [] });
   });
+
+  it('parses "switch setup"', () => {
+    assert.deepEqual(parseCommand(['switch', 'setup']), { action: 'setup' });
+  });
 });

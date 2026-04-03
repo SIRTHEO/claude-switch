@@ -14,6 +14,7 @@ import { VERSION } from '../src/version.js';
 import { ExitError } from '../src/errors.js';
 import { setAlias, listAliases, removeAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
 import { getTokenHealth } from '../src/token.js';
+import { getSavedClaudeBin, runSetup } from '../src/setup.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -29,7 +30,8 @@ export type Command =
   | { action: 'alias-set'; name: string; email: string }
   | { action: 'alias-list' }
   | { action: 'alias-remove'; name: string | undefined }
-  | { action: 'temporary-switch'; target: string | undefined; args: string[] };
+  | { action: 'temporary-switch'; target: string | undefined; args: string[] }
+  | { action: 'setup' };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -56,6 +58,7 @@ export function parseCommand(args: string[]): Command {
     case '--version':
     case '-v': return { action: 'version' };
     case '--completions': return { action: 'completions', shell: args[2] };
+    case 'setup': return { action: 'setup' };
     case 'alias': {
       const sub2 = args[2];
       if (!sub2 || sub2 === '--list') return { action: 'alias-list' };
@@ -67,14 +70,17 @@ export function parseCommand(args: string[]): Command {
 }
 
 function findClaude(): string {
-  const selfPath = fs.realpathSync(new URL(import.meta.url).pathname);
+  const saved = getSavedClaudeBin();
+  if (saved) return saved;
+
+  const selfPath = fileURLToPath(import.meta.url);
   const bin = resolve({
     envBin: process.env.CLAUDE_SWITCH_BIN || '',
     selfPath,
     pathEnv: process.env.PATH || '',
   });
   if (!bin) {
-    console.error('Error: could not find the real claude binary in PATH.');
+    console.error('Error: could not find the real claude binary. Run: claude switch setup');
     process.exit(1);
   }
   return bin;
@@ -94,6 +100,7 @@ Usage:
   claude switch alias --list       List aliases
   claude switch alias --remove <n> Remove an alias
   claude switch help               Show this help
+  claude switch setup              Re-run first-time setup
   claude --as <alias|email> ...    Use account temporarily
   claude switch --completions <shell>  Generate shell completions
 
@@ -315,6 +322,10 @@ async function main(): Promise<void> {
       }
       process.exit(result.status ?? 1);
     }
+
+    case 'setup':
+      await runSetup(fileURLToPath(import.meta.url));
+      break;
 
     case 'passthrough': {
       const restored = checkPendingRestore(cJson, aDir);
