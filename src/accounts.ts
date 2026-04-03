@@ -1,6 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+const UNSAFE_FILENAME_CHARS = /[/\\:*?"<>|]/;
+
+function resolvedAccountFile(email: string, accountsDirPath: string): string {
+  const base = path.resolve(accountsDirPath);
+  const resolved = path.resolve(accountsDirPath, `${email}.json`);
+  if (!resolved.startsWith(base + path.sep)) {
+    throw new Error(`Email resolves outside accounts directory: ${email}`);
+  }
+  return resolved;
+}
+
 export function getCurrent(claudeJsonPath: string): string {
   try {
     const data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
@@ -11,8 +22,7 @@ export function getCurrent(claudeJsonPath: string): string {
 }
 
 export function save(email: string, claudeJsonPath: string, accountsDirPath: string): void {
-  const UNSAFE_FILENAME_CHARS = /[/\\:*?"<>|]/;
-  if (UNSAFE_FILENAME_CHARS.test(email)) {
+  if (!email || UNSAFE_FILENAME_CHARS.test(email)) {
     throw new Error(`Email contains characters unsafe for filenames: ${email}`);
   }
 
@@ -27,12 +37,14 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
     }
     throw e;
   }
-  const accountFile = path.join(accountsDirPath, `${email}.json`);
 
-  fs.writeFileSync(accountFile, JSON.stringify(data.oauthAccount || {}, null, 2));
+  const accountFile = resolvedAccountFile(email, accountsDirPath);
+  const tmp = accountFile + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data.oauthAccount || {}, null, 2));
   if (process.platform !== 'win32') {
-    fs.chmodSync(accountFile, 0o600);
+    fs.chmodSync(tmp, 0o600);
   }
+  fs.renameSync(tmp, accountFile);
 }
 
 export function list(accountsDirPath: string): string[] {
@@ -47,18 +59,27 @@ export function list(accountsDirPath: string): string[] {
 }
 
 export function remove(email: string, accountsDirPath: string): void {
-  const accountFile = path.join(accountsDirPath, `${email}.json`);
-  if (!fs.existsSync(accountFile)) {
-    throw new Error(`No saved account for ${email}`);
+  const accountFile = resolvedAccountFile(email, accountsDirPath);
+  try {
+    fs.unlinkSync(accountFile);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(`No saved account for ${email}`);
+    }
+    throw e;
   }
-  fs.unlinkSync(accountFile);
 }
 
 export function load(email: string, claudeJsonPath: string, accountsDirPath: string): void {
-  const accountFile = path.join(accountsDirPath, `${email}.json`);
+  const accountFile = resolvedAccountFile(email, accountsDirPath);
 
-  if (!fs.existsSync(accountFile)) {
+  // Reject symlinks to prevent symlink-based file read attacks
+  const fileStat = fs.lstatSync(accountFile, { throwIfNoEntry: false });
+  if (!fileStat) {
     throw new Error(`No saved account for ${email}`);
+  }
+  if (fileStat.isSymbolicLink()) {
+    throw new Error(`Account file for ${email} is a symbolic link and cannot be trusted`);
   }
 
   let accountData;
@@ -83,7 +104,7 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   data.oauthAccount = accountData;
 
   const tmp = claudeJsonPath + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 0));
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
   fs.renameSync(tmp, claudeJsonPath);
   if (process.platform !== 'win32') {
     fs.chmodSync(claudeJsonPath, 0o600);

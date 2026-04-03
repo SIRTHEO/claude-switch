@@ -1,6 +1,6 @@
 // src/completions.ts
 
-const SUBCOMMANDS = ['add', 'list', 'ls', 'remove', 'rm', 'status', 'help'];
+const SUBCOMMANDS = ['add', 'list', 'ls', 'remove', 'rm', 'status', 'alias', 'help'];
 
 export function generateBash(): string {
   return `_claude_switch() {
@@ -13,7 +13,12 @@ export function generateBash(): string {
       COMPREPLY=($(compgen -W "${SUBCOMMANDS.join(' ')}" -- "$cur"))
       local accounts_dir="$HOME/.claude/accounts"
       if [[ -d "$accounts_dir" ]]; then
-        local emails=$(ls "$accounts_dir"/*.json 2>/dev/null | xargs -I{} basename {} .json)
+        local emails=""
+        for f in "$accounts_dir"/*.json; do
+          [[ -f "$f" ]] || continue
+          local name="\${f##*/}"; name="\${name%.json}"
+          emails="$emails $name"
+        done
         COMPREPLY+=($(compgen -W "$emails" -- "$cur"))
       fi
     fi
@@ -31,7 +36,9 @@ _claude_switch() {
   if (( CURRENT == 3 )) && [[ "\${words[2]}" == "switch" ]]; then
     local accounts_dir="$HOME/.claude/accounts"
     if [[ -d "$accounts_dir" ]]; then
-      accounts=(\${(f)"$(ls "$accounts_dir"/*.json 2>/dev/null | xargs -I{} basename {} .json)"})
+      for f in "$accounts_dir"/*.json; do
+        [[ -f "$f" ]] && accounts+=("\${\${f##*/}%.json}")
+      done
     fi
     _describe 'subcommand' subcommands
     _describe 'account' accounts
@@ -42,7 +49,7 @@ compdef _claude_switch claude`;
 
 export function generateFish(): string {
   return `complete -c claude -n '__fish_seen_subcommand_from switch' -a '${SUBCOMMANDS.join(' ')}' -d 'switch subcommand'
-complete -c claude -n '__fish_seen_subcommand_from switch' -a '(ls ~/.claude/accounts/*.json 2>/dev/null | xargs -I{} basename {} .json)' -d 'account'`;
+complete -c claude -n '__fish_seen_subcommand_from switch' -a '(for f in ~/.claude/accounts/*.json; basename "$f" .json; end)' -d 'account'`;
 }
 
 export function generatePowerShell(): string {

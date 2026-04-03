@@ -7,7 +7,14 @@ function aliasesPath(accountsDirPath: string): string {
 
 function readAliases(accountsDirPath: string): Record<string, string> {
   try {
-    return JSON.parse(fs.readFileSync(aliasesPath(accountsDirPath), 'utf-8'));
+    const raw: unknown = JSON.parse(fs.readFileSync(aliasesPath(accountsDirPath), 'utf-8'));
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+    // Use null-prototype object to prevent prototype pollution
+    const result: Record<string, string> = Object.create(null) as Record<string, string>;
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (k && typeof v === 'string' && v) result[k] = v;
+    }
+    return result;
   } catch {
     return {};
   }
@@ -16,10 +23,12 @@ function readAliases(accountsDirPath: string): Record<string, string> {
 function writeAliases(accountsDirPath: string, aliases: Record<string, string>): void {
   const filePath = aliasesPath(accountsDirPath);
   fs.mkdirSync(accountsDirPath, { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(aliases, null, 2));
+  const tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(aliases, null, 2));
   if (process.platform !== 'win32') {
-    fs.chmodSync(filePath, 0o600);
+    fs.chmodSync(tmp, 0o600);
   }
+  fs.renameSync(tmp, filePath);
 }
 
 export function getAlias(name: string, accountsDirPath: string): string | null {

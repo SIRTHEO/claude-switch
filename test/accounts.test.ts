@@ -108,6 +108,15 @@ describe('load', () => {
     fs.writeFileSync(claudeJson, JSON.stringify({}));
     assert.throws(() => load('nope@x.com', claudeJson, accDir), /no saved account/i);
   });
+
+  it('rejects symlinked account file (unix)', () => {
+    if (process.platform === 'win32') return;
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: {} }));
+    const target = path.join(tmpDir, 'secret.txt');
+    fs.writeFileSync(target, '{"emailAddress":"attacker@evil.com"}');
+    fs.symlinkSync(target, path.join(accDir, 'victim@x.com.json'));
+    assert.throws(() => load('victim@x.com', claudeJson, accDir), /symbolic link/i);
+  });
 });
 
 describe('list', () => {
@@ -158,6 +167,14 @@ describe('save - validation', () => {
 
   it('rejects email with unsafe filesystem characters', () => {
     assert.throws(() => save('user/admin@x.com', claudeJson, accDir), /unsafe for filenames/i);
+  });
+
+  it('rejects empty email', () => {
+    assert.throws(() => save('', claudeJson, accDir), /unsafe for filenames/i);
+  });
+
+  it('rejects email with path traversal', () => {
+    assert.throws(() => save('../../.bashrc', claudeJson, accDir), /unsafe for filenames|outside accounts/i);
   });
 
   it('accepts email with + character', () => {
@@ -222,5 +239,9 @@ describe('remove', () => {
 
   it('throws when account does not exist', () => {
     assert.throws(() => remove('nope@x.com', accDir), /no saved account/i);
+  });
+
+  it('rejects path traversal in remove', () => {
+    assert.throws(() => remove('../../.bashrc', accDir), /unsafe for filenames|outside accounts/i);
   });
 });
