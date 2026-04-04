@@ -1,7 +1,7 @@
 {
   "name": "@sirtheo/claude-switch",
   "version": "2.1.2",
-  "description": "Instant multi-account switching for Claude Code — cross-platform",
+  "description": "Switch between multiple Claude Code accounts instantly from the terminal — cross-platform CLI",
   "type": "module",
   "bin": {
     "claude": "dist/bin/cli.js"
@@ -21,14 +21,25 @@
     "claude-code",
     "multi-account",
     "switch",
-    "account-switching"
+    "account-switching",
+    "anthropic",
+    "cli",
+    "credentials",
+    "developer-tools"
   ],
-  "author": "SIRTHEO",
+  "author": {
+    "name": "SIRTHEO",
+    "url": "https://github.com/SIRTHEO"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SIRTHEO/claude-switch.git"
+    "url": "https://github.com/SIRTHEO/claude-switch"
   },
+  "bugs": {
+    "url": "https://github.com/SIRTHEO/claude-switch/issues"
+  },
+  "homepage": "https://github.com/SIRTHEO/claude-switch#readme",
   "engines": {
     "node": ">=18.0.0"
   },

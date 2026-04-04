@@ -1,5 +1,11 @@
 # claude-switch
 
+[![npm version](https://img.shields.io/npm/v/@sirtheo/claude-switch)](https://www.npmjs.com/package/@sirtheo/claude-switch)
+[![npm downloads](https://img.shields.io/npm/dm/@sirtheo/claude-switch)](https://www.npmjs.com/package/@sirtheo/claude-switch)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node.js CI](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml)
+[![Node.js](https://img.shields.io/node/v/@sirtheo/claude-switch)](package.json)
+
 Instant multi-account switching for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) - cross-platform.
 
 Claude Code does not support multiple accounts. This wrapper lets you save
@@ -25,24 +31,31 @@ during initial setup.
 
 ## Installation
 
+Install globally with npm (requires Node.js >= 18):
+
 ```bash
 npm install -g @sirtheo/claude-switch
 ```
 
-Open a new terminal window. Done.
+Then open a **new terminal window** — this is required so the shell picks up the new `claude` wrapper.
 
-Verify:
+Verify the installation:
 
 ```bash
 claude switch --version
 ```
 
+> **Note:** claude-switch replaces the `claude` command with a thin wrapper. Your existing Claude Code installation is not modified — the original binary is located and called automatically.
+
 ## Quick start
 
-### 1. Your current account is saved automatically
+### 1. Install and open a new terminal
 
-Just run `claude` - if you are already logged in, the active account is detected
-and saved:
+After `npm install -g @sirtheo/claude-switch`, close and reopen your terminal. The wrapper intercepts the `claude` command going forward.
+
+### 2. Your current account is saved automatically
+
+Just run `claude` as usual. If you are already logged in, the active account is detected and saved:
 
 ```
 Detected account: work@company.com (saved automatically)
@@ -50,7 +63,9 @@ Detected account: work@company.com (saved automatically)
 * work@company.com
 ```
 
-### 2. Add another account
+No extra steps needed — your existing session becomes the first saved account.
+
+### 3. Add another account
 
 ```bash
 claude switch add
@@ -65,13 +80,13 @@ Alias (press Enter to skip): personal
 Alias set: personal -> personal@gmail.com
 ```
 
-### 3. Switch
+### 4. Switch between accounts
 
 ```bash
 claude switch personal
 ```
 
-Done.
+Done. The switch is instant — no browser, no logout, no re-authentication.
 
 ## Usage
 
@@ -201,6 +216,18 @@ claude switch setup
 - Account profiles stored in `~/.claude/accounts/` with `600` permissions (owner-only)
 - No data sent anywhere - everything stays local
 - No logout performed - tokens are never invalidated
+
+## Contributing
+
+Found a bug or have a feature request? Please [open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) on GitHub.
+
+When reporting a bug, include:
+- Your OS and Node.js version (`node --version`)
+- The output of `claude switch --version`
+- Steps to reproduce the problem
+- What you expected vs what happened
+
+Pull requests are welcome. For significant changes, open an issue first to discuss the approach.
 
 ## License
 
