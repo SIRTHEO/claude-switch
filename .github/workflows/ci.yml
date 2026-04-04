@@ -30,5 +30,13 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Test
-        run: npm test
+      - name: Test (Unix)
+        if: runner.os != 'Windows'
+        run: node --test dist/test/*.test.js
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path dist/test -Filter "*.test.js" | ForEach-Object { $_.FullName }
+          node --test @files
