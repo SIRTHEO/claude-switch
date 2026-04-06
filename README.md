@@ -10,6 +10,27 @@ Switch between multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-
 
 ---
 
+## What's new in v2.2.0
+
+**Important fix — accounts were using the wrong API tokens on macOS.**
+
+Claude Code stores OAuth tokens in the macOS Keychain, not in `~/.claude.json`. Previous versions of claude-switch only swapped the account metadata in that file, leaving the Keychain untouched. The result: after switching, the Claude CLI showed the right account name but silently made API calls using a different account's tokens.
+
+v2.2.0 fixes this by saving and restoring Keychain tokens alongside account metadata.
+
+**What changed:**
+- Account switching now correctly swaps the tokens in the macOS Keychain
+- `claude switch status` shows real token expiry (previously always showed "missing")
+- `claude --as` restores the original account correctly even on Ctrl+C
+- New command: `claude switch update` — check for updates and install with one keystroke
+- When a new version is available, claude-switch prompts you to update inline
+
+**If you are upgrading from an older version:**
+1. Run `claude switch status` — this automatically updates your active account file
+2. Run `claude switch add` for each of your other accounts — this re-authenticates and captures their tokens
+
+---
+
 ## The problem it solves
 
 Claude Code only supports one account at a time. If you use it for work _and_ personal projects, switching means logging out, opening a browser, and logging back in — every time.
@@ -20,9 +41,9 @@ Claude Code only supports one account at a time. If you use it for work _and_ pe
 
 ## How it works
 
-Claude Code stores the active account in a file called `~/.claude.json`. Switching accounts is as simple as swapping a few values in that file. claude-switch does that swap for you — instantly, with no network requests.
+Claude Code authenticates via OAuth. The active account identity is stored in `~/.claude.json`, and the actual tokens (access token, refresh token) are stored in the macOS Keychain. Switching accounts means updating both.
 
-The browser is only needed **once per account**, when you first add it.
+claude-switch handles this for you — instantly, with no network requests. The browser is only needed **once per account**, when you first add it.
 
 ---
 
@@ -59,7 +80,7 @@ Close your current terminal window and open a fresh one. This is required so you
 claude switch --version
 ```
 
-You should see something like `claude-switch 2.1.3`. If you do, you're all set.
+You should see something like `claude-switch 2.2.0`. If you do, you're all set.
 
 > **What changed?** claude-switch places a thin wrapper in front of the `claude` command. Your original Claude Code installation is untouched — the wrapper just intercepts the command, shows which account is active, and then calls the real binary.
 
@@ -178,7 +199,24 @@ claude --as personal "review this code"
 
 This temporarily switches to `personal`, runs the command, then automatically restores your original account when done. The active account never changes permanently.
 
-If the command is interrupted (e.g. Ctrl+C), the original account is restored on the next `claude` invocation.
+If the command is interrupted (Ctrl+C or a crash), the original account is restored automatically on the next `claude` invocation.
+
+### Update claude-switch
+
+```bash
+claude switch update
+```
+
+Checks the npm registry for a newer version and offers to install it:
+
+```
+Current version: 2.2.0
+Checking for updates...
+New version available: 2.2.0 → 2.3.0
+Update now? [y/N]
+```
+
+You can also let claude-switch notify you automatically — if a new version is available, it will prompt you the next time you run any `claude switch` command.
 
 ### Setup
 
@@ -244,6 +282,10 @@ export CLAUDE_SWITCH_BIN="/path/to/the/real/claude"
 
 You can find the path with `which claude` (before installing claude-switch) or by looking in your npm global bin directory.
 
+### After upgrading to v2.2.0, a second account shows a token warning
+
+Run `claude switch add` for that account to re-authenticate and capture its tokens. You only need to do this once.
+
 ### Something else is wrong
 
 Check your setup:
@@ -272,7 +314,8 @@ If you are still stuck, [open an issue](https://github.com/SIRTHEO/claude-switch
 
 ## Security
 
-- Account credentials are stored in `~/.claude/accounts/` with permissions `600` (only readable by you)
+- Account credentials (including OAuth tokens) are stored in `~/.claude/accounts/` with permissions `600` (only readable by you)
+- On macOS, tokens are also saved in and restored from the login Keychain
 - No data is sent anywhere — everything stays on your machine
 - No install scripts run automatically — setup requires you to explicitly run `claude switch setup`
 
