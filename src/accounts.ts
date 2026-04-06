@@ -59,7 +59,7 @@ export function list(accountsDirPath: string): string[] {
   try {
     const files = fs.readdirSync(accountsDirPath);
     return files
-      .filter(f => f.endsWith('.json'))
+      .filter(f => f.endsWith('.json') && !f.startsWith('.') && f !== 'aliases.json')
       .map(f => f.replace(/\.json$/, ''));
   } catch {
     return [];
