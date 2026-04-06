@@ -15,6 +15,7 @@ import { ExitError } from '../src/errors.js';
 import { setAlias, listAliases, removeAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
 import { getTokenHealth } from '../src/token.js';
 import { getSavedClaudeBin, runSetup } from '../src/setup.js';
+import { checkForUpdate } from '../src/update-check.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -112,6 +113,14 @@ async function main(): Promise<void> {
   const cmd = parseCommand(args);
   const cJson = claudeJsonPath();
   const aDir = accountsDir();
+
+  // Show update notification if a newer version was found in the background cache.
+  // Skip for passthrough/temporary-switch — those proxy to the real claude binary
+  // and we don't want to pollute their output.
+  if (cmd.action !== 'passthrough' && cmd.action !== 'temporary-switch') {
+    const notice = checkForUpdate(VERSION);
+    if (notice) process.stderr.write(notice);
+  }
 
   // Recover from a previously interrupted --as session before any switch operation.
   // This must run at the top of the dispatch so that switch-to and switch-interactive
