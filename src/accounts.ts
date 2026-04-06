@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { readKeychain, writeKeychain, type KeychainData } from './keychain.js';
 
 const UNSAFE_FILENAME_CHARS = /[/\\:*?"<>|]/;
 
@@ -38,9 +39,16 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
     throw e;
   }
 
+  // Include Keychain credentials so they can be restored when switching back.
+  const keychainData = readKeychain();
+  const accountPayload: Record<string, unknown> = { ...(data.oauthAccount || {}) };
+  if (keychainData) {
+    accountPayload._keychain = keychainData;
+  }
+
   const accountFile = resolvedAccountFile(email, accountsDirPath);
   const tmp = accountFile + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data.oauthAccount || {}, null, 2));
+  fs.writeFileSync(tmp, JSON.stringify(accountPayload, null, 2));
   if (process.platform !== 'win32') {
     fs.chmodSync(tmp, 0o600);
   }
@@ -70,7 +78,7 @@ export function remove(email: string, accountsDirPath: string): void {
   }
 }
 
-export function load(email: string, claudeJsonPath: string, accountsDirPath: string): void {
+export function load(email: string, claudeJsonPath: string, accountsDirPath: string): { keychainRestored: boolean } {
   const accountFile = resolvedAccountFile(email, accountsDirPath);
 
   // Reject symlinks to prevent symlink-based file read attacks
@@ -82,7 +90,7 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
     throw new Error(`Account file for ${email} is a symbolic link and cannot be trusted`);
   }
 
-  let accountData;
+  let accountData: Record<string, unknown>;
   try {
     accountData = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
   } catch (e) {
@@ -90,6 +98,16 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
       throw new Error(`${accountFile} contains invalid JSON. Please fix or delete it.`);
     }
     throw e;
+  }
+
+  // Restore Keychain credentials if they were saved with this account.
+  // Accounts saved before this version of claude-switch won't have _keychain;
+  // in that case we leave the Keychain as-is and return a flag so the caller
+  // can warn the user that the account needs to be re-added.
+  const { _keychain, ...oauthAccount } = accountData;
+  const keychainRestored = !!(_keychain && typeof _keychain === 'object');
+  if (keychainRestored) {
+    writeKeychain(_keychain as KeychainData);
   }
 
   let data;
@@ -101,7 +119,7 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
     }
     throw e;
   }
-  data.oauthAccount = accountData;
+  data.oauthAccount = oauthAccount;
 
   const tmp = claudeJsonPath + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
@@ -109,4 +127,6 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   if (process.platform !== 'win32') {
     fs.chmodSync(claudeJsonPath, 0o600);
   }
+
+  return { keychainRestored };
 }

@@ -2,12 +2,12 @@
 // claude-switch — Claude Code multi-account wrapper
 
 import fs from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolve } from '../src/resolver.js';
-import { getCurrent, save, load, list as listAccounts, remove as removeAccount } from '../src/accounts.js';
-import { fuzzyMatch, switchTo, switchInteractive, addAccount, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switcher.js';
-import { run as proxyRun, buildSpawnArgs } from '../src/proxy.js';
-import { spawnSync } from 'node:child_process';
+import { getCurrent, save, list as listAccounts, remove as removeAccount } from '../src/accounts.js';
+import { fuzzyMatch, switchTo, switchInteractive, addAccount, runTemporarySwitch, checkPendingRestore } from '../src/switcher.js';
+import { run as proxyRun } from '../src/proxy.js';
 import { claudeJsonPath, accountsDir } from '../src/paths.js';
 import { generateBash, generateZsh, generateFish, generatePowerShell } from '../src/completions.js';
 import { VERSION } from '../src/version.js';
@@ -112,6 +112,16 @@ async function main(): Promise<void> {
   const cmd = parseCommand(args);
   const cJson = claudeJsonPath();
   const aDir = accountsDir();
+
+  // Recover from a previously interrupted --as session before any switch operation.
+  // This must run at the top of the dispatch so that switch-to and switch-interactive
+  // also benefit, not just passthrough commands.
+  if (cmd.action === 'switch-interactive' || cmd.action === 'switch-to' || cmd.action === 'temporary-switch') {
+    const recovered = checkPendingRestore(cJson, aDir);
+    if (recovered) {
+      console.log(`Restored account: ${recovered} (from interrupted --as)\n`);
+    }
+  }
 
   switch (cmd.action) {
     case 'switch-interactive':
@@ -220,10 +230,21 @@ async function main(): Promise<void> {
         break;
       }
 
-      // Auto-save if active account not yet saved
-      if (!listAccounts(aDir).includes(current)) {
+      // Auto-save if active account not yet saved, or if the saved file
+      // pre-dates keychain support and lacks token data.
+      const savedAccounts = listAccounts(aDir);
+      if (!savedAccounts.includes(current)) {
         save(current, cJson, aDir);
         console.log(`Detected account: ${current} (saved automatically)\n`);
+      } else {
+        // Migrate old account files that lack _keychain by re-saving.
+        const accountFile = path.join(aDir, `${current}.json`);
+        try {
+          const existing = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
+          if (!existing._keychain) {
+            save(current, cJson, aDir);
+          }
+        } catch { /* ignore, best-effort migration */ }
       }
 
       const health = getTokenHealth(cJson);
@@ -291,36 +312,9 @@ async function main(): Promise<void> {
         throw new ExitError(`Multiple matches for "${cmd.target}":\n${matches.map(m => `  ${m}`).join('\n')}\nBe more specific.`);
       }
 
-      const targetEmail = matches[0];
-      const currentEmail = getCurrent(cJson);
-
-      if (targetEmail === currentEmail) {
-        proxyRun(claudeBin, cmd.args);
-        break;
-      }
-
-      if (currentEmail) {
-        savePendingRestore(currentEmail, aDir);
-        save(currentEmail, cJson, aDir);
-      }
-
-      load(targetEmail, cJson, aDir);
-      console.log(`🔑 ${targetEmail} (temporary)\n`);
-
-      const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, cmd.args, process.platform);
-      const result = spawnSync(command, spawnArgs, options);
-
-      // Always restore original account before exiting
-      if (currentEmail) {
-        load(currentEmail, cJson, aDir);
-        clearPendingRestore(aDir);
-      }
-
-      if (result.error) {
-        console.error(`Error: could not run claude: ${result.error.message}`);
-        process.exit(1);
-      }
-      process.exit(result.status ?? 1);
+      // runTemporarySwitch handles save/restore (incl. Keychain), SIGINT, and never returns.
+      await runTemporarySwitch(claudeBin, matches[0], cmd.args, cJson, aDir);
+      break;
     }
 
     case 'setup':
