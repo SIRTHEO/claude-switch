@@ -56,7 +56,9 @@ describe('save', () => {
     save('a@b.com', claudeJson, accDir);
 
     const saved = JSON.parse(fs.readFileSync(path.join(accDir, 'a@b.com.json'), 'utf-8'));
-    assert.deepEqual(saved, oauthAccount);
+    // _keychain may be present on macOS where the real Keychain is accessible.
+    const { _keychain: _kc, ...metadata } = saved;
+    assert.deepEqual(metadata, oauthAccount);
   });
 
   it('creates accounts dir if missing', () => {

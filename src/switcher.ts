@@ -29,8 +29,11 @@ export function switchTo(targetEmail: string, claudeJsonPath: string, accountsDi
     save(currentEmail, claudeJsonPath, accountsDirPath);
   }
 
-  load(targetEmail, claudeJsonPath, accountsDirPath);
-  return `Switched to ${targetEmail}`;
+  const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
+  const warning = keychainRestored
+    ? ''
+    : '\nWarning: no saved credentials for this account — API tokens may be wrong.\nRun: claude switch add (to re-authenticate and capture tokens)';
+  return `Switched to ${targetEmail}${warning}`;
 }
 
 export function fuzzyMatch(input: string, accounts: string[]): string[] {
@@ -103,6 +106,67 @@ export function clearPendingRestore(accountsDirPath: string): void {
   try { fs.unlinkSync(filePath); } catch { /* ignore */ }
 }
 
+export async function runTemporarySwitch(
+  claudeBin: string,
+  targetEmail: string,
+  args: string[],
+  claudeJsonPath: string,
+  accountsDirPath: string,
+): Promise<never> {
+  const currentEmail = getCurrent(claudeJsonPath);
+
+  if (targetEmail === currentEmail) {
+    const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, args, process.platform);
+    const result = spawnSync(command, spawnArgs, options);
+    if (result.error) {
+      console.error(`Error: could not run claude: ${result.error.message}`);
+      process.exit(1);
+    }
+    process.exit(result.status ?? 1);
+  }
+
+  if (currentEmail) {
+    savePendingRestore(currentEmail, accountsDirPath);
+    save(currentEmail, claudeJsonPath, accountsDirPath);
+  }
+
+  const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
+  if (!keychainRestored && process.platform === 'darwin') {
+    console.warn(`Warning: no saved credentials for ${targetEmail} — API tokens may belong to a different account.\nRun: claude switch add (to re-authenticate and capture tokens)\n`);
+  }
+  console.log(`🔑 ${targetEmail} (temporary)\n`);
+
+  // Register SIGINT handler so we restore the original account even on Ctrl-C.
+  // spawnSync is a blocking call: when SIGINT arrives the OS delivers it to
+  // the whole process group (child exits first, then spawnSync returns), and
+  // Node.js then fires this handler synchronously before process.exit runs.
+  let restored = false;
+  const restoreOriginal = (): void => {
+    if (restored) return;
+    restored = true;
+    if (currentEmail) {
+      try { load(currentEmail, claudeJsonPath, accountsDirPath); } catch { /* best-effort */ }
+      clearPendingRestore(accountsDirPath);
+    }
+  };
+
+  process.once('SIGINT', () => {
+    restoreOriginal();
+    process.exit(130);
+  });
+
+  const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, args, process.platform);
+  const result = spawnSync(command, spawnArgs, options);
+
+  restoreOriginal();
+
+  if (result.error) {
+    console.error(`Error: could not run claude: ${result.error.message}`);
+    process.exit(1);
+  }
+  process.exit(result.status ?? 1);
+}
+
 export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string): Promise<void> {
   const currentEmail = getCurrent(claudeJsonPath);
   const expectedEmail = await ask('Email to add (press Enter to skip): ');
@@ -132,6 +196,7 @@ export async function addAccount(claudeBin: string, claudeJsonPath: string, acco
     }
 
     console.log(`\nAuthenticated: ${newEmail}`);
+    // Save immediately after login so the Keychain tokens are captured.
     save(newEmail, claudeJsonPath, accountsDirPath);
     console.log(`Saved: ${newEmail}`);
 

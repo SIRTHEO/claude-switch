@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { readKeychain } from './keychain.js';
 
 export interface TokenHealth {
   status: 'valid' | 'expired' | 'present' | 'missing';
@@ -19,25 +20,16 @@ function formatRelativeTime(diffMs: number): string {
   return `${prefix}${minutes} minute${minutes !== 1 ? 's' : ''}${suffix}`;
 }
 
-export function getTokenHealth(claudeJsonPath: string): TokenHealth {
-  let data: Record<string, unknown>;
-  try {
-    data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
-  } catch {
-    return { status: 'missing' };
-  }
+function healthFromExpiry(accessToken: string | undefined, rawExpiry: unknown): TokenHealth {
+  if (!accessToken) return { status: 'missing' };
 
-  const account = data.oauthAccount as Record<string, unknown> | undefined;
-  if (!account) return { status: 'missing' };
-  if (!account.accessToken) return { status: 'missing' };
-
-  const rawExpiry = account.expiresAt;
   if (rawExpiry === undefined || rawExpiry === null) {
     return { status: 'present' };
   }
 
   let expiresAt: Date;
   if (typeof rawExpiry === 'number') {
+    // Milliseconds epoch (Claude Code's format)
     expiresAt = new Date(rawExpiry);
   } else if (typeof rawExpiry === 'string') {
     expiresAt = new Date(rawExpiry);
@@ -50,8 +42,32 @@ export function getTokenHealth(claudeJsonPath: string): TokenHealth {
   const diffMs = expiresAt.getTime() - Date.now();
   const expiresIn = formatRelativeTime(diffMs);
 
-  if (diffMs > 0) {
-    return { status: 'valid', expiresAt, expiresIn };
+  return diffMs > 0
+    ? { status: 'valid', expiresAt, expiresIn }
+    : { status: 'expired', expiresAt, expiresIn };
+}
+
+export function getTokenHealth(
+  claudeJsonPath: string,
+  keychainReader: () => ReturnType<typeof readKeychain> = readKeychain,
+): TokenHealth {
+  // On macOS, tokens live in the Keychain — not in ~/.claude.json.
+  const keychainData = keychainReader();
+  if (keychainData?.claudeAiOauth) {
+    const { accessToken, expiresAt } = keychainData.claudeAiOauth;
+    return healthFromExpiry(accessToken, expiresAt);
   }
-  return { status: 'expired', expiresAt, expiresIn };
+
+  // Fallback: Linux / Windows may store tokens inside ~/.claude.json.
+  try {
+    const data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
+    const account = data.oauthAccount as Record<string, unknown> | undefined;
+    if (!account) return { status: 'missing' };
+    return healthFromExpiry(
+      account.accessToken as string | undefined,
+      account.expiresAt
+    );
+  } catch {
+    return { status: 'missing' };
+  }
 }
