@@ -15,7 +15,7 @@ import { ExitError } from '../src/errors.js';
 import { setAlias, listAliases, removeAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
 import { getTokenHealth } from '../src/token.js';
 import { getSavedClaudeBin, runSetup } from '../src/setup.js';
-import { checkForUpdate } from '../src/update-check.js';
+import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -32,7 +32,8 @@ export type Command =
   | { action: 'alias-list' }
   | { action: 'alias-remove'; name: string | undefined }
   | { action: 'temporary-switch'; target: string | undefined; args: string[] }
-  | { action: 'setup' };
+  | { action: 'setup' }
+  | { action: 'update' };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -60,6 +61,7 @@ export function parseCommand(args: string[]): Command {
     case '-v': return { action: 'version' };
     case '--completions': return { action: 'completions', shell: args[2] };
     case 'setup': return { action: 'setup' };
+    case 'update': return { action: 'update' };
     case 'alias': {
       const sub2 = args[2];
       if (!sub2 || sub2 === '--list') return { action: 'alias-list' };
@@ -100,6 +102,7 @@ Usage:
   claude switch alias <n> <email>  Set an alias
   claude switch alias --list       List aliases
   claude switch alias --remove <n> Remove an alias
+  claude switch update             Check for updates and install if available
   claude switch help               Show this help
   claude switch setup              Re-run first-time setup
   claude --as <alias|email> ...    Use account temporarily
@@ -108,18 +111,57 @@ Usage:
 All other commands are passed through to the real claude binary.`);
 }
 
+/** Prompt for y/n on stderr and return true if the user typed y or Y. */
+async function askYN(question: string): Promise<boolean> {
+  const readline = await import('node:readline');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  return new Promise(resolve => {
+    rl.question(question, (answer: string) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === 'y');
+    });
+  });
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const cmd = parseCommand(args);
   const cJson = claudeJsonPath();
   const aDir = accountsDir();
 
-  // Show update notification if a newer version was found in the background cache.
-  // Skip for passthrough/temporary-switch — those proxy to the real claude binary
-  // and we don't want to pollute their output.
-  if (cmd.action !== 'passthrough' && cmd.action !== 'temporary-switch') {
-    const notice = checkForUpdate(VERSION);
-    if (notice) process.stderr.write(notice);
+  // Check for update (reads cache synchronously — never blocks).
+  // Skip for passthrough/temporary-switch to avoid polluting claude's output.
+  const updateInfo = (cmd.action !== 'passthrough' && cmd.action !== 'temporary-switch')
+    ? checkForUpdate(VERSION)
+    : null;
+
+  if (updateInfo && cmd.action !== 'update') {
+    const isTTY = process.stdin.isTTY && process.stderr.isTTY;
+    if (isTTY) {
+      // Interactive terminal: offer to update now.
+      process.stderr.write(
+        `\n  Update available: ${VERSION} → ${updateInfo.latestVersion}\n`
+      );
+      const answer = await askYN('  Update now? [y/N] ');
+      if (answer) {
+        const ok = performUpdate();
+        if (ok) {
+          console.log('\nUpdated. Restart claude to use the new version.');
+          process.exit(0);
+        } else {
+          console.error('\nUpdate failed. Run manually:');
+          console.error(`  ${updateInfo.installCommand}`);
+        }
+      } else {
+        process.stderr.write(`  Run: ${updateInfo.installCommand}\n\n`);
+      }
+    } else {
+      // Non-interactive (piped/scripted): just print the hint to stderr.
+      process.stderr.write(
+        `\n  Update available: ${VERSION} → ${updateInfo.latestVersion}\n` +
+        `  Run: ${updateInfo.installCommand}\n\n`
+      );
+    }
   }
 
   // Recover from a previously interrupted --as session before any switch operation.
@@ -329,6 +371,51 @@ async function main(): Promise<void> {
     case 'setup':
       await runSetup(fileURLToPath(import.meta.url));
       break;
+
+    case 'update': {
+      console.log(`Current version: ${VERSION}`);
+      process.stdout.write('Checking for updates...');
+      const latest = await fetchLatestVersionSync();
+      process.stdout.write('\r' + ' '.repeat(30) + '\r'); // clear the line
+
+      if (!latest) {
+        console.log('Could not reach npm registry. Check your connection.');
+        break;
+      }
+
+      // Update cache so the background notifier reflects the result.
+      writeUpdateCache(latest);
+
+      if (!isNewer(VERSION, latest)) {
+        console.log(`Already up to date (${VERSION}).`);
+        break;
+      }
+
+      console.log(`New version available: ${VERSION} → ${latest}`);
+
+      const isTTY = process.stdin.isTTY && process.stdout.isTTY;
+      const shouldUpdate = isTTY ? await askYN('Update now? [y/N] ') : false;
+
+      if (!isTTY) {
+        console.log('Run in an interactive terminal to update, or run:');
+        console.log(`  ${[...detectInstallCommand()].join(' ')}`);
+        break;
+      }
+
+      if (!shouldUpdate) {
+        console.log(`Skipped. Run: ${[...detectInstallCommand()].join(' ')}`);
+        break;
+      }
+
+      const ok = performUpdate();
+      if (ok) {
+        console.log('\nUpdated successfully. Restart your terminal to use the new version.');
+      } else {
+        console.error('\nUpdate failed. Try running manually:');
+        console.error(`  ${[...detectInstallCommand()].join(' ')}`);
+      }
+      break;
+    }
 
     case 'passthrough': {
       const restored = checkPendingRestore(cJson, aDir);
