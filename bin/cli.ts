@@ -16,6 +16,8 @@ import { setAlias, listAliases, removeAlias, resolveAlias, getAliasesForEmail } 
 import { getTokenHealth } from '../src/token.js';
 import { getSavedClaudeBin, runSetup } from '../src/setup.js';
 import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
+import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
+import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -33,7 +35,11 @@ export type Command =
   | { action: 'alias-remove'; name: string | undefined }
   | { action: 'temporary-switch'; target: string | undefined; args: string[] }
   | { action: 'setup' }
-  | { action: 'update' };
+  | { action: 'update' }
+  | { action: 'apikey-set'; target: string | undefined }
+  | { action: 'apikey-remove'; target: string | undefined }
+  | { action: 'apikey-show'; target: string | undefined }
+  | { action: 'fallback'; mode: 'on' | 'off' | 'status' };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -62,6 +68,20 @@ export function parseCommand(args: string[]): Command {
     case '--completions': return { action: 'completions', shell: args[2] };
     case 'setup': return { action: 'setup' };
     case 'update': return { action: 'update' };
+    case 'apikey': {
+      const sub2 = args[2];
+      if (sub2 === 'set') return { action: 'apikey-set', target: args[3] };
+      if (sub2 === 'remove' || sub2 === 'rm') return { action: 'apikey-remove', target: args[3] };
+      if (sub2 === 'show') return { action: 'apikey-show', target: args[3] };
+      throw new ExitError('Usage: claude switch apikey <set|remove|show> <alias|email>');
+    }
+    case 'fallback': {
+      const sub2 = args[2];
+      if (!sub2 || sub2 === 'status') return { action: 'fallback', mode: 'status' };
+      if (sub2 === 'on') return { action: 'fallback', mode: 'on' };
+      if (sub2 === 'off') return { action: 'fallback', mode: 'off' };
+      throw new ExitError('Usage: claude switch fallback <on|off|status>');
+    }
     case 'alias': {
       const sub2 = args[2];
       if (!sub2 || sub2 === '--list') return { action: 'alias-list' };
@@ -93,22 +113,85 @@ function showHelp(): void {
   console.log(`claude-switch — multi-account wrapper for Claude Code
 
 Usage:
-  claude switch                    Switch account (interactive menu)
-  claude switch <alias|email>      Switch to account (alias or fuzzy match)
-  claude switch add                Add a new account (opens browser)
-  claude switch list               List saved accounts
-  claude switch remove <email>     Remove a saved account
-  claude switch status             Show active account and token health
-  claude switch alias <n> <email>  Set an alias
-  claude switch alias --list       List aliases
-  claude switch alias --remove <n> Remove an alias
-  claude switch update             Check for updates and install if available
-  claude switch help               Show this help
-  claude switch setup              Re-run first-time setup
-  claude --as <alias|email> ...    Use account temporarily
-  claude switch --completions <shell>  Generate shell completions
+  claude switch                          Switch account (interactive menu)
+  claude switch <alias|email>            Switch to account (alias or fuzzy match)
+  claude switch add                      Add a new account (opens browser)
+  claude switch list                     List saved accounts
+  claude switch remove <email>           Remove a saved account
+  claude switch status                   Show active account, token, fallback
+  claude switch alias <n> <email>        Set an alias
+  claude switch alias --list             List aliases
+  claude switch alias --remove <n>       Remove an alias
+  claude switch apikey set <a|e>         Save an Anthropic API key for an account
+  claude switch apikey show <a|e>        Show saved API key (masked)
+  claude switch apikey remove <a|e>      Delete saved API key
+  claude switch fallback on|off|status   Toggle API key fallback (overrides OAuth)
+  claude switch update                   Check for updates and install if available
+  claude switch help                     Show this help
+  claude switch setup                    Re-run first-time setup
+  claude --as <alias|email> ...          Use account temporarily
+  claude switch --completions <shell>    Generate shell completions
 
 All other commands are passed through to the real claude binary.`);
+}
+
+/** Read a line from stdin without echoing it (TTY) or from a pipe (non-TTY). */
+async function promptSecret(question: string): Promise<string> {
+  const readline = await import('node:readline');
+
+  if (!process.stdin.isTTY) {
+    // Non-interactive: read first line from pipe.
+    const rl = readline.createInterface({ input: process.stdin });
+    return new Promise(resolve => {
+      rl.once('line', line => { rl.close(); resolve(line.trim()); });
+    });
+  }
+
+  process.stderr.write(question);
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+  // Mute the readline output so the key isn't echoed to the terminal.
+  // _writeToOutput is a documented hook of the readline Interface.
+  (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string): void => {
+    if (s.includes('\n') || s.includes('\r')) process.stderr.write('\n');
+  };
+  return new Promise(resolve => {
+    rl.question('', (answer: string) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/**
+ * Resolve a target alias/fuzzy string to a single saved email, or throw.
+ * Used by apikey commands so they accept the same target syntax as switch.
+ */
+function resolveTargetEmail(target: string, accountsDirPath: string): string {
+  const resolved = resolveAlias(target, accountsDirPath);
+  const accounts = listAccounts(accountsDirPath);
+  const matches = accounts.filter(a => a === resolved);
+  if (matches.length === 1) return matches[0];
+  // Fuzzy fallback for partial matches (mirrors switch behaviour).
+  const fuzzy = accounts.filter(a => a.toLowerCase().includes(resolved.toLowerCase()));
+  if (fuzzy.length === 1) return fuzzy[0];
+  if (fuzzy.length > 1) {
+    throw new ExitError(`Multiple matches for "${target}":\n${fuzzy.map(m => `  ${m}`).join('\n')}\nBe more specific.`);
+  }
+  throw new ExitError(`No account matching "${target}". Run: claude switch list`);
+}
+
+/**
+ * If fallback is enabled and the given account has a saved API key,
+ * return an env override containing ANTHROPIC_API_KEY. Otherwise null.
+ *
+ * When null is returned, the spawned claude inherits the parent env unchanged
+ * — including any user-set ANTHROPIC_API_KEY in the shell. We don't strip it.
+ */
+function fallbackEnvFor(email: string, accountsDirPath: string): NodeJS.ProcessEnv | null {
+  if (!isFallbackEnabled(accountsDirPath)) return null;
+  const key = getApiKey(email, accountsDirPath);
+  if (!key) return null;
+  return { ANTHROPIC_API_KEY: key };
 }
 
 /** Prompt for y/n on stderr and return true if the user typed y or Y. */
@@ -320,6 +403,86 @@ async function main(): Promise<void> {
           console.log('  Token: missing — run: claude switch add');
           break;
       }
+
+      const apiKey = getApiKey(current, aDir);
+      const fallbackOn = isFallbackEnabled(aDir);
+      console.log(`  API key: ${apiKey ? maskApiKey(apiKey) : 'not set'}`);
+      console.log(`  Fallback: ${fallbackOn ? 'on' : 'off'}`);
+      if (fallbackOn && !apiKey) {
+        console.log('  ⚠ fallback is on but no API key saved — claude will use OAuth');
+      }
+      break;
+    }
+
+    case 'apikey-set': {
+      if (!cmd.target) {
+        throw new ExitError('Usage: claude switch apikey set <alias|email>');
+      }
+      const email = resolveTargetEmail(cmd.target, aDir);
+      const key = await promptSecret(`API key for ${email} (input hidden, paste sk-ant-…): `);
+      if (!key) throw new ExitError('No key entered. Aborted.');
+      if (!/^sk-ant-/.test(key)) {
+        console.warn('Warning: key does not start with "sk-ant-" — saving anyway.');
+      }
+      setApiKey(email, key, aDir);
+      console.log(`Saved API key for ${email} (${maskApiKey(key)}).`);
+      console.log('Enable it with: claude switch fallback on');
+      console.log('Note: Claude Code may prompt to approve the key the first time it is used.');
+      break;
+    }
+
+    case 'apikey-show': {
+      if (!cmd.target) {
+        throw new ExitError('Usage: claude switch apikey show <alias|email>');
+      }
+      const email = resolveTargetEmail(cmd.target, aDir);
+      const key = getApiKey(email, aDir);
+      if (!key) {
+        console.log(`No API key saved for ${email}.`);
+      } else {
+        console.log(`${email}: ${maskApiKey(key)}`);
+      }
+      break;
+    }
+
+    case 'apikey-remove': {
+      if (!cmd.target) {
+        throw new ExitError('Usage: claude switch apikey remove <alias|email>');
+      }
+      const email = resolveTargetEmail(cmd.target, aDir);
+      const removed = removeApiKey(email, aDir);
+      console.log(removed
+        ? `Removed API key for ${email}.`
+        : `No API key was saved for ${email}.`);
+      break;
+    }
+
+    case 'fallback': {
+      if (cmd.mode === 'status') {
+        const on = isFallbackEnabled(aDir);
+        const current = getCurrent(cJson);
+        const hasKey = current ? !!getApiKey(current, aDir) : false;
+        console.log(`Fallback: ${on ? 'on' : 'off'}`);
+        if (current) {
+          console.log(`Active account ${current}: ${hasKey ? 'has API key' : 'no API key (run: claude switch apikey set)'}`);
+        }
+        if (on && current && !hasKey) {
+          console.log('Warning: fallback is on but the active account has no saved API key — claude will use OAuth.');
+        }
+        break;
+      }
+      const on = cmd.mode === 'on';
+      setFallbackEnabled(aDir, on);
+      console.log(`Fallback: ${on ? 'on' : 'off'}`);
+      if (on) {
+        const current = getCurrent(cJson);
+        if (current && !getApiKey(current, aDir)) {
+          console.log(`Note: active account ${current} has no saved API key. Run: claude switch apikey set ${current}`);
+        } else if (current) {
+          console.log('Subsequent `claude` runs will use the saved API key (billed against API credits).');
+          console.log('Note: Claude Code may prompt to approve the key the first time it is used.');
+        }
+      }
       break;
     }
 
@@ -364,7 +527,11 @@ async function main(): Promise<void> {
       }
 
       // runTemporarySwitch handles save/restore (incl. Keychain), SIGINT, and never returns.
-      await runTemporarySwitch(claudeBin, matches[0], cmd.args, cJson, aDir);
+      const extraEnv = fallbackEnvFor(matches[0], aDir);
+      if (extraEnv) {
+        console.log(`(fallback on — using saved API key for ${matches[0]})\n`);
+      }
+      await runTemporarySwitch(claudeBin, matches[0], cmd.args, cJson, aDir, extraEnv);
       break;
     }
 
@@ -437,7 +604,11 @@ async function main(): Promise<void> {
         throw new ExitError('No account connected. Run: claude switch add');
       }
 
-      proxyRun(claudeBin, cmd.args);
+      const extraEnv = fallbackEnvFor(email, aDir);
+      if (extraEnv) {
+        console.log('(fallback on — using saved API key)\n');
+      }
+      proxyRun(claudeBin, cmd.args, extraEnv);
       break;
     }
   }
