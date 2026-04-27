@@ -1,6 +1,6 @@
 // src/completions.ts
 
-const SUBCOMMANDS = ['add', 'list', 'ls', 'remove', 'rm', 'status', 'alias', 'help'];
+const SUBCOMMANDS = ['add', 'list', 'ls', 'remove', 'rm', 'status', 'alias', 'apikey', 'fallback', 'update', 'setup', 'help'];
 
 export function generateBash(): string {
   return `_claude_switch() {

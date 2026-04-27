@@ -112,11 +112,12 @@ export async function runTemporarySwitch(
   args: string[],
   claudeJsonPath: string,
   accountsDirPath: string,
+  extraEnv?: NodeJS.ProcessEnv | null,
 ): Promise<never> {
   const currentEmail = getCurrent(claudeJsonPath);
 
   if (targetEmail === currentEmail) {
-    const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, args, process.platform);
+    const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, args, process.platform, extraEnv);
     const result = spawnSync(command, spawnArgs, options);
     if (result.error) {
       console.error(`Error: could not run claude: ${result.error.message}`);
@@ -155,7 +156,7 @@ export async function runTemporarySwitch(
     process.exit(130);
   });
 
-  const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, args, process.platform);
+  const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, args, process.platform, extraEnv);
   const result = spawnSync(command, spawnArgs, options);
 
   restoreOriginal();

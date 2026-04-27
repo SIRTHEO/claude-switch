@@ -10,6 +10,19 @@ Switch between multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-
 
 ---
 
+## What's new in v2.3.0
+
+**Per-account API key + fallback toggle.** Claude Code has no built-in fallback from a Max/Pro subscription to an API key when you hit the rate limit. claude-switch now gives you a manual toggle:
+
+- `claude switch apikey set <account>` — save an Anthropic API key for an account (input hidden)
+- `claude switch fallback on` — from now on, `claude` runs with that key injected as `ANTHROPIC_API_KEY` (billed against API credits)
+- `claude switch fallback off` — back to OAuth subscription
+- Each account keeps its own key, so switching accounts also switches which key is active
+
+See [API key fallback](#api-key-fallback-when-your-max-plan-hits-its-limit) below.
+
+---
+
 ## What's new in v2.2.0
 
 **Important fix — accounts were using the wrong API tokens on macOS.**
@@ -190,6 +203,43 @@ claude switch alias w    work@company.com    # create another alias "w" for the 
 claude switch alias --list                   # show all aliases
 claude switch alias --remove w               # delete alias "w"
 ```
+
+### API key fallback (when your Max plan hits its limit)
+
+Claude Code does not switch from your subscription to an API key automatically when you hit the Max plan rate limit ([feature request open since 2024](https://github.com/anthropics/claude-code/issues/2944)). claude-switch gives you a manual toggle that does the next-best thing:
+
+1. Save an Anthropic API key for any account:
+
+   ```bash
+   claude switch apikey set work
+   # paste sk-ant-… (input is hidden)
+   ```
+
+2. When you hit the limit, turn fallback on:
+
+   ```bash
+   claude switch fallback on
+   ```
+
+   From now on, every `claude` invocation runs with `ANTHROPIC_API_KEY` set to the saved key for the active account — Claude Code uses your API credits instead of the subscription.
+
+3. When the subscription quota refreshes, turn it back off:
+
+   ```bash
+   claude switch fallback off
+   ```
+
+Each account keeps its own key, so switching accounts also switches which key is used. The first time Claude Code sees a new API key it will ask you to approve it.
+
+Other commands:
+
+```bash
+claude switch apikey show work        # show the saved key, masked
+claude switch apikey remove work      # delete the saved key
+claude switch fallback                # show fallback state + whether the active account has a key
+```
+
+The key is stored in `~/.claude/accounts/<email>.json` (perms `600`) — same place and same protection as the OAuth tokens.
 
 ### Use a different account for just one command
 

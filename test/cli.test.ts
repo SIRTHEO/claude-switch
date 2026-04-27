@@ -109,4 +109,52 @@ describe('parseCommand', () => {
   it('parses "switch setup"', () => {
     assert.deepEqual(parseCommand(['switch', 'setup']), { action: 'setup' });
   });
+
+  it('parses "switch apikey set work"', () => {
+    assert.deepEqual(parseCommand(['switch', 'apikey', 'set', 'work']),
+      { action: 'apikey-set', target: 'work' });
+  });
+
+  it('parses "switch apikey show work"', () => {
+    assert.deepEqual(parseCommand(['switch', 'apikey', 'show', 'work']),
+      { action: 'apikey-show', target: 'work' });
+  });
+
+  it('parses "switch apikey remove work"', () => {
+    assert.deepEqual(parseCommand(['switch', 'apikey', 'remove', 'work']),
+      { action: 'apikey-remove', target: 'work' });
+  });
+
+  it('parses "switch apikey rm work" as remove', () => {
+    assert.deepEqual(parseCommand(['switch', 'apikey', 'rm', 'work']),
+      { action: 'apikey-remove', target: 'work' });
+  });
+
+  it('throws on unknown apikey subcommand', () => {
+    assert.throws(() => parseCommand(['switch', 'apikey', 'wat']), /apikey/);
+  });
+
+  it('parses "switch fallback on"', () => {
+    assert.deepEqual(parseCommand(['switch', 'fallback', 'on']),
+      { action: 'fallback', mode: 'on' });
+  });
+
+  it('parses "switch fallback off"', () => {
+    assert.deepEqual(parseCommand(['switch', 'fallback', 'off']),
+      { action: 'fallback', mode: 'off' });
+  });
+
+  it('parses "switch fallback" with no arg as status', () => {
+    assert.deepEqual(parseCommand(['switch', 'fallback']),
+      { action: 'fallback', mode: 'status' });
+  });
+
+  it('parses "switch fallback status"', () => {
+    assert.deepEqual(parseCommand(['switch', 'fallback', 'status']),
+      { action: 'fallback', mode: 'status' });
+  });
+
+  it('throws on unknown fallback subcommand', () => {
+    assert.throws(() => parseCommand(['switch', 'fallback', 'maybe']), /fallback/);
+  });
 });

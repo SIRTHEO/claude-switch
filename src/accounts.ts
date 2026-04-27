@@ -46,7 +46,18 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
     accountPayload._keychain = keychainData;
   }
 
+  // Preserve any per-account API key (used for fallback when subscription
+  // limits are hit) across re-saves, since save() rewrites the whole file.
   const accountFile = resolvedAccountFile(email, accountsDirPath);
+  try {
+    const existing = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
+    if (typeof existing._apiKey === 'string' && existing._apiKey) {
+      accountPayload._apiKey = existing._apiKey;
+    }
+  } catch {
+    // No existing file or unreadable: nothing to preserve.
+  }
+
   const tmp = accountFile + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(accountPayload, null, 2));
   if (process.platform !== 'win32') {
@@ -104,7 +115,8 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   // Accounts saved before this version of claude-switch won't have _keychain;
   // in that case we leave the Keychain as-is and return a flag so the caller
   // can warn the user that the account needs to be re-added.
-  const { _keychain, ...oauthAccount } = accountData;
+  // _apiKey is stripped here too so it never leaks into ~/.claude.json.
+  const { _keychain, _apiKey: _ignored, ...oauthAccount } = accountData;
   const keychainRestored = !!(_keychain && typeof _keychain === 'object');
   if (keychainRestored) {
     writeKeychain(_keychain as KeychainData);
