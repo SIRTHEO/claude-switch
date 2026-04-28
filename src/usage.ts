@@ -56,6 +56,17 @@ function cachePath(accountsDirPath: string): string {
   return path.join(accountsDirPath, '.usage-cache.json');
 }
 
+/**
+ * Parse the Retry-After header value into seconds. Defaults to 300s only when
+ * the header is missing/unparseable — `Retry-After: 0` is valid (retry now).
+ */
+export function parseRetryAfter(header: string | string[] | undefined): number {
+  const value = Array.isArray(header) ? header[0] : header;
+  if (typeof value !== 'string') return 300;
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 300;
+}
+
 export function readUsageCache(accountsDirPath: string): UsageCache | null {
   try {
     const raw = fs.readFileSync(cachePath(accountsDirPath), 'utf-8');
@@ -128,12 +139,7 @@ export function fetchUsage(accessToken: string): Promise<FetchUsageOutcome> {
         });
         res.on('end', () => {
           if (res.statusCode === 429) {
-            const retryHeader = res.headers['retry-after'];
-            // parseInt("0") is 0, which is valid (retry now). Default to 300
-            // only when the header is missing or unparseable, not when it's 0.
-            const parsed = typeof retryHeader === 'string' ? parseInt(retryHeader, 10) : NaN;
-            const retryAfterSec = Number.isFinite(parsed) && parsed >= 0 ? parsed : 300;
-            resolve({ ok: false, rateLimited: true, retryAfterSec });
+            resolve({ ok: false, rateLimited: true, retryAfterSec: parseRetryAfter(res.headers['retry-after']) });
             return;
           }
           if (res.statusCode !== 200) {

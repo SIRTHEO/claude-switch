@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { isNewer } from '../src/update-check.js';
+import { isNewer, detectInstallCommand } from '../src/update-check.js';
 
 describe('isNewer', () => {
   it('returns true when latest is a higher patch', () => {
@@ -51,5 +51,17 @@ describe('isNewer', () => {
   it('treats missing patch component as 0', () => {
     assert.strictEqual(isNewer('2.3', '2.3.1'), true);
     assert.strictEqual(isNewer('2.3.0', '2.3'), false);
+  });
+});
+
+describe('detectInstallCommand', () => {
+  it('returns a non-empty argv for the running process', () => {
+    // We can't fully isolate the function (it reads import.meta.url), but
+    // we can at least assert the contract: never empty, first arg is a known
+    // package manager, package name is the last argument.
+    const cmd = detectInstallCommand();
+    assert.ok(cmd.length >= 2, 'expected at least cmd + package name');
+    assert.match(cmd[0], /^(npm|pnpm|yarn|volta)$/);
+    assert.strictEqual(cmd[cmd.length - 1], '@sirtheo/claude-switch');
   });
 });

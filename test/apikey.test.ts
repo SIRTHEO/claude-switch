@@ -56,6 +56,15 @@ describe('apikey storage', () => {
     assert.throws(() => setApiKey('a@b.com', '', accDir), /cannot be empty/);
   });
 
+  it('rejects whitespace-only key as empty', () => {
+    assert.throws(() => setApiKey('a@b.com', '   \n  ', accDir), /cannot be empty/);
+  });
+
+  it('trims leading/trailing whitespace from pasted keys', () => {
+    setApiKey('a@b.com', '  sk-ant-test-key  \n', accDir);
+    assert.strictEqual(getApiKey('a@b.com', accDir), 'sk-ant-test-key');
+  });
+
   it('rejects path traversal in email', () => {
     assert.throws(() => setApiKey('../../.bashrc', 'k', accDir), /unsafe for filenames|outside accounts/);
     assert.throws(() => getApiKey('../../.bashrc', accDir), /unsafe for filenames|outside accounts/);
