@@ -18,7 +18,7 @@ describe('proxy', () => {
     assert.deepEqual(result, {
       command: 'C:\\npm\\claude.cmd',
       args: ['--help'],
-      options: { stdio: 'inherit', shell: true },
+      options: { stdio: 'inherit' },
     });
   });
 

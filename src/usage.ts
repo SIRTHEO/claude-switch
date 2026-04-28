@@ -71,10 +71,12 @@ function writeUsageCache(accountsDirPath: string, cache: UsageCache): void {
   try {
     const file = cachePath(accountsDirPath);
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(file, JSON.stringify(cache));
+    const tmp = file + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600 });
     if (process.platform !== 'win32') {
-      try { fs.chmodSync(file, 0o600); } catch { /* best-effort */ }
+      try { fs.chmodSync(tmp, 0o600); } catch { /* best-effort */ }
     }
+    fs.renameSync(tmp, file);
   } catch { /* best-effort */ }
 }
 
