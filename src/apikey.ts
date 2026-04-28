@@ -56,13 +56,17 @@ export function getApiKey(email: string, accountsDirPath: string): string | null
 }
 
 export function setApiKey(email: string, key: string, accountsDirPath: string): void {
-  if (!key) throw new Error('API key cannot be empty');
+  // Trim whitespace — pasted keys often arrive with leading/trailing
+  // spaces or newlines that Anthropic rejects with a 401, and the user
+  // has no clue why. Trim once here so both the TUI and CLI paths benefit.
+  const trimmed = key.trim();
+  if (!trimmed) throw new Error('API key cannot be empty');
   const file = accountFilePath(email, accountsDirPath);
   const data = readAccountFile(file);
   if (!data) {
     throw new Error(`No saved account for ${email}. Run: claude switch add`);
   }
-  data._apiKey = key;
+  data._apiKey = trimmed;
   writeAccountFile(file, data);
 }
 

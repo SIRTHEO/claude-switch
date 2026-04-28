@@ -38,8 +38,14 @@ describe('isNewer', () => {
   });
 
   it('returns true when current is a pre-release and latest is the stable release', () => {
-    assert.strictEqual(isNewer('2.3.0-rc.1', '2.3.0'), false); // same base — not newer
+    // Per semver: 2.3.0-rc.1 < 2.3.0. Users on a pre-release should be
+    // notified when the matching stable lands.
+    assert.strictEqual(isNewer('2.3.0-rc.1', '2.3.0'), true);
     assert.strictEqual(isNewer('2.3.0-rc.1', '2.4.0'), true);
+  });
+
+  it('does not propose another pre-release of the same base version', () => {
+    assert.strictEqual(isNewer('2.3.0-rc.1', '2.3.0-rc.2'), false);
   });
 
   it('treats missing patch component as 0', () => {

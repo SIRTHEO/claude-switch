@@ -164,7 +164,7 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
   // it's already fresh we skip the call entirely.
   const currentForRefresh = getCurrent(claudeJsonPath);
   if (currentForRefresh && isUsageCacheStale(readUsageCache(accountsDirPath), currentForRefresh)) {
-    const token = getAccessTokenFromKeychain();
+    const token = getAccessTokenFromKeychain(claudeJsonPath);
     if (token) {
       const spin = p.spinner();
       spin.start('Fetching subscription usage');
@@ -293,7 +293,7 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
           // waiting for the background job. We import dynamically to avoid
           // pulling https into the menu hot-path.
           const { fetchUsageCached, getAccessTokenFromKeychain } = await import('../usage.js');
-          const token = getAccessTokenFromKeychain();
+          const token = getAccessTokenFromKeychain(claudeJsonPath);
           if (!token) {
             p.note('No OAuth access token available — only Max/Pro subscribers.', 'Cannot fetch');
             break;
