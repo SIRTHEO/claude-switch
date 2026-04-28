@@ -18,8 +18,9 @@ import { getSavedClaudeBin, runSetup } from '../src/setup.js';
 import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
-import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
+import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
 import { selectAccountInteractive } from '../src/ui/select-account.js';
+import { runMainMenu } from '../src/ui/main-menu.js';
 import { setApiKeyInteractive } from '../src/ui/set-apikey.js';
 import { runSetupWizard } from '../src/ui/setup-wizard.js';
 import { addAccountInteractive } from '../src/ui/add-account.js';
@@ -265,14 +266,17 @@ function renderStatusline(
   const fallbackOn = isFallbackEnabled(accountsDirPath);
   const apiKey = getApiKey(email, accountsDirPath);
   const usingApiKey = fallbackOn && !!apiKey;
-  const usage = readUsageCache(accountsDirPath);
-  const fivePct = usage?.payload?.five_hour?.utilization;
-  const sevenPct = usage?.payload?.seven_day?.utilization;
+  // Only show usage from the active account's quota — caches from a
+  // previous account would otherwise leak across switches.
+  const usageForActive = readUsageCacheFor(accountsDirPath, email);
+  const fivePct = usageForActive?.payload?.five_hour?.utilization;
+  const sevenPct = usageForActive?.payload?.seven_day?.utilization;
 
-  // Quasi-live: if the cache is stale, kick off a detached background fetch.
-  // The current call returns immediately; the next statusline redraw will
-  // pick up the fresh value. Skipped while we're in a recorded 429 backoff.
-  if (isUsageCacheStale(usage)) {
+  // Quasi-live: if the cache is stale or for a different account, kick off
+  // a detached background fetch. The current call returns immediately; the
+  // next statusline redraw will pick up the fresh value. Skipped while a
+  // recorded 429 backoff is still in effect.
+  if (isUsageCacheStale(readUsageCache(accountsDirPath), email)) {
     triggerBackgroundUsageRefresh();
   }
 
@@ -372,10 +376,12 @@ async function main(): Promise<void> {
 
   switch (cmd.action) {
     case 'switch-interactive':
-      // Fancy TUI when we have a real terminal; numbered-list fallback for
-      // pipes/CI/dumb terminals that can't render arrow-key navigation.
+      // Persistent menu loop when we have a real terminal — actions return to
+      // the menu instead of exiting. Falls back to the legacy numbered list
+      // for pipes / CI / dumb terminals that can't render arrow-key
+      // navigation.
       if (process.stdin.isTTY && process.stdout.isTTY) {
-        await selectAccountInteractive(cJson, aDir);
+        await runMainMenu(cJson, aDir);
       } else {
         await switchInteractive(cJson, aDir);
       }
@@ -641,10 +647,11 @@ async function main(): Promise<void> {
           'Make sure you are logged in: claude switch status',
         );
       }
+      const currentAccount = getCurrent(cJson) || undefined;
       // refresh-only: just hit the endpoint and update the cache, no output.
       // Used by the statusline to keep cache fresh asynchronously.
       if (cmd.refreshOnly) {
-        await fetchUsageCached(aDir, token, { force: true });
+        await fetchUsageCached(aDir, token, { force: true, account: currentAccount });
         return;
       }
       // When forcing, surface the raw fetch error so failures are diagnosable
@@ -656,7 +663,7 @@ async function main(): Promise<void> {
           console.log(`Fetch error: ${raw.error}`);
         }
       }
-      const cache = await fetchUsageCached(aDir, token, { force: cmd.force });
+      const cache = await fetchUsageCached(aDir, token, { force: cmd.force, account: currentAccount });
       if (cache.rateLimitedUntil && cache.rateLimitedUntil > Date.now()) {
         const waitSec = Math.ceil((cache.rateLimitedUntil - Date.now()) / 1000);
         console.log(

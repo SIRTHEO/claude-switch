@@ -43,6 +43,10 @@ export interface UsagePayload {
 
 export interface UsageCache {
   fetchedAt: number;
+  /** Email of the account whose token produced this snapshot. Different
+   *  accounts have completely independent quotas, so a cache from account
+   *  A must never be displayed while account B is active. */
+  account?: string;
   payload?: UsagePayload;
   // Set when the last fetch returned 429; used to back off until this time.
   rateLimitedUntil?: number;
@@ -161,16 +165,21 @@ export function fetchUsage(accessToken: string): Promise<FetchUsageOutcome> {
 /**
  * Cache-aware variant. Returns the cached payload if fresh, otherwise fetches.
  * Honors any retry-after still in effect from a previous 429.
+ *
+ * `account` is the email associated with the access token, recorded in the
+ * cache so consumers can tell whether the snapshot still belongs to the
+ * currently-active account (different accounts = independent quotas).
  */
 export async function fetchUsageCached(
   accountsDirPath: string,
   accessToken: string,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; account?: string } = {},
 ): Promise<UsageCache> {
   const cache = readUsageCache(accountsDirPath);
   const now = Date.now();
+  const sameAccount = !opts.account || !cache?.account || cache.account === opts.account;
 
-  if (!opts.force && cache) {
+  if (!opts.force && cache && sameAccount) {
     if (cache.rateLimitedUntil && cache.rateLimitedUntil > now) {
       return cache;
     }
@@ -182,13 +191,23 @@ export async function fetchUsageCached(
   const result = await fetchUsage(accessToken);
   let next: UsageCache;
   if (result.ok) {
-    next = { fetchedAt: now, payload: result.payload };
+    next = { fetchedAt: now, account: opts.account, payload: result.payload };
   } else if (result.rateLimited) {
-    next = { fetchedAt: now, rateLimitedUntil: now + result.retryAfterSec * 1000, payload: cache?.payload };
+    next = {
+      fetchedAt: now,
+      account: opts.account,
+      rateLimitedUntil: now + result.retryAfterSec * 1000,
+      payload: sameAccount ? cache?.payload : undefined,
+    };
   } else {
-    // Other errors: keep the previous payload but bump fetchedAt only modestly
-    // so the next call retries soon.
-    next = { fetchedAt: cache?.fetchedAt ?? now, payload: cache?.payload };
+    // Other errors: keep the previous payload only if it belonged to the
+    // same account; otherwise drop it so we don't display stale cross-
+    // account numbers.
+    next = {
+      fetchedAt: sameAccount ? (cache?.fetchedAt ?? now) : now,
+      account: opts.account,
+      payload: sameAccount ? cache?.payload : undefined,
+    };
   }
   writeUsageCache(accountsDirPath, next);
   return next;
@@ -202,17 +221,36 @@ export function getAccessTokenFromKeychain(): string | null {
 }
 
 /**
- * Returns true if the cache is missing, missing a payload, or older than
- * STATUSLINE_REFRESH_AFTER_MS. Always false while a recorded rate-limit
- * back-off is still in effect, since refreshing into a 429 makes nothing
- * better.
+ * Returns true if the cache is missing, missing a payload, older than
+ * STATUSLINE_REFRESH_AFTER_MS, or belongs to a different account than the
+ * one currently active. Always false while a recorded rate-limit back-off
+ * is still in effect, since refreshing into a 429 makes nothing better.
  */
-export function isUsageCacheStale(cache: UsageCache | null): boolean {
+export function isUsageCacheStale(cache: UsageCache | null, currentAccount?: string): boolean {
   if (!cache) return true;
   const now = Date.now();
   if (cache.rateLimitedUntil && cache.rateLimitedUntil > now) return false;
   if (!cache.payload) return true;
+  if (currentAccount && cache.account && cache.account !== currentAccount) return true;
   return now - cache.fetchedAt > STATUSLINE_REFRESH_AFTER_MS;
+}
+
+/**
+ * Returns the cache only if it belongs to the given account. Used by display
+ * code (statusline, status) to avoid showing numbers from a different
+ * account's quota.
+ */
+export function readUsageCacheFor(
+  accountsDirPath: string,
+  account: string,
+): UsageCache | null {
+  const cache = readUsageCache(accountsDirPath);
+  if (!cache) return null;
+  // Older caches (pre-account-aware) have no `account` field — treat as a
+  // cache miss so we refetch with the current account context attached.
+  if (!cache.account) return null;
+  if (cache.account !== account) return null;
+  return cache;
 }
 
 /**
