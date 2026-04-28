@@ -20,6 +20,10 @@ import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js
 import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
 import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
 import { selectAccountInteractive } from '../src/ui/select-account.js';
+import { setApiKeyInteractive } from '../src/ui/set-apikey.js';
+import { runSetupWizard } from '../src/ui/setup-wizard.js';
+import { addAccountInteractive } from '../src/ui/add-account.js';
+import { removeAccountInteractive } from '../src/ui/remove-account.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -395,7 +399,11 @@ async function main(): Promise<void> {
 
     case 'add': {
       const claudeBin = findClaude();
-      await addAccount(claudeBin, cJson, aDir);
+      if (process.stdin.isTTY && process.stderr.isTTY) {
+        await addAccountInteractive(claudeBin, cJson, aDir);
+      } else {
+        await addAccount(claudeBin, cJson, aDir);
+      }
       break;
     }
 
@@ -464,16 +472,20 @@ async function main(): Promise<void> {
       if (!cmd.email) {
         throw new ExitError('Usage: claude switch remove <email>');
       }
-      try {
-        const current = getCurrent(cJson);
-        if (cmd.email === current) {
-          throw new ExitError('Cannot remove the active account. Switch to another account first.');
+      if (process.stdin.isTTY && process.stderr.isTTY) {
+        await removeAccountInteractive(cmd.email, cJson, aDir);
+      } else {
+        try {
+          const current = getCurrent(cJson);
+          if (cmd.email === current) {
+            throw new ExitError('Cannot remove the active account. Switch to another account first.');
+          }
+          removeAccount(cmd.email, aDir);
+          console.log(`Removed: ${cmd.email}`);
+        } catch (e) {
+          if (e instanceof ExitError) throw e;
+          throw new ExitError((e as Error).message);
         }
-        removeAccount(cmd.email, aDir);
-        console.log(`Removed: ${cmd.email}`);
-      } catch (e) {
-        if (e instanceof ExitError) throw e;
-        throw new ExitError((e as Error).message);
       }
       break;
 
@@ -540,50 +552,28 @@ async function main(): Promise<void> {
       }
       const email = resolveTargetEmail(cmd.target, aDir);
 
-      // Warn the user before overwriting an existing key — accidental re-runs
-      // (e.g. wrong account or stale terminal history) shouldn't silently
-      // replace a key the user might still need to recover.
-      const existing = getApiKey(email, aDir);
-      if (existing) {
-        process.stderr.write(
-          `\nAn API key is already saved for ${email}: ${maskApiKey(existing)}\n`,
-        );
-        const overwrite = await askYN('Overwrite it? [y/N] ');
-        if (!overwrite) {
-          throw new ExitError('Aborted. Existing key kept.');
+      // TUI when we have a real terminal; legacy text fallback for pipes/CI.
+      if (process.stdin.isTTY && process.stderr.isTTY) {
+        const result = await setApiKeyInteractive(email, aDir);
+        if (!result.saved && !result.cancelled) {
+          // setApiKey threw — let the next invocation try again.
+          process.exit(1);
         }
+        break;
       }
 
-      // Multi-line prompt that makes the hidden-input UX explicit. Users were
-      // previously confused by a single-line prompt that left the cursor
-      // motionless: typing felt like the terminal was hung, so they hit Enter
-      // or kept typing the prompt text itself.
-      process.stderr.write(
-        `\nPaste the Anthropic API key for ${email}.\n` +
-        `It must start with "sk-ant-" and you can get one at:\n` +
-        `  https://console.anthropic.com/settings/keys\n\n` +
-        `(input is hidden — nothing will be shown as you paste; press Enter when done)\n`
-      );
-      const key = await promptSecret(`> `);
-      if (!key) throw new ExitError('No key entered. Aborted.');
-      if (!/^sk-ant-/.test(key)) {
-        // Don't silently save junk: if it doesn't look like an Anthropic key,
-        // make the user explicitly confirm. This catches the common mistake
-        // of typing into the prompt itself or pasting from the wrong buffer.
-        process.stderr.write(
-          `\nWarning: the value you entered does not look like an Anthropic API key.\n` +
-          `(Anthropic keys start with "sk-ant-".)\n` +
-          `Got: ${maskApiKey(key)}\n`,
+      // Non-TTY fallback: read first line of stdin as the key, no prompts.
+      const existing = getApiKey(email, aDir);
+      if (existing) {
+        throw new ExitError(
+          `An API key is already saved for ${email} (${maskApiKey(existing)}). ` +
+          `Run interactively to overwrite.`,
         );
-        const confirmed = await askYN('Save it anyway? [y/N] ');
-        if (!confirmed) {
-          throw new ExitError('Aborted. Run the command again to retry.');
-        }
       }
+      const key = await promptSecret('');
+      if (!key) throw new ExitError('No key on stdin. Aborted.');
       setApiKey(email, key, aDir);
-      process.stderr.write(`\nSaved API key for ${email} (${maskApiKey(key)}).\n`);
-      process.stderr.write(`Enable it with: claude switch fallback on\n`);
-      process.stderr.write(`Note: Claude Code may prompt to approve the key the first time it is used.\n`);
+      console.log(`Saved API key for ${email} (${maskApiKey(key)}).`);
       break;
     }
 
@@ -753,7 +743,11 @@ async function main(): Promise<void> {
     }
 
     case 'setup':
-      await runSetup(fileURLToPath(import.meta.url));
+      if (process.stdin.isTTY && process.stderr.isTTY) {
+        await runSetupWizard(fileURLToPath(import.meta.url));
+      } else {
+        await runSetup(fileURLToPath(import.meta.url));
+      }
       break;
 
     case 'update': {
