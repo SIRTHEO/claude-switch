@@ -41,7 +41,7 @@ function readAccountFile(file: string): Record<string, unknown> | null {
 
 function writeAccountFile(file: string, data: Record<string, unknown>): void {
   const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
   if (process.platform !== 'win32') {
     fs.chmodSync(tmp, 0o600);
   }

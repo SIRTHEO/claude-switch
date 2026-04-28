@@ -128,7 +128,10 @@ export function fetchLatestVersionSync(): Promise<string | null> {
     const req = https.get(REGISTRY_URL, { timeout: 8000 }, (res) => {
       if (res.statusCode !== 200) { res.resume(); resolve(null); return; }
       let body = '';
-      res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      res.on('data', (chunk: Buffer) => {
+        body += chunk.toString();
+        if (body.length > 64 * 1024) { res.destroy(); resolve(null); }
+      });
       res.on('end', () => {
         try {
           const version = (JSON.parse(body) as Record<string, unknown>).version;

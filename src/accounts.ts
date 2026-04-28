@@ -75,7 +75,7 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
   }
 
   const tmp = accountFile + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(accountPayload, null, 2));
+  fs.writeFileSync(tmp, JSON.stringify(accountPayload, null, 2), { mode: 0o600 });
   if (process.platform !== 'win32') {
     fs.chmodSync(tmp, 0o600);
   }
@@ -154,7 +154,7 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   // is untouched and state stays consistent.
   const writeJson = (payload: unknown): void => {
     const tmp = claudeJsonPath + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
+    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), { mode: 0o600 });
     if (process.platform !== 'win32') {
       fs.chmodSync(tmp, 0o600);
     }

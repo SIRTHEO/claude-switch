@@ -579,7 +579,7 @@ async function main(): Promise<void> {
       }
       const key = await promptSecret('');
       if (!key) throw new ExitError('No key on stdin. Aborted.');
-      setApiKey(email, key, aDir);
+      withLock(aDir, () => setApiKey(email, key, aDir));
       console.log(`Saved API key for ${email} (${maskApiKey(key)}).`);
       break;
     }
@@ -603,7 +603,7 @@ async function main(): Promise<void> {
         throw new ExitError('Usage: claude switch apikey remove <alias|email>');
       }
       const email = resolveTargetEmail(cmd.target, aDir);
-      const removed = removeApiKey(email, aDir);
+      const removed = withLock(aDir, () => removeApiKey(email, aDir));
       console.log(removed
         ? `Removed API key for ${email}.`
         : `No API key was saved for ${email}.`);
