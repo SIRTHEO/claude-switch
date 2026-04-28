@@ -8,6 +8,7 @@ import * as p from '@clack/prompts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { remove as removeAccount, getCurrent } from '../accounts.js';
+import { withLock } from '../lock.js';
 import { getAliasesForEmail } from '../aliases.js';
 import { getApiKey, maskApiKey } from '../apikey.js';
 
@@ -68,7 +69,7 @@ export async function removeAccountInteractive(
   const spin = p.spinner();
   spin.start('Removing account');
   try {
-    removeAccount(email, accountsDirPath);
+    withLock(accountsDirPath, () => removeAccount(email, accountsDirPath));
     spin.stop('Removed');
   } catch (e) {
     spin.stop('Failed');
