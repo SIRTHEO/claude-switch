@@ -41,7 +41,8 @@ export type Command =
   | { action: 'apikey-remove'; target: string | undefined }
   | { action: 'apikey-show'; target: string | undefined }
   | { action: 'fallback'; mode: 'on' | 'off' | 'status' }
-  | { action: 'usage'; force: boolean };
+  | { action: 'usage'; force: boolean }
+  | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -88,6 +89,13 @@ export function parseCommand(args: string[]): Command {
       const force = args[2] === '--force';
       return { action: 'usage', force };
     }
+    case 'statusline':
+    case 'sl': {
+      const rest = args.slice(2);
+      const fmt = rest.includes('--full') ? 'full' : rest.includes('--json') ? 'json' : 'compact';
+      const color = !rest.includes('--no-color');
+      return { action: 'statusline', format: fmt as 'compact' | 'full' | 'json', color };
+    }
     case 'alias': {
       const sub2 = args[2];
       if (!sub2 || sub2 === '--list') return { action: 'alias-list' };
@@ -133,6 +141,8 @@ Usage:
   claude switch apikey remove <a|e>      Delete saved API key
   claude switch fallback on|off|status   Toggle API key fallback (overrides OAuth)
   claude switch usage [--force]          Show subscription usage % (5h, 7d)
+  claude switch statusline [opts]        One-line account/mode for shell prompt
+                                         opts: --full | --json | --no-color
   claude switch update                   Check for updates and install if available
   claude switch help                     Show this help
   claude switch setup                    Re-run first-time setup
@@ -213,11 +223,93 @@ async function askYN(question: string): Promise<boolean> {
   });
 }
 
+/**
+ * Print one line summarizing the active account + auth mode, intended for use
+ * in shell prompts or Claude Code's statusLine.command.
+ *
+ * Reads only local state (no network). Skips the update-check / pending-
+ * restore preludes so latency stays in the tens of milliseconds.
+ */
+function renderStatusline(
+  format: 'compact' | 'full' | 'json',
+  useColor: boolean,
+  claudeJsonPathStr: string,
+  accountsDirPath: string,
+): void {
+  const c = (code: string, s: string): string => useColor ? `\x1b[${code}m${s}\x1b[0m` : s;
+  const dim = (s: string): string => c('2', s);
+  const yellow = (s: string): string => c('33', s);
+  const green = (s: string): string => c('32', s);
+  const red = (s: string): string => c('31', s);
+  const cyan = (s: string): string => c('36', s);
+
+  let email: string;
+  try {
+    email = getCurrent(claudeJsonPathStr);
+  } catch {
+    email = '';
+  }
+  if (!email) {
+    process.stdout.write(format === 'json' ? '{"email":null,"mode":null}' : dim('claude: no account'));
+    process.stdout.write('\n');
+    return;
+  }
+
+  const fallbackOn = isFallbackEnabled(accountsDirPath);
+  const apiKey = getApiKey(email, accountsDirPath);
+  const usingApiKey = fallbackOn && !!apiKey;
+  const usage = readUsageCache(accountsDirPath);
+  const fivePct = usage?.payload?.five_hour?.utilization;
+  const sevenPct = usage?.payload?.seven_day?.utilization;
+
+  // Short-form display name: prefer the first alias if any, else the local part.
+  const aliases = getAliasesForEmail(email, accountsDirPath);
+  const shortName = aliases[0] ?? email.split('@')[0];
+
+  if (format === 'json') {
+    const json = {
+      email,
+      shortName,
+      mode: usingApiKey ? 'api' : 'oauth',
+      fallback: fallbackOn,
+      hasApiKey: !!apiKey,
+      fiveHour: fivePct ?? null,
+      sevenDay: sevenPct ?? null,
+    };
+    process.stdout.write(JSON.stringify(json) + '\n');
+    return;
+  }
+
+  const modeLabel = usingApiKey ? yellow('API') : green('OAuth');
+  const usageBadge = (() => {
+    if (fivePct === undefined) return '';
+    const pctStr = `${fivePct.toFixed(0)}%`;
+    if (fivePct >= 90) return ` ${red(`5h:${pctStr}`)}`;
+    if (fivePct >= 75) return ` ${yellow(`5h:${pctStr}`)}`;
+    return ` ${dim(`5h:${pctStr}`)}`;
+  })();
+
+  if (format === 'full') {
+    process.stdout.write(`🔑 ${cyan(email)} · ${modeLabel}${usageBadge}\n`);
+  } else {
+    // compact (default) — short alias + mode badge + optional usage
+    process.stdout.write(`🔑 ${cyan(shortName)} ${modeLabel}${usageBadge}\n`);
+  }
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const cmd = parseCommand(args);
   const cJson = claudeJsonPath();
   const aDir = accountsDir();
+
+  // Statusline is called on every Claude Code redraw — return as fast as
+  // possible. Skip every check that touches the filesystem beyond what we
+  // strictly need.
+  if (cmd.action === 'statusline') {
+    renderStatusline(cmd.format, cmd.color, cJson, aDir);
+    return;
+  }
 
   // Check for update (reads cache synchronously — never blocks).
   // Skip for passthrough/temporary-switch to avoid polluting claude's output.
