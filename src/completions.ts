@@ -13,13 +13,20 @@ export function generateBash(): string {
       COMPREPLY=($(compgen -W "${SUBCOMMANDS.join(' ')}" -- "$cur"))
       local accounts_dir="$HOME/.claude/accounts"
       if [[ -d "$accounts_dir" ]]; then
-        local emails=""
+        local -a email_arr=()
         for f in "$accounts_dir"/*.json; do
           [[ -f "$f" ]] || continue
           local name="\${f##*/}"; name="\${name%.json}"
-          emails="$emails $name"
+          # Defense against command injection via rogue filenames: only
+          # accept names with email-safe characters. Anything else is
+          # silently skipped (compgen -W expands $(...) and backticks if
+          # present in the wordlist).
+          [[ "$name" =~ ^[A-Za-z0-9._+@-]+$ ]] || continue
+          email_arr+=("$name")
         done
-        COMPREPLY+=($(compgen -W "$emails" -- "$cur"))
+        if [[ \${#email_arr[@]} -gt 0 ]]; then
+          COMPREPLY+=($(compgen -W "\${email_arr[*]}" -- "$cur"))
+        fi
       fi
     fi
   fi

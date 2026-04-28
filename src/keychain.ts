@@ -54,9 +54,20 @@ export function writeKeychain(data: KeychainData): void {
   if (process.platform !== 'darwin') return;
 
   const account = candidateAccounts()[0]; // always write to the primary (username) account
-  execFileSync(
-    'security',
-    ['add-generic-password', '-s', SERVICE, '-a', account, '-w', JSON.stringify(data), '-U'],
-    { stdio: 'ignore' }
-  );
+  try {
+    execFileSync(
+      'security',
+      ['add-generic-password', '-s', SERVICE, '-a', account, '-w', JSON.stringify(data), '-U'],
+      // Capture stderr separately so we can surface diagnostics without
+      // re-throwing Node's default error.message — which embeds argv,
+      // and our argv contains the OAuth tokens.
+      { stdio: ['ignore', 'ignore', 'pipe'] }
+    );
+  } catch (e) {
+    const stderr = (e as { stderr?: Buffer }).stderr?.toString().trim() ?? '';
+    const detail = stderr ? `: ${stderr}` : '';
+    throw new Error(
+      `Failed to write to macOS Keychain${detail}. Make sure the keychain is unlocked.`
+    );
+  }
 }
