@@ -14,12 +14,18 @@
 import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { readKeychain } from './keychain.js';
 
 const ENDPOINT_HOST = 'api.anthropic.com';
 const ENDPOINT_PATH = '/api/oauth/usage';
 const BETA_HEADER = 'oauth-2025-04-20';
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min — endpoint is aggressively throttled
+// How stale the cache can get before the statusline kicks off a background
+// refresh. Slightly tighter than CACHE_TTL_MS so the user sees fresher numbers
+// while still respecting the endpoint's rate limit.
+const STATUSLINE_REFRESH_AFTER_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 5_000;
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -193,4 +199,45 @@ export function getAccessTokenFromKeychain(): string | null {
   const data = readKeychain();
   const token = data?.claudeAiOauth?.accessToken;
   return typeof token === 'string' && token ? token : null;
+}
+
+/**
+ * Returns true if the cache is missing, missing a payload, or older than
+ * STATUSLINE_REFRESH_AFTER_MS. Always false while a recorded rate-limit
+ * back-off is still in effect, since refreshing into a 429 makes nothing
+ * better.
+ */
+export function isUsageCacheStale(cache: UsageCache | null): boolean {
+  if (!cache) return true;
+  const now = Date.now();
+  if (cache.rateLimitedUntil && cache.rateLimitedUntil > now) return false;
+  if (!cache.payload) return true;
+  return now - cache.fetchedAt > STATUSLINE_REFRESH_AFTER_MS;
+}
+
+/**
+ * Spawn a fully-detached background process that refreshes the usage cache,
+ * then exits. Used by the statusline so the foreground call can return
+ * immediately — Claude Code renders the line as soon as we return, and the
+ * next redraw picks up the freshly-written cache.
+ */
+export function triggerBackgroundUsageRefresh(): void {
+  let selfPath: string;
+  try {
+    selfPath = fileURLToPath(import.meta.url);
+  } catch {
+    return;
+  }
+  // selfPath is .../dist/src/usage.js; the CLI entry sits at .../dist/bin/cli.js
+  const cliPath = path.resolve(path.dirname(selfPath), '..', 'bin', 'cli.js');
+  try {
+    const child = spawn(process.execPath, [cliPath, 'switch', 'usage', '--refresh-only'], {
+      detached: true,
+      stdio: 'ignore',
+      env: process.env,
+    });
+    child.unref();
+  } catch {
+    /* best-effort */
+  }
 }
