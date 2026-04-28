@@ -425,6 +425,20 @@ async function main(): Promise<void> {
       }
       const email = resolveTargetEmail(cmd.target, aDir);
 
+      // Warn the user before overwriting an existing key — accidental re-runs
+      // (e.g. wrong account or stale terminal history) shouldn't silently
+      // replace a key the user might still need to recover.
+      const existing = getApiKey(email, aDir);
+      if (existing) {
+        process.stderr.write(
+          `\nAn API key is already saved for ${email}: ${maskApiKey(existing)}\n`,
+        );
+        const overwrite = await askYN('Overwrite it? [y/N] ');
+        if (!overwrite) {
+          throw new ExitError('Aborted. Existing key kept.');
+        }
+      }
+
       // Multi-line prompt that makes the hidden-input UX explicit. Users were
       // previously confused by a single-line prompt that left the cursor
       // motionless: typing felt like the terminal was hung, so they hit Enter
