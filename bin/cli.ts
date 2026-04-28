@@ -18,6 +18,7 @@ import { getSavedClaudeBin, runSetup } from '../src/setup.js';
 import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
+import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache } from '../src/usage.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -39,7 +40,8 @@ export type Command =
   | { action: 'apikey-set'; target: string | undefined }
   | { action: 'apikey-remove'; target: string | undefined }
   | { action: 'apikey-show'; target: string | undefined }
-  | { action: 'fallback'; mode: 'on' | 'off' | 'status' };
+  | { action: 'fallback'; mode: 'on' | 'off' | 'status' }
+  | { action: 'usage'; force: boolean };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -81,6 +83,10 @@ export function parseCommand(args: string[]): Command {
       if (sub2 === 'on') return { action: 'fallback', mode: 'on' };
       if (sub2 === 'off') return { action: 'fallback', mode: 'off' };
       throw new ExitError('Usage: claude switch fallback <on|off|status>');
+    }
+    case 'usage': {
+      const force = args[2] === '--force';
+      return { action: 'usage', force };
     }
     case 'alias': {
       const sub2 = args[2];
@@ -126,6 +132,7 @@ Usage:
   claude switch apikey show <a|e>        Show saved API key (masked)
   claude switch apikey remove <a|e>      Delete saved API key
   claude switch fallback on|off|status   Toggle API key fallback (overrides OAuth)
+  claude switch usage [--force]          Show subscription usage % (5h, 7d)
   claude switch update                   Check for updates and install if available
   claude switch help                     Show this help
   claude switch setup                    Re-run first-time setup
@@ -527,6 +534,60 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'usage': {
+      const token = getAccessTokenFromKeychain();
+      if (!token) {
+        throw new ExitError(
+          'No OAuth access token available — only Max/Pro subscribers can use this. ' +
+          'Make sure you are logged in: claude switch status',
+        );
+      }
+      // When forcing, surface the raw fetch error so failures are diagnosable
+      // (the cached path silently swallows non-429 errors to keep noise low).
+      if (cmd.force) {
+        const { fetchUsage: rawFetch } = await import('../src/usage.js');
+        const raw = await rawFetch(token);
+        if (!raw.ok && !raw.rateLimited) {
+          console.log(`Fetch error: ${raw.error}`);
+        }
+      }
+      const cache = await fetchUsageCached(aDir, token, { force: cmd.force });
+      if (cache.rateLimitedUntil && cache.rateLimitedUntil > Date.now()) {
+        const waitSec = Math.ceil((cache.rateLimitedUntil - Date.now()) / 1000);
+        console.log(
+          `Anthropic's usage endpoint is rate-limiting us. ` +
+          `Retry in ~${waitSec}s${cache.payload ? ' (showing last cached values below)' : ''}.`,
+        );
+      }
+      if (cache.payload) {
+        const ageMin = Math.round((Date.now() - cache.fetchedAt) / 60_000);
+        const fmtReset = (iso?: string): string => {
+          if (!iso) return '';
+          const d = new Date(iso);
+          if (isNaN(d.getTime())) return '';
+          const min = Math.round((d.getTime() - Date.now()) / 60_000);
+          if (min < 60) return ` (resets in ${min}m)`;
+          if (min < 60 * 24) return ` (resets in ${Math.round(min / 60)}h)`;
+          return ` (resets in ${Math.round(min / 60 / 24)}d)`;
+        };
+        const five = cache.payload.five_hour;
+        const seven = cache.payload.seven_day;
+        const opus = cache.payload.seven_day_opus;
+        const sonnet = cache.payload.seven_day_sonnet;
+        console.log(`Subscription usage (cached ${ageMin} min ago):`);
+        console.log(`  5-hour window:    ${five.utilization.toFixed(1)}%${fmtReset(five.resets_at)}`);
+        console.log(`  7-day window:     ${seven.utilization.toFixed(1)}%${fmtReset(seven.resets_at)}`);
+        if (opus) console.log(`    └ Opus 7d:      ${opus.utilization.toFixed(1)}%`);
+        if (sonnet) console.log(`    └ Sonnet 7d:    ${sonnet.utilization.toFixed(1)}%`);
+        if (five.utilization >= 85) {
+          console.log('\n⚠ 5-hour window near limit. Consider:  claude switch fallback on');
+        }
+      } else if (!cache.rateLimitedUntil) {
+        console.log('Could not fetch usage — endpoint unreachable. Try again later.');
+      }
+      break;
+    }
+
     case 'completions': {
       const generators: Record<string, () => string> = {
         bash: generateBash,
@@ -650,6 +711,18 @@ async function main(): Promise<void> {
       const extraEnv = fallbackEnvFor(email, aDir);
       if (extraEnv) {
         process.stderr.write('(fallback on — using saved API key)\n\n');
+      } else {
+        // Read-only check: if a recent usage snapshot says we're near the
+        // limit and the user has a saved key, hint at the fallback toggle.
+        // Never fetches — only consults whatever the user already cached
+        // via `claude switch usage`. Skips entirely if no cache exists.
+        const cache = readUsageCache(aDir);
+        if (cache?.payload && cache.payload.five_hour.utilization >= 85 && getApiKey(email, aDir)) {
+          process.stderr.write(
+            `⚠ subscription 5h window at ${cache.payload.five_hour.utilization.toFixed(0)}%. ` +
+            `Run "claude switch fallback on" to use your API key instead.\n\n`,
+          );
+        }
       }
       proxyRun(claudeBin, cmd.args, extraEnv);
       break;
