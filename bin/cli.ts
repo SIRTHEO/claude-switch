@@ -19,6 +19,7 @@ import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectI
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
 import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
+import { selectAccountInteractive } from '../src/ui/select-account.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -367,7 +368,13 @@ async function main(): Promise<void> {
 
   switch (cmd.action) {
     case 'switch-interactive':
-      await switchInteractive(cJson, aDir);
+      // Fancy TUI when we have a real terminal; numbered-list fallback for
+      // pipes/CI/dumb terminals that can't render arrow-key navigation.
+      if (process.stdin.isTTY && process.stdout.isTTY) {
+        await selectAccountInteractive(cJson, aDir);
+      } else {
+        await switchInteractive(cJson, aDir);
+      }
       break;
 
     case 'switch-to': {
