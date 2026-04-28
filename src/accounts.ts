@@ -2,7 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readKeychain, writeKeychain, type KeychainData } from './keychain.js';
 
-const UNSAFE_FILENAME_CHARS = /[/\\:*?"<>|]/;
+// Whitelist of characters allowed in account names. RFC 5321 email local-part
+// can contain more than this, but accepting only [A-Za-z0-9._+@-] covers ~all
+// real-world emails and blocks shell metacharacters ($, `, (, ), ;, &, |,
+// space, newline, etc.) that would otherwise allow command injection through
+// downstream consumers like shell completions (compgen -W).
+const SAFE_EMAIL_CHARS = /^[A-Za-z0-9._+@-]+$/;
+
+function isSafeEmail(email: string): boolean {
+  return SAFE_EMAIL_CHARS.test(email);
+}
 
 function resolvedAccountFile(email: string, accountsDirPath: string): string {
   const base = path.resolve(accountsDirPath);
@@ -17,13 +26,19 @@ export function getCurrent(claudeJsonPath: string): string {
   try {
     const data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
     return data?.oauthAccount?.emailAddress || '';
-  } catch {
+  } catch (e) {
+    // Distinguish "file missing / unparseable" (legitimate empty state) from
+    // "permission denied" (operator misconfiguration). The latter would be
+    // misleading if reported as "no account connected".
+    if ((e as NodeJS.ErrnoException).code === 'EACCES') {
+      throw new Error(`Permission denied reading ${claudeJsonPath}. Check file permissions.`);
+    }
     return '';
   }
 }
 
 export function save(email: string, claudeJsonPath: string, accountsDirPath: string): void {
-  if (!email || UNSAFE_FILENAME_CHARS.test(email)) {
+  if (!email || !isSafeEmail(email)) {
     throw new Error(`Email contains characters unsafe for filenames: ${email}`);
   }
 
@@ -71,7 +86,12 @@ export function list(accountsDirPath: string): string[] {
     const files = fs.readdirSync(accountsDirPath);
     return files
       .filter(f => f.endsWith('.json') && !f.startsWith('.') && f !== 'aliases.json')
-      .map(f => f.replace(/\.json$/, ''));
+      .map(f => f.replace(/\.json$/, ''))
+      // Defense-in-depth: skip names with shell-unsafe characters even if a
+      // rogue process bypassed save()'s validation (e.g. via dotfile sync).
+      // Such files are still on disk but won't surface to consumers like
+      // shell completions where they could cause command injection.
+      .filter(isSafeEmail);
   } catch {
     return [];
   }
@@ -111,16 +131,9 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
     throw e;
   }
 
-  // Restore Keychain credentials if they were saved with this account.
-  // Accounts saved before this version of claude-switch won't have _keychain;
-  // in that case we leave the Keychain as-is and return a flag so the caller
-  // can warn the user that the account needs to be re-added.
-  // _apiKey is stripped here too so it never leaks into ~/.claude.json.
+  // Strip internal fields so they never leak into ~/.claude.json.
   const { _keychain, _apiKey: _ignored, ...oauthAccount } = accountData;
   const keychainRestored = !!(_keychain && typeof _keychain === 'object');
-  if (keychainRestored) {
-    writeKeychain(_keychain as KeychainData);
-  }
 
   let data;
   try {
@@ -131,13 +144,34 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
     }
     throw e;
   }
+  // Snapshot the previous oauthAccount so we can roll the JSON back if the
+  // Keychain write fails afterwards (keeps the two sources of truth in sync).
+  const previousOauthAccount = data.oauthAccount;
   data.oauthAccount = oauthAccount;
 
-  const tmp = claudeJsonPath + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-  fs.renameSync(tmp, claudeJsonPath);
-  if (process.platform !== 'win32') {
-    fs.chmodSync(claudeJsonPath, 0o600);
+  // Write JSON first (cheaper, more recoverable). If this fails, the Keychain
+  // is untouched and state stays consistent.
+  const writeJson = (payload: unknown): void => {
+    const tmp = claudeJsonPath + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
+    if (process.platform !== 'win32') {
+      fs.chmodSync(tmp, 0o600);
+    }
+    fs.renameSync(tmp, claudeJsonPath);
+  };
+  writeJson(data);
+
+  // Then update Keychain. If this fails, roll the JSON back to its previous
+  // oauthAccount so the two sources of truth don't drift.
+  if (keychainRestored) {
+    try {
+      writeKeychain(_keychain as KeychainData);
+    } catch (e) {
+      try {
+        writeJson({ ...data, oauthAccount: previousOauthAccount });
+      } catch { /* best-effort rollback */ }
+      throw e;
+    }
   }
 
   return { keychainRestored };
