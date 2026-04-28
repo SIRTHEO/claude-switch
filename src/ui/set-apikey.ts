@@ -3,6 +3,7 @@
 
 import * as p from '@clack/prompts';
 import { getApiKey, maskApiKey, setApiKey } from '../apikey.js';
+import { withLock } from '../lock.js';
 
 const KEY_PREFIX = 'sk-ant-';
 
@@ -70,7 +71,7 @@ export async function setApiKeyInteractive(
   const spin = p.spinner();
   spin.start('Saving key');
   try {
-    setApiKey(email, key, accountsDirPath);
+    withLock(accountsDirPath, () => setApiKey(email, key, accountsDirPath));
     spin.stop(`Saved (${maskApiKey(key)})`);
   } catch (e) {
     spin.stop('Save failed');
