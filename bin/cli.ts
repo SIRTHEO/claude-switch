@@ -631,8 +631,12 @@ async function main(): Promise<void> {
         if (current && !getApiKey(current, aDir)) {
           console.log(`Note: active account ${current} has no saved API key. Run: claude switch apikey set ${current}`);
         } else if (current) {
-          console.log('Subsequent `claude` runs will use the saved API key (billed against API credits).');
-          console.log('Note: Claude Code may prompt to approve the key the first time it is used.');
+          console.log('Subsequent `claude` runs will inject the saved API key as ANTHROPIC_API_KEY.');
+          console.log('');
+          console.log('IMPORTANT: the first time, Claude Code will prompt:');
+          console.log('    "Use this API key? [y/N]"');
+          console.log('Press y to approve — your choice is remembered.');
+          console.log('If you miss it or press N, claude silently keeps using OAuth.');
         }
       }
       break;
