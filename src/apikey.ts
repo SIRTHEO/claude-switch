@@ -10,10 +10,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const UNSAFE_FILENAME_CHARS = /[/\\:*?"<>|]/;
+const SAFE_EMAIL_CHARS = /^[A-Za-z0-9._+@-]+$/;
 
 function accountFilePath(email: string, accountsDirPath: string): string {
-  if (!email || UNSAFE_FILENAME_CHARS.test(email)) {
+  if (!email || !SAFE_EMAIL_CHARS.test(email)) {
     throw new Error(`Email contains characters unsafe for filenames: ${email}`);
   }
   const base = path.resolve(accountsDirPath);

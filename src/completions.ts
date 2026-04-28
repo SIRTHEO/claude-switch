@@ -44,7 +44,10 @@ _claude_switch() {
     local accounts_dir="$HOME/.claude/accounts"
     if [[ -d "$accounts_dir" ]]; then
       for f in "$accounts_dir"/*.json; do
-        [[ -f "$f" ]] && accounts+=("\${\${f##*/}%.json}")
+        [[ -f "$f" ]] || continue
+        local name="\${\${f##*/}%.json}"
+        [[ "$name" =~ ^[A-Za-z0-9._+@-]+$ ]] || continue
+        accounts+=("$name")
       done
     fi
     _describe 'subcommand' subcommands
@@ -56,7 +59,7 @@ compdef _claude_switch claude`;
 
 export function generateFish(): string {
   return `complete -c claude -n '__fish_seen_subcommand_from switch' -a '${SUBCOMMANDS.join(' ')}' -d 'switch subcommand'
-complete -c claude -n '__fish_seen_subcommand_from switch' -a '(for f in ~/.claude/accounts/*.json; basename "$f" .json; end)' -d 'account'`;
+complete -c claude -n '__fish_seen_subcommand_from switch' -a '(for f in ~/.claude/accounts/*.json; set name (basename "$f" .json); string match -rq \'^[A-Za-z0-9._+@-]+$\' -- $name; and echo $name; end)' -d 'account'`;
 }
 
 export function generatePowerShell(): string {
@@ -73,7 +76,7 @@ export function generatePowerShell(): string {
     if (Test-Path $accountsDir) {
       Get-ChildItem "$accountsDir\\*.json" | ForEach-Object {
         $email = $_.BaseName
-        if ($email -like "$wordToComplete*") {
+        if ($email -match '^[A-Za-z0-9._+@-]+$' -and $email -like "$wordToComplete*") {
           [System.Management.Automation.CompletionResult]::new($email, $email, 'ParameterValue', $email)
         }
       }

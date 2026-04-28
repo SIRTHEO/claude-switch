@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolve } from '../src/resolver.js';
 import { getCurrent, save, list as listAccounts, remove as removeAccount } from '../src/accounts.js';
+import { withLock } from '../src/lock.js';
 import { fuzzyMatch, switchTo, switchInteractive, addAccount, runTemporarySwitch, checkPendingRestore } from '../src/switcher.js';
 import { run as proxyRun } from '../src/proxy.js';
 import { claudeJsonPath, accountsDir } from '../src/paths.js';
@@ -506,7 +507,7 @@ async function main(): Promise<void> {
       // pre-dates keychain support and lacks token data.
       const savedAccounts = listAccounts(aDir);
       if (!savedAccounts.includes(current)) {
-        save(current, cJson, aDir);
+        withLock(aDir, () => save(current, cJson, aDir));
         console.log(`Detected account: ${current} (saved automatically)\n`);
       } else {
         // Migrate old account files that lack _keychain by re-saving.
@@ -514,7 +515,7 @@ async function main(): Promise<void> {
         try {
           const existing = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
           if (!existing._keychain) {
-            save(current, cJson, aDir);
+            withLock(aDir, () => save(current, cJson, aDir));
           }
         } catch { /* ignore, best-effort migration */ }
       }
@@ -818,7 +819,7 @@ async function main(): Promise<void> {
       if (email) {
         const accounts = listAccounts(aDir);
         if (!accounts.includes(email)) {
-          save(email, cJson, aDir);
+          withLock(aDir, () => save(email, cJson, aDir));
           process.stderr.write(`Detected account: ${email} (saved automatically)\n\n`);
         }
         // Banner on stderr so we don't pollute structured stdout (e.g. when
