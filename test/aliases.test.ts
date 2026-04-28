@@ -100,4 +100,18 @@ describe('aliases', () => {
     fs.writeFileSync(path.join(accDir, 'aliases.json'), '["not","an","object"]');
     assert.deepEqual(listAliases(accDir), {});
   });
+
+  it('rejects reserved sub-command names', () => {
+    for (const reserved of ['add', 'list', 'remove', 'status', 'help', 'apikey', 'fallback', 'update', 'setup']) {
+      assert.throws(
+        () => setAlias(reserved, 'user@example.com', accDir),
+        /reserved/i,
+        `should reject "${reserved}"`,
+      );
+    }
+  });
+
+  it('rejects empty alias name', () => {
+    assert.throws(() => setAlias('', 'user@example.com', accDir), /empty/i);
+  });
 });

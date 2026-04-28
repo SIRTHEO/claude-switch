@@ -7,12 +7,41 @@ import { claudeBinFile } from './paths.js';
 const BLOCK_START = '# claude-switch';
 const BLOCK_END = '# end claude-switch';
 
+// Magic string we use to detect another claude-switch wrapper (so we don't
+// recursively spawn ourselves). Kept in sync with src/resolver.ts.
+const WRAPPER_MAGIC = 'claude-switch';
+
+function isClaudeSwitchWrapper(filePath: string): boolean {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(512);
+    fs.readSync(fd, buf, 0, 512, 0);
+    return buf.toString('utf-8').includes(WRAPPER_MAGIC);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* ignore */ }
+  }
+}
+
 export function getSavedClaudeBin(binFile?: string): string | null {
   try {
     const file = binFile ?? claudeBinFile();
+
+    // Reject the bin-pointer file itself if it is a symlink — an attacker who
+    // can flip the symlink to /etc/passwd would otherwise have the real claude
+    // binary read from somewhere unexpected.
+    const ptrStat = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (!ptrStat || ptrStat.isSymbolicLink()) return null;
+
     const bin = fs.readFileSync(file, 'utf-8').trim();
     if (!bin) return null;
     fs.accessSync(bin, fs.constants.X_OK);
+
+    // Avoid infinite spawn loops if .claude-bin somehow points back at us.
+    if (isClaudeSwitchWrapper(bin)) return null;
+
     return bin;
   } catch {
     return null;
