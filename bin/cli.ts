@@ -18,7 +18,7 @@ import { getSavedClaudeBin, runSetup } from '../src/setup.js';
 import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
-import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache } from '../src/usage.js';
+import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -41,7 +41,7 @@ export type Command =
   | { action: 'apikey-remove'; target: string | undefined }
   | { action: 'apikey-show'; target: string | undefined }
   | { action: 'fallback'; mode: 'on' | 'off' | 'status' }
-  | { action: 'usage'; force: boolean }
+  | { action: 'usage'; force: boolean; refreshOnly: boolean }
   | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean };
 
 export function parseCommand(args: string[]): Command {
@@ -86,8 +86,10 @@ export function parseCommand(args: string[]): Command {
       throw new ExitError('Usage: claude switch fallback <on|off|status>');
     }
     case 'usage': {
-      const force = args[2] === '--force';
-      return { action: 'usage', force };
+      const flags = args.slice(2);
+      const force = flags.includes('--force');
+      const refreshOnly = flags.includes('--refresh-only');
+      return { action: 'usage', force, refreshOnly };
     }
     case 'statusline':
     case 'sl': {
@@ -261,6 +263,13 @@ function renderStatusline(
   const usage = readUsageCache(accountsDirPath);
   const fivePct = usage?.payload?.five_hour?.utilization;
   const sevenPct = usage?.payload?.seven_day?.utilization;
+
+  // Quasi-live: if the cache is stale, kick off a detached background fetch.
+  // The current call returns immediately; the next statusline redraw will
+  // pick up the fresh value. Skipped while we're in a recorded 429 backoff.
+  if (isUsageCacheStale(usage)) {
+    triggerBackgroundUsageRefresh();
+  }
 
   // Short-form display name: prefer the first alias if any, else the local part.
   const aliases = getAliasesForEmail(email, accountsDirPath);
@@ -629,10 +638,17 @@ async function main(): Promise<void> {
     case 'usage': {
       const token = getAccessTokenFromKeychain();
       if (!token) {
+        if (cmd.refreshOnly) return; // background refresh: silently no-op
         throw new ExitError(
           'No OAuth access token available — only Max/Pro subscribers can use this. ' +
           'Make sure you are logged in: claude switch status',
         );
+      }
+      // refresh-only: just hit the endpoint and update the cache, no output.
+      // Used by the statusline to keep cache fresh asynchronously.
+      if (cmd.refreshOnly) {
+        await fetchUsageCached(aDir, token, { force: true });
+        return;
       }
       // When forcing, surface the raw fetch error so failures are diagnosable
       // (the cached path silently swallows non-429 errors to keep noise low).
