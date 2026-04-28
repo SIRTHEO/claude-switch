@@ -424,15 +424,37 @@ async function main(): Promise<void> {
         throw new ExitError('Usage: claude switch apikey set <alias|email>');
       }
       const email = resolveTargetEmail(cmd.target, aDir);
-      const key = await promptSecret(`API key for ${email} (input hidden, paste sk-ant-…): `);
+
+      // Multi-line prompt that makes the hidden-input UX explicit. Users were
+      // previously confused by a single-line prompt that left the cursor
+      // motionless: typing felt like the terminal was hung, so they hit Enter
+      // or kept typing the prompt text itself.
+      process.stderr.write(
+        `\nPaste the Anthropic API key for ${email}.\n` +
+        `It must start with "sk-ant-" and you can get one at:\n` +
+        `  https://console.anthropic.com/settings/keys\n\n` +
+        `(input is hidden — nothing will be shown as you paste; press Enter when done)\n`
+      );
+      const key = await promptSecret(`> `);
       if (!key) throw new ExitError('No key entered. Aborted.');
       if (!/^sk-ant-/.test(key)) {
-        console.warn('Warning: key does not start with "sk-ant-" — saving anyway.');
+        // Don't silently save junk: if it doesn't look like an Anthropic key,
+        // make the user explicitly confirm. This catches the common mistake
+        // of typing into the prompt itself or pasting from the wrong buffer.
+        process.stderr.write(
+          `\nWarning: the value you entered does not look like an Anthropic API key.\n` +
+          `(Anthropic keys start with "sk-ant-".)\n` +
+          `Got: ${maskApiKey(key)}\n`,
+        );
+        const confirmed = await askYN('Save it anyway? [y/N] ');
+        if (!confirmed) {
+          throw new ExitError('Aborted. Run the command again to retry.');
+        }
       }
       setApiKey(email, key, aDir);
-      console.log(`Saved API key for ${email} (${maskApiKey(key)}).`);
-      console.log('Enable it with: claude switch fallback on');
-      console.log('Note: Claude Code may prompt to approve the key the first time it is used.');
+      process.stderr.write(`\nSaved API key for ${email} (${maskApiKey(key)}).\n`);
+      process.stderr.write(`Enable it with: claude switch fallback on\n`);
+      process.stderr.write(`Note: Claude Code may prompt to approve the key the first time it is used.\n`);
       break;
     }
 
