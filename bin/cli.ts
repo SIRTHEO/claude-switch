@@ -534,7 +534,7 @@ async function main(): Promise<void> {
       // runTemporarySwitch handles save/restore (incl. Keychain), SIGINT, and never returns.
       const extraEnv = fallbackEnvFor(matches[0], aDir);
       if (extraEnv) {
-        console.log(`(fallback on — using saved API key for ${matches[0]})\n`);
+        process.stderr.write(`(fallback on — using saved API key for ${matches[0]})\n\n`);
       }
       await runTemporarySwitch(claudeBin, matches[0], cmd.args, cJson, aDir, extraEnv);
       break;
@@ -602,16 +602,18 @@ async function main(): Promise<void> {
         const accounts = listAccounts(aDir);
         if (!accounts.includes(email)) {
           save(email, cJson, aDir);
-          console.log(`Detected account: ${email} (saved automatically)\n`);
+          process.stderr.write(`Detected account: ${email} (saved automatically)\n\n`);
         }
-        console.log(`🔑 ${email}\n`);
+        // Banner on stderr so we don't pollute structured stdout (e.g. when
+        // claude is piped into jq with --output-format json).
+        process.stderr.write(`🔑 ${email}\n\n`);
       } else {
         throw new ExitError('No account connected. Run: claude switch add');
       }
 
       const extraEnv = fallbackEnvFor(email, aDir);
       if (extraEnv) {
-        console.log('(fallback on — using saved API key)\n');
+        process.stderr.write('(fallback on — using saved API key)\n\n');
       }
       proxyRun(claudeBin, cmd.args, extraEnv);
       break;
