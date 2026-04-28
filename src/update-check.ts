@@ -82,7 +82,11 @@ export function isNewer(current: string, latest: string): boolean {
   const [la = 0, lb = 0, lc = 0] = parse(latest);
   if (la !== ca) return la > ca;
   if (lb !== cb) return lb > cb;
-  return lc > cc;
+  if (lc !== cc) return lc > cc;
+  // Same base version — but per semver, a pre-release is "less than" its
+  // matching stable release (1.0.0-rc.1 < 1.0.0), so users on rc.1 should
+  // be notified when the stable lands.
+  return isPreRelease(current) && !isPreRelease(latest);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,19 +164,25 @@ export function detectInstallCommand(): string[] {
   } catch { /* import.meta unavailable in some test contexts */ }
 
   const binaryPath = selfDir || process.execPath;
+  // Match against path segments, not raw substring — otherwise a user
+  // whose home directory contains "volta" or whose project is in a
+  // "pnpm-workspace" folder would be misclassified.
+  const segments = binaryPath.split(path.sep);
+  const hasSeg = (...names: string[]): boolean =>
+    segments.some(s => names.includes(s));
 
   // Volta — manages its own shims
-  if (binaryPath.includes('.volta')) {
+  if (hasSeg('.volta', 'volta')) {
     return ['volta', 'install', PACKAGE_NAME];
   }
 
   // pnpm global
-  if (binaryPath.includes('pnpm')) {
+  if (hasSeg('pnpm', '.pnpm', 'pnpm-global')) {
     return ['pnpm', 'add', '-g', PACKAGE_NAME];
   }
 
   // yarn global (v1)
-  if (binaryPath.includes('yarn')) {
+  if (hasSeg('yarn', '.yarn')) {
     return ['yarn', 'global', 'add', PACKAGE_NAME];
   }
 

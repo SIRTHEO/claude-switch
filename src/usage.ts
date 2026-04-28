@@ -129,7 +129,10 @@ export function fetchUsage(accessToken: string): Promise<FetchUsageOutcome> {
         res.on('end', () => {
           if (res.statusCode === 429) {
             const retryHeader = res.headers['retry-after'];
-            const retryAfterSec = typeof retryHeader === 'string' ? parseInt(retryHeader, 10) || 300 : 300;
+            // parseInt("0") is 0, which is valid (retry now). Default to 300
+            // only when the header is missing or unparseable, not when it's 0.
+            const parsed = typeof retryHeader === 'string' ? parseInt(retryHeader, 10) : NaN;
+            const retryAfterSec = Number.isFinite(parsed) && parsed >= 0 ? parsed : 300;
             resolve({ ok: false, rateLimited: true, retryAfterSec });
             return;
           }
@@ -179,7 +182,12 @@ export async function fetchUsageCached(
 ): Promise<UsageCache> {
   const cache = readUsageCache(accountsDirPath);
   const now = Date.now();
-  const sameAccount = !opts.account || !cache?.account || cache.account === opts.account;
+  // A cache without `account` is from a pre-account-aware version. We can't
+  // tell which account it belonged to, so treat it as a different account
+  // when the caller has specified one — refetching is the safe default.
+  const sameAccount = !opts.account
+    ? true
+    : !!cache?.account && cache.account === opts.account;
 
   if (!opts.force && cache && sameAccount) {
     if (cache.rateLimitedUntil && cache.rateLimitedUntil > now) {
@@ -215,11 +223,25 @@ export async function fetchUsageCached(
   return next;
 }
 
-/** Pull the OAuth access token from the macOS Keychain. Returns null on non-darwin or if missing. */
-export function getAccessTokenFromKeychain(): string | null {
+/**
+ * Pull the OAuth access token. On macOS this comes from the login Keychain;
+ * on Linux/Windows it lives in `~/.claude.json` under `oauthAccount.accessToken`
+ * (Claude Code does not use a system credential store there).
+ */
+export function getAccessTokenFromKeychain(claudeJsonPathStr?: string): string | null {
   const data = readKeychain();
   const token = data?.claudeAiOauth?.accessToken;
-  return typeof token === 'string' && token ? token : null;
+  if (typeof token === 'string' && token) return token;
+
+  if (process.platform !== 'darwin' && claudeJsonPathStr) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(claudeJsonPathStr, 'utf-8')) as Record<string, unknown>;
+      const oauth = raw?.oauthAccount as Record<string, unknown> | undefined;
+      const t = oauth?.accessToken;
+      return typeof t === 'string' && t ? t : null;
+    } catch { return null; }
+  }
+  return null;
 }
 
 /**

@@ -644,7 +644,7 @@ async function main(): Promise<void> {
     }
 
     case 'usage': {
-      const token = getAccessTokenFromKeychain();
+      const token = getAccessTokenFromKeychain(cJson);
       if (!token) {
         if (cmd.refreshOnly) return; // background refresh: silently no-op
         throw new ExitError(
