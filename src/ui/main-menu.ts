@@ -6,13 +6,14 @@ import * as p from '@clack/prompts';
 import { getCurrent, list as listAccounts } from '../accounts.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
 import { getApiKey } from '../apikey.js';
-import { readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../usage.js';
+import { readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh, fetchUsageCached, getAccessTokenFromKeychain } from '../usage.js';
 import { selectAccountInteractive } from './select-account.js';
 import { setApiKeyInteractive } from './set-apikey.js';
 import { addAccountInteractive } from './add-account.js';
 import { removeAccountInteractive } from './remove-account.js';
 import { runSetupWizard } from './setup-wizard.js';
 import { findClaudeBinary } from '../find-claude.js';
+import { getTokenHealth } from '../token.js';
 import { theme } from './theme.js';
 
 type MenuAction =
@@ -23,7 +24,10 @@ type MenuAction =
   | 'fallback'
   | 'usage'
   | 'setup'
+  | 'advanced'
   | 'exit';
+
+type AdvancedAction = 'add' | 'remove' | 'setup' | 'back';
 
 function buildStatusLines(claudeJsonPath: string, accountsDirPath: string): string {
   const current = getCurrent(claudeJsonPath);
@@ -33,16 +37,55 @@ function buildStatusLines(claudeJsonPath: string, accountsDirPath: string): stri
   const cache = current ? readUsageCacheFor(accountsDirPath, current) : null;
   const five = cache?.payload?.five_hour?.utilization;
   const seven = cache?.payload?.seven_day?.utilization;
+  const tokenHealth = current ? getTokenHealth(claudeJsonPath) : null;
 
   const lines: string[] = [];
+
+  // Account
   lines.push(`${theme.brand('Account')}    ${current || theme.dim('(none — add one with “Add”)')}`);
-  lines.push(`${theme.brand('Auth mode')}  ${usingApi ? 'API key (fallback on)' : 'OAuth subscription'}`);
+
+  // Auth mode + warning if fallback ON but no key
+  let authMode = usingApi ? 'API key (fallback on)' : 'OAuth subscription';
+  if (fallbackOn && !apiKey && current) {
+    authMode = `OAuth subscription  ${theme.brand('⚠ fallback ON but no key — has no effect')}`;
+  }
+  lines.push(`${theme.brand('Auth mode')}  ${authMode}`);
+
+  // Token expiry — warn if expired or expiring soon
+  if (tokenHealth) {
+    let tokenLine: string;
+    switch (tokenHealth.status) {
+      case 'valid': {
+        const ms = tokenHealth.expiresAt ? tokenHealth.expiresAt.getTime() - Date.now() : 0;
+        if (ms < 60 * 60 * 1000) {
+          tokenLine = `${theme.brand('expires soon')} (${tokenHealth.expiresIn}) — re-login if you plan to use this account`;
+        } else {
+          tokenLine = `valid (${tokenHealth.expiresIn})`;
+        }
+        break;
+      }
+      case 'expired':
+        tokenLine = `${theme.brand('EXPIRED')} (${tokenHealth.expiresIn}) — run "Add account" to re-authenticate`;
+        break;
+      case 'present':
+        tokenLine = 'present';
+        break;
+      case 'missing':
+        tokenLine = `${theme.brand('missing')} — run "Add account" to log in`;
+        break;
+    }
+    lines.push(`${theme.brand('Token')}      ${tokenLine}`);
+  }
+
+  // Usage
   if (five !== undefined) {
     const sevenStr = seven !== undefined ? `, 7d ${seven.toFixed(0)}%` : '';
-    lines.push(`${theme.brand('Usage')}      5h ${five.toFixed(0)}%${sevenStr}`);
+    const warn = five >= 90 ? '  ⚠ near limit' : '';
+    lines.push(`${theme.brand('Usage')}      5h ${five.toFixed(0)}%${sevenStr}${warn}`);
   } else {
-    lines.push(`${theme.brand('Usage')}      ${theme.dim('not fetched yet — try “Show usage”')}`);
+    lines.push(`${theme.brand('Usage')}      ${theme.dim('unavailable')}`);
   }
+
   return lines.join('\n');
 }
 
@@ -51,24 +94,23 @@ async function pickAction(claudeJsonPath: string, accountsDirPath: string): Prom
   const accounts = listAccounts(accountsDirPath);
   const fallbackOn = isFallbackEnabled(accountsDirPath);
 
+  // Daily-driver actions in the main menu; rare/destructive ones live behind
+  // the "Advanced…" submenu so the surface stays uncluttered.
   const options: Array<{ value: MenuAction; label: string; hint?: string }> = [];
 
   if (accounts.length >= 2) {
     options.push({ value: 'switch', label: 'Switch account', hint: 'pick another saved account' });
   }
-  options.push({ value: 'add', label: 'Add account', hint: 'log in with a new email' });
   if (current) {
-    options.push({ value: 'apikey', label: 'Set API key for active account', hint: 'enables fallback billing' });
     options.push({
       value: 'fallback',
       label: fallbackOn ? 'Turn fallback OFF (use OAuth)' : 'Turn fallback ON (use API key)',
+      hint: fallbackOn ? 'back to subscription' : 'use saved API key',
     });
+    options.push({ value: 'apikey', label: 'Set API key', hint: 'for the active account' });
   }
-  options.push({ value: 'usage', label: 'Show usage', hint: 'live 5h / 7d %' });
-  if (accounts.length > 0) {
-    options.push({ value: 'remove', label: 'Remove account…' });
-  }
-  options.push({ value: 'setup', label: 'Re-run setup wizard' });
+  options.push({ value: 'usage', label: 'Refresh usage', hint: 'force-fetch + per-model breakdown' });
+  options.push({ value: 'advanced', label: 'Advanced…', hint: 'add / remove / setup' });
   options.push({ value: 'exit', label: 'Exit', hint: 'or press Ctrl+C / Esc' });
 
   const choice = await p.select<MenuAction>({
@@ -77,6 +119,21 @@ async function pickAction(claudeJsonPath: string, accountsDirPath: string): Prom
   });
 
   if (p.isCancel(choice)) return 'exit';
+  return choice;
+}
+
+async function pickAdvancedAction(accountsDirPath: string): Promise<AdvancedAction> {
+  const accounts = listAccounts(accountsDirPath);
+  const options: Array<{ value: AdvancedAction; label: string; hint?: string }> = [];
+  options.push({ value: 'add', label: 'Add account', hint: 'log in with a new email' });
+  if (accounts.length > 0) {
+    options.push({ value: 'remove', label: 'Remove account', hint: 'pick one to delete' });
+  }
+  options.push({ value: 'setup', label: 'Re-run setup wizard', hint: 'fix the claude binary path / shell PATH' });
+  options.push({ value: 'back', label: 'Back to main menu' });
+
+  const choice = await p.select<AdvancedAction>({ message: 'Advanced', options });
+  if (p.isCancel(choice)) return 'back';
   return choice;
 }
 
@@ -99,13 +156,26 @@ async function pickAccount(prompt: string, accountsDirPath: string, exclude?: st
  * or sends Ctrl+C.
  */
 export async function runMainMenu(claudeJsonPath: string, accountsDirPath: string): Promise<void> {
-  // Background-refresh usage on entry so the status header is up to date.
-  const currentForRefresh = getCurrent(claudeJsonPath);
-  if (isUsageCacheStale(readUsageCache(accountsDirPath), currentForRefresh)) {
-    triggerBackgroundUsageRefresh();
-  }
-
   p.intro(theme.heading('claude-switch'));
+
+  // Fetch usage synchronously on entry so the status header has real numbers
+  // — users were confused by "not fetched yet, try Show usage". We only
+  // foreground-block if the cache is stale or for a different account; if
+  // it's already fresh we skip the call entirely.
+  const currentForRefresh = getCurrent(claudeJsonPath);
+  if (currentForRefresh && isUsageCacheStale(readUsageCache(accountsDirPath), currentForRefresh)) {
+    const token = getAccessTokenFromKeychain();
+    if (token) {
+      const spin = p.spinner();
+      spin.start('Fetching subscription usage');
+      try {
+        await fetchUsageCached(accountsDirPath, token, { force: true, account: currentForRefresh });
+        spin.stop('Usage updated');
+      } catch {
+        spin.stop('Could not fetch usage — continuing');
+      }
+    }
+  }
 
   // Loop until exit.
   // eslint-disable-next-line no-constant-condition
@@ -123,7 +193,30 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
         case 'switch':
           await selectAccountInteractive(claudeJsonPath, accountsDirPath);
           break;
+        case 'advanced': {
+          const adv = await pickAdvancedAction(accountsDirPath);
+          if (adv === 'back') break;
+          if (adv === 'add') {
+            const bin = findClaudeBinary(import.meta.url);
+            if (!bin) {
+              p.note('Could not find the real claude binary — run setup first.', 'Setup needed');
+              break;
+            }
+            await addAccountInteractive(bin, claudeJsonPath, accountsDirPath);
+          } else if (adv === 'remove') {
+            const target = await pickAccount('Remove which account?', accountsDirPath, getCurrent(claudeJsonPath));
+            if (target) {
+              await removeAccountInteractive(target, claudeJsonPath, accountsDirPath);
+            }
+          } else if (adv === 'setup') {
+            await runSetupWizard(process.argv[1] ?? '');
+          }
+          break;
+        }
         case 'add': {
+          // Direct entry point preserved for completeness, but the menu
+          // funnels users via 'advanced'. Keeping the handler avoids a
+          // dead switch case if the routing changes.
           const bin = findClaudeBinary(import.meta.url);
           if (!bin) {
             p.note('Could not find the real claude binary — run setup first.', 'Setup needed');
@@ -149,13 +242,50 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
           break;
         }
         case 'fallback': {
-          const next = !isFallbackEnabled(accountsDirPath);
-          setFallbackEnabled(accountsDirPath, next);
-          p.note(
-            next ? 'Fallback turned ON. The next claude run will use the saved API key.'
-                 : 'Fallback turned OFF. The next claude run will use OAuth.',
-            'Done',
-          );
+          const wasOn = isFallbackEnabled(accountsDirPath);
+          const next = !wasOn;
+          if (next) {
+            // Don't silently enable fallback for an account with no key —
+            // the toggle would be a no-op and the user would think it's
+            // broken (this is a real bug we hit in testing).
+            const current = getCurrent(claudeJsonPath);
+            const currentKey = current ? getApiKey(current, accountsDirPath) : null;
+            if (!current) {
+              p.note('No active account. Add or switch to one first.', 'Cannot enable fallback');
+              break;
+            }
+            if (!currentKey) {
+              p.note(
+                `The active account ${current} has no saved API key, so turning ` +
+                `fallback ON would have no effect (claude would still use OAuth).`,
+                'Cannot enable fallback',
+              );
+              const setNow = await p.confirm({
+                message: 'Set an API key for this account now?',
+                initialValue: true,
+              });
+              if (!p.isCancel(setNow) && setNow) {
+                await setApiKeyInteractive(current, accountsDirPath);
+                // Re-check: if a key was actually saved, proceed with toggle.
+                if (!getApiKey(current, accountsDirPath)) break;
+              } else {
+                break;
+              }
+            }
+            setFallbackEnabled(accountsDirPath, true);
+            p.note(
+              `Fallback ON. The next "claude" run will inject the saved API key as\n` +
+              `ANTHROPIC_API_KEY. The first time, Claude Code will prompt:\n\n` +
+              `    "Use this API key? [y/N]"\n\n` +
+              `→ Press y to approve. Your choice is remembered.\n` +
+              `→ If you press N or miss the prompt, claude silently keeps using\n` +
+              `  OAuth and the fallback looks broken.`,
+              'Important',
+            );
+          } else {
+            setFallbackEnabled(accountsDirPath, false);
+            p.note('Fallback OFF. The next claude run will use OAuth subscription.', 'Done');
+          }
           break;
         }
         case 'usage': {

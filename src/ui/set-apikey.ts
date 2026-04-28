@@ -81,7 +81,11 @@ export async function setApiKeyInteractive(
   p.note(
     `Enable the fallback whenever you want to bill against API credits:\n` +
     `  claude switch fallback on\n\n` +
-    `Claude Code may prompt to approve the key the first time it is used.`,
+    `IMPORTANT: the FIRST time you run claude with this key, you'll see:\n\n` +
+    `    "Use this API key? [y/N]"\n\n` +
+    `→ Press y to approve. Your choice is remembered.\n` +
+    `→ If you miss the prompt or press N, claude silently keeps using OAuth\n` +
+    `  and the fallback looks broken. Watch for it on the first launch.`,
     'Next',
   );
   p.outro('Done.');
