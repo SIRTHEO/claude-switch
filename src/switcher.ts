@@ -7,6 +7,7 @@ import { getCurrent, save, load, list } from './accounts.js';
 import { setAlias } from './aliases.js';
 import { buildSpawnArgs } from './proxy.js';
 import { ExitError } from './errors.js';
+import { withLock } from './lock.js';
 
 function ask(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -19,21 +20,23 @@ function ask(question: string): Promise<string> {
 }
 
 export function switchTo(targetEmail: string, claudeJsonPath: string, accountsDirPath: string): string {
-  const currentEmail = getCurrent(claudeJsonPath);
+  return withLock(accountsDirPath, () => {
+    const currentEmail = getCurrent(claudeJsonPath);
 
-  if (targetEmail === currentEmail) {
-    return `Already on ${targetEmail}`;
-  }
+    if (targetEmail === currentEmail) {
+      return `Already on ${targetEmail}`;
+    }
 
-  if (currentEmail) {
-    save(currentEmail, claudeJsonPath, accountsDirPath);
-  }
+    if (currentEmail) {
+      save(currentEmail, claudeJsonPath, accountsDirPath);
+    }
 
-  const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
-  const warning = keychainRestored
-    ? ''
-    : '\nWarning: no saved credentials for this account — API tokens may be wrong.\nRun: claude switch add (to re-authenticate and capture tokens)';
-  return `Switched to ${targetEmail}${warning}`;
+    const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
+    const warning = keychainRestored
+      ? ''
+      : '\nWarning: no saved credentials for this account — API tokens may be wrong.\nRun: claude switch add (to re-authenticate and capture tokens)';
+    return `Switched to ${targetEmail}${warning}`;
+  });
 }
 
 export function fuzzyMatch(input: string, accounts: string[]): string[] {
@@ -88,17 +91,27 @@ export function savePendingRestore(email: string, accountsDirPath: string): void
 
 export function checkPendingRestore(claudeJsonPath: string, accountsDirPath: string): string | null {
   const filePath = path.join(accountsDirPath, '.pending-restore');
+  let email: string;
   try {
-    const email = fs.readFileSync(filePath, 'utf-8').trim();
-    if (email) {
-      load(email, claudeJsonPath, accountsDirPath);
-      fs.unlinkSync(filePath);
-      return email;
-    }
+    email = fs.readFileSync(filePath, 'utf-8').trim();
   } catch {
-    // No pending restore
+    return null;
   }
-  return null;
+  if (!email) return null;
+
+  // Drop the pending marker first, then attempt the restore. If the restore
+  // throws, we don't want a stale marker to wedge subsequent invocations
+  // into an infinite retry loop.
+  try { fs.unlinkSync(filePath); } catch { /* already gone */ }
+
+  try {
+    withLock(accountsDirPath, () => {
+      load(email, claudeJsonPath, accountsDirPath);
+    });
+    return email;
+  } catch {
+    return null;
+  }
 }
 
 export function clearPendingRestore(accountsDirPath: string): void {
@@ -126,16 +139,24 @@ export async function runTemporarySwitch(
     process.exit(result.status ?? 1);
   }
 
-  if (currentEmail) {
-    savePendingRestore(currentEmail, accountsDirPath);
-    save(currentEmail, claudeJsonPath, accountsDirPath);
-  }
+  // Critical section: save current + load target must be atomic w.r.t. other
+  // claude-switch processes. We acquire the lock, perform the swap, and
+  // release before spawning (which can be long-running).
+  let keychainRestored = false;
+  withLock(accountsDirPath, () => {
+    if (currentEmail) {
+      savePendingRestore(currentEmail, accountsDirPath);
+      save(currentEmail, claudeJsonPath, accountsDirPath);
+    }
+    const result = load(targetEmail, claudeJsonPath, accountsDirPath);
+    keychainRestored = result.keychainRestored;
+  });
 
-  const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
   if (!keychainRestored && process.platform === 'darwin') {
-    console.warn(`Warning: no saved credentials for ${targetEmail} — API tokens may belong to a different account.\nRun: claude switch add (to re-authenticate and capture tokens)\n`);
+    process.stderr.write(`Warning: no saved credentials for ${targetEmail} — API tokens may belong to a different account.\nRun: claude switch add (to re-authenticate and capture tokens)\n\n`);
   }
-  console.log(`🔑 ${targetEmail} (temporary)\n`);
+  // Banner on stderr to keep stdout clean for structured output.
+  process.stderr.write(`🔑 ${targetEmail} (temporary)\n\n`);
 
   // Register SIGINT handler so we restore the original account even on Ctrl-C.
   // spawnSync is a blocking call: when SIGINT arrives the OS delivers it to
@@ -146,7 +167,11 @@ export async function runTemporarySwitch(
     if (restored) return;
     restored = true;
     if (currentEmail) {
-      try { load(currentEmail, claudeJsonPath, accountsDirPath); } catch { /* best-effort */ }
+      try {
+        withLock(accountsDirPath, () => {
+          load(currentEmail, claudeJsonPath, accountsDirPath);
+        });
+      } catch { /* best-effort */ }
       clearPendingRestore(accountsDirPath);
     }
   };
