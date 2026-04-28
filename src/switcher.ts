@@ -198,7 +198,7 @@ export async function addAccount(claudeBin: string, claudeJsonPath: string, acco
   const expectedEmail = await ask('Email to add (press Enter to skip): ');
 
   if (currentEmail) {
-    save(currentEmail, claudeJsonPath, accountsDirPath);
+    withLock(accountsDirPath, () => save(currentEmail, claudeJsonPath, accountsDirPath));
   }
 
   console.log('\nLog in with the new account in your browser.\n');
@@ -210,7 +210,7 @@ export async function addAccount(claudeBin: string, claudeJsonPath: string, acco
     const newEmail = getCurrent(claudeJsonPath);
     if (!newEmail) {
       if (currentEmail) {
-        load(currentEmail, claudeJsonPath, accountsDirPath);
+        withLock(accountsDirPath, () => load(currentEmail, claudeJsonPath, accountsDirPath));
       }
       throw new ExitError('Login failed or cancelled.');
     }
@@ -223,7 +223,7 @@ export async function addAccount(claudeBin: string, claudeJsonPath: string, acco
 
     console.log(`\nAuthenticated: ${newEmail}`);
     // Save immediately after login so the Keychain tokens are captured.
-    save(newEmail, claudeJsonPath, accountsDirPath);
+    withLock(accountsDirPath, () => save(newEmail, claudeJsonPath, accountsDirPath));
     console.log(`Saved: ${newEmail}`);
 
     if (list(accountsDirPath).length === 1) {

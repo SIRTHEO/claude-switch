@@ -9,6 +9,7 @@
 import * as p from '@clack/prompts';
 import { spawnSync } from 'node:child_process';
 import { getCurrent, save, load, list } from '../accounts.js';
+import { withLock } from '../lock.js';
 import { setAlias } from '../aliases.js';
 import { buildSpawnArgs } from '../proxy.js';
 
@@ -44,7 +45,7 @@ export async function addAccountInteractive(
 
   // Save the current account snapshot before swapping it during auth login.
   if (currentEmail) {
-    save(currentEmail, claudeJsonPath, accountsDirPath);
+    withLock(accountsDirPath, () => save(currentEmail, claudeJsonPath, accountsDirPath));
   }
 
   p.note(
@@ -66,7 +67,7 @@ export async function addAccountInteractive(
     // Login failed entirely. Restore the previous account so we don't leave
     // the user with no active session.
     if (currentEmail) {
-      load(currentEmail, claudeJsonPath, accountsDirPath);
+      withLock(accountsDirPath, () => load(currentEmail, claudeJsonPath, accountsDirPath));
     }
     p.cancel('Login failed or was cancelled. No account added.');
     return { email: null, alias: null, cancelled: true };
@@ -88,7 +89,7 @@ export async function addAccountInteractive(
     });
     if (p.isCancel(keep) || !keep) {
       if (currentEmail) {
-        load(currentEmail, claudeJsonPath, accountsDirPath);
+        withLock(accountsDirPath, () => load(currentEmail, claudeJsonPath, accountsDirPath));
       }
       p.cancel('Cancelled. No account added.');
       return { email: null, alias: null, cancelled: true };
@@ -97,7 +98,7 @@ export async function addAccountInteractive(
 
   const saveSpin = p.spinner();
   saveSpin.start(`Saving ${newEmail}`);
-  save(newEmail, claudeJsonPath, accountsDirPath);
+  withLock(accountsDirPath, () => save(newEmail, claudeJsonPath, accountsDirPath));
   saveSpin.stop(`Saved: ${newEmail}`);
 
   if (list(accountsDirPath).length === 1) {

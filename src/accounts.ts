@@ -69,8 +69,9 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
     if (typeof existing._apiKey === 'string' && existing._apiKey) {
       accountPayload._apiKey = existing._apiKey;
     }
-  } catch {
-    // No existing file or unreadable: nothing to preserve.
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    // ENOENT: first save for this account — nothing to preserve.
   }
 
   const tmp = accountFile + '.tmp';
