@@ -65,12 +65,21 @@ function writeCache(cache: CheckCache): void {
 // Version comparison
 // ---------------------------------------------------------------------------
 
-/** Returns true if `latest` is strictly newer than `current`. */
+/**
+ * Returns true if `latest` is strictly newer than `current`.
+ *
+ * We never propose pre-release versions (`x.y.z-rc.1`, `x.y.z-beta`) as updates
+ * — users running stable should not be auto-bumped to a pre-release.
+ */
 export function isNewer(current: string, latest: string): boolean {
+  const stripped = (v: string): string => v.replace(/^v/, '').split('-')[0];
+  const isPreRelease = (v: string): boolean => v.replace(/^v/, '').includes('-');
+  if (isPreRelease(latest)) return false;
   const parse = (v: string): number[] =>
-    v.replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
-  const [ca, cb, cc] = parse(current);
-  const [la, lb, lc] = parse(latest);
+    stripped(v).split('.').map(n => parseInt(n, 10) || 0);
+  // Default each component to 0 so `2.3` compares as `2.3.0`.
+  const [ca = 0, cb = 0, cc = 0] = parse(current);
+  const [la = 0, lb = 0, lc = 0] = parse(latest);
   if (la !== ca) return la > ca;
   if (lb !== cb) return lb > cb;
   return lc > cc;
@@ -84,7 +93,17 @@ function fetchLatestVersionBackground(): void {
   const req = https.get(REGISTRY_URL, { timeout: 5000 }, (res) => {
     if (res.statusCode !== 200) { res.resume(); return; }
     let body = '';
-    res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+    let aborted = false;
+    res.on('data', (chunk: Buffer) => {
+      if (aborted) return;
+      body += chunk.toString();
+      // Cap response size — npm /latest is ~2 KB, anything more is suspect
+      // (compromised registry or MITM). 64 KB is generous.
+      if (body.length > 64 * 1024) {
+        aborted = true;
+        res.destroy();
+      }
+    });
     res.on('end', () => {
       try {
         const version = (JSON.parse(body) as Record<string, unknown>).version;
