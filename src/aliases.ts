@@ -1,6 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// Names reserved for sub-commands of `claude switch`. An alias with one of
+// these names would be unreachable, since the dispatch in bin/cli.ts matches
+// the sub-command branch before falling through to alias resolution.
+const RESERVED_ALIAS_NAMES = new Set([
+  'add', 'list', 'ls', 'remove', 'rm', 'status', 'help',
+  'setup', 'update', 'apikey', 'alias', 'fallback',
+  '--help', '-h', '--version', '-v', '--completions',
+]);
+
 function aliasesPath(accountsDirPath: string): string {
   return path.join(accountsDirPath, 'aliases.json');
 }
@@ -37,6 +46,14 @@ export function getAlias(name: string, accountsDirPath: string): string | null {
 }
 
 export function setAlias(name: string, email: string, accountsDirPath: string): void {
+  if (!name) {
+    throw new Error('Alias name cannot be empty');
+  }
+  if (RESERVED_ALIAS_NAMES.has(name)) {
+    throw new Error(
+      `"${name}" is reserved for the "claude switch ${name}" sub-command and cannot be used as an alias.`
+    );
+  }
   const aliases = readAliases(accountsDirPath);
   aliases[name] = email;
   writeAliases(accountsDirPath, aliases);

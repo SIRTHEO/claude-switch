@@ -307,7 +307,12 @@ async function main(): Promise<void> {
       if (!cmd.email) {
         throw new ExitError('Usage: claude switch alias <name> <email>');
       }
-      setAlias(cmd.name, cmd.email, aDir);
+      try {
+        setAlias(cmd.name, cmd.email, aDir);
+      } catch (e) {
+        if (e instanceof ExitError) throw e;
+        throw new ExitError((e as Error).message);
+      }
       console.log(`Alias set: ${cmd.name} → ${cmd.email}`);
       break;
     }
