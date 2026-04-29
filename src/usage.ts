@@ -17,6 +17,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readKeychain } from './keychain.js';
+import { writeJsonAtomic } from './atomic-write.js';
 
 const ENDPOINT_HOST = 'api.anthropic.com';
 const ENDPOINT_PATH = '/api/oauth/usage';
@@ -82,12 +83,8 @@ function writeUsageCache(accountsDirPath: string, cache: UsageCache): void {
   try {
     const file = cachePath(accountsDirPath);
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    const tmp = file + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600 });
-    if (process.platform !== 'win32') {
-      try { fs.chmodSync(tmp, 0o600); } catch { /* best-effort */ }
-    }
-    fs.renameSync(tmp, file);
+    // indent=0 keeps the cache compact (writes happen on every fetch).
+    writeJsonAtomic(file, cache, 0);
   } catch { /* best-effort */ }
 }
 

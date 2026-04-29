@@ -14,6 +14,7 @@ import path from 'node:path';
 import { isFallbackEnabled, setFallbackEnabled } from './fallback.js';
 import { getCurrent } from './accounts.js';
 import { readUsageCacheFor } from './usage.js';
+import { writeJsonAtomic } from './atomic-write.js';
 
 const CONFIG_FILE = '.auto-fallback.json';
 const DEFAULT_THRESHOLD = 80;
@@ -61,13 +62,7 @@ export function setAutoFallbackConfig(
     enabled: patch.enabled !== undefined ? patch.enabled : current.enabled,
     threshold: patch.threshold !== undefined ? clampThreshold(patch.threshold) : current.threshold,
   };
-  const file = configPath(accountsDirPath);
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
-  if (process.platform !== 'win32') {
-    fs.chmodSync(tmp, 0o600);
-  }
-  fs.renameSync(tmp, file);
+  writeJsonAtomic(configPath(accountsDirPath), next);
   return next;
 }
 

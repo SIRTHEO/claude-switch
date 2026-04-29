@@ -1,19 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readKeychain, writeKeychain, type KeychainData } from './keychain.js';
+import { writeJsonAtomic } from './atomic-write.js';
 
 // Whitelist of characters allowed in account names. RFC 5321 email local-part
 // can contain more than this, but accepting only [A-Za-z0-9._+@-] covers ~all
 // real-world emails and blocks shell metacharacters ($, `, (, ), ;, &, |,
 // space, newline, etc.) that would otherwise allow command injection through
 // downstream consumers like shell completions (compgen -W).
-const SAFE_EMAIL_CHARS = /^[A-Za-z0-9._+@-]+$/;
+export const SAFE_EMAIL_CHARS = /^[A-Za-z0-9._+@-]+$/;
 
-function isSafeEmail(email: string): boolean {
+export function isSafeEmail(email: string): boolean {
   return SAFE_EMAIL_CHARS.test(email);
 }
 
-function resolvedAccountFile(email: string, accountsDirPath: string): string {
+/**
+ * Resolve `<email>.json` inside `accountsDirPath`, refusing any value that
+ * escapes the directory (path traversal). Used by accounts.ts and apikey.ts
+ * — both produce files in the same dir with the same naming scheme.
+ */
+export function resolvedAccountFile(email: string, accountsDirPath: string): string {
   const base = path.resolve(accountsDirPath);
   const resolved = path.resolve(accountsDirPath, `${email}.json`);
   if (!resolved.startsWith(base + path.sep)) {
@@ -74,12 +80,7 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
     // ENOENT: first save for this account — nothing to preserve.
   }
 
-  const tmp = accountFile + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(accountPayload, null, 2), { mode: 0o600 });
-  if (process.platform !== 'win32') {
-    fs.chmodSync(tmp, 0o600);
-  }
-  fs.renameSync(tmp, accountFile);
+  writeJsonAtomic(accountFile, accountPayload);
 }
 
 export function list(accountsDirPath: string): string[] {
@@ -152,14 +153,7 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
 
   // Write JSON first (cheaper, more recoverable). If this fails, the Keychain
   // is untouched and state stays consistent.
-  const writeJson = (payload: unknown): void => {
-    const tmp = claudeJsonPath + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), { mode: 0o600 });
-    if (process.platform !== 'win32') {
-      fs.chmodSync(tmp, 0o600);
-    }
-    fs.renameSync(tmp, claudeJsonPath);
-  };
+  const writeJson = (payload: unknown): void => writeJsonAtomic(claudeJsonPath, payload);
   writeJson(data);
 
   // Then update Keychain. If this fails, roll the JSON back to its previous

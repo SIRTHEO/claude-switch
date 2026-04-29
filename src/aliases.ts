@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { writeJsonAtomic } from './atomic-write.js';
 
 // Names reserved for sub-commands of `claude switch`. An alias with one of
 // these names would be unreachable, since the dispatch in bin/cli.ts matches
@@ -30,14 +31,8 @@ function readAliases(accountsDirPath: string): Record<string, string> {
 }
 
 function writeAliases(accountsDirPath: string, aliases: Record<string, string>): void {
-  const filePath = aliasesPath(accountsDirPath);
   fs.mkdirSync(accountsDirPath, { recursive: true });
-  const tmp = filePath + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(aliases, null, 2));
-  if (process.platform !== 'win32') {
-    fs.chmodSync(tmp, 0o600);
-  }
-  fs.renameSync(tmp, filePath);
+  writeJsonAtomic(aliasesPath(accountsDirPath), aliases);
 }
 
 export function getAlias(name: string, accountsDirPath: string): string | null {
