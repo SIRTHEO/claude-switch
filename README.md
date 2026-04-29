@@ -457,6 +457,8 @@ Earlier highlights:
 
 Pull requests welcome. For big changes, [open an issue first](https://github.com/SIRTHEO/claude-switch/issues/new/choose) so we can talk about the approach.
 
+Releases are fully automated via [release-please](https://github.com/googleapis/release-please) — see [CONTRIBUTING.md](CONTRIBUTING.md) for the commit-message conventions that drive version bumps.
+
 When reporting a bug, please include:
 - Your OS and Node.js version (`node --version`)
 - Output of `claude switch --version`
