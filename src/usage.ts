@@ -195,10 +195,14 @@ export async function fetchUsageCached(
     ? true
     : !!cache?.account && cache.account === opts.account;
 
+  // Rate-limit back-off is a hard barrier the caller can't override —
+  // hammering the endpoint inside a 429 window only extends the back-off
+  // (Anthropic resets retry-after on every hit). force=true lets the user
+  // skip the TTL freshness check, not the rate-limit honour.
+  if (cache?.rateLimitedUntil && cache.rateLimitedUntil > now && sameAccount) {
+    return cache;
+  }
   if (!opts.force && cache && sameAccount) {
-    if (cache.rateLimitedUntil && cache.rateLimitedUntil > now) {
-      return cache;
-    }
     if (cache.payload && now - cache.fetchedAt < CACHE_TTL_MS) {
       return cache;
     }

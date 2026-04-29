@@ -31,15 +31,23 @@ function isProcessAlive(pid: number): boolean {
 }
 
 function tryClaim(file: string): boolean {
+  let fd: number;
   try {
-    const fd = fs.openSync(file, 'wx', 0o600);
-    fs.writeSync(fd, String(process.pid));
-    fs.closeSync(fd);
-    return true;
+    fd = fs.openSync(file, 'wx', 0o600);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'EEXIST') return false;
     throw e;
   }
+  // Ensure the fd is always closed, even if writeSync throws (ENOSPC, EIO).
+  // A leaked fd would persist for the rest of the process; the lock file
+  // itself is fine — reclaimIfStale will recover it after STALE_LOCK_MS
+  // since the partial PID won't resolve to a live process.
+  try {
+    fs.writeSync(fd, String(process.pid));
+  } finally {
+    fs.closeSync(fd);
+  }
+  return true;
 }
 
 function reclaimIfStale(file: string): boolean {
