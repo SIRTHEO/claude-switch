@@ -268,15 +268,18 @@ claude switch sl --json         # for scripts
 
 The badge turns yellow at 75% usage and red at 90%, so you can see when you're getting close to the limit.
 
-### Add it to ccstatusline (inside Claude Code)
+### Add it to Claude Code's status bar (one command)
 
-```json
-// ~/.claude/settings.json
-"statusLine": {
-  "type": "command",
-  "command": "bash -c 'INPUT=$(cat); claude switch sl; echo \"$INPUT\" | npx -y ccstatusline@latest'"
-}
+claude-switch can install the badge into Claude Code for you — no editing of `~/.claude/settings.json` by hand:
+
+```bash
+claude switch statusline install                    # just the badge (recommended)
+claude switch statusline install --ccstatusline     # combine with ccstatusline
+claude switch statusline status                     # show what's currently configured
+claude switch statusline uninstall                  # remove the badge
 ```
+
+The setup wizard (`claude switch setup`) also asks if you want to install it during first-time setup. If you already have a custom `statusLine` configured, claude-switch shows it to you and asks before touching anything.
 
 ### Add it to your shell prompt
 
