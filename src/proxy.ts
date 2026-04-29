@@ -21,10 +21,10 @@ export function buildSpawnArgs(
 ): SpawnArgs {
   const options: SpawnOptions = { stdio: 'inherit' };
 
-  // On Windows, .cmd files must be run via shell
-  if (platform === 'win32' && binaryPath.endsWith('.cmd')) {
-    options.shell = true;
-  }
+  // On Windows, .cmd files are handled by libuv/Node.js internally without
+  // shell: true — libuv invokes cmd.exe with properly escaped arguments.
+  // Using shell: true would pass raw argv to cmd.exe, enabling injection
+  // via arguments containing & | ( ) etc. (CVE-2024-27980 pattern).
 
   if (extraEnv) {
     options.env = { ...process.env, ...extraEnv };

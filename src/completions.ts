@@ -13,13 +13,20 @@ export function generateBash(): string {
       COMPREPLY=($(compgen -W "${SUBCOMMANDS.join(' ')}" -- "$cur"))
       local accounts_dir="$HOME/.claude/accounts"
       if [[ -d "$accounts_dir" ]]; then
-        local emails=""
+        local -a email_arr=()
         for f in "$accounts_dir"/*.json; do
           [[ -f "$f" ]] || continue
           local name="\${f##*/}"; name="\${name%.json}"
-          emails="$emails $name"
+          # Defense against command injection via rogue filenames: only
+          # accept names with email-safe characters. Anything else is
+          # silently skipped (compgen -W expands $(...) and backticks if
+          # present in the wordlist).
+          [[ "$name" =~ ^[A-Za-z0-9._+@-]+$ ]] || continue
+          email_arr+=("$name")
         done
-        COMPREPLY+=($(compgen -W "$emails" -- "$cur"))
+        if [[ \${#email_arr[@]} -gt 0 ]]; then
+          COMPREPLY+=($(compgen -W "\${email_arr[*]}" -- "$cur"))
+        fi
       fi
     fi
   fi
@@ -37,7 +44,10 @@ _claude_switch() {
     local accounts_dir="$HOME/.claude/accounts"
     if [[ -d "$accounts_dir" ]]; then
       for f in "$accounts_dir"/*.json; do
-        [[ -f "$f" ]] && accounts+=("\${\${f##*/}%.json}")
+        [[ -f "$f" ]] || continue
+        local name="\${\${f##*/}%.json}"
+        [[ "$name" =~ ^[A-Za-z0-9._+@-]+$ ]] || continue
+        accounts+=("$name")
       done
     fi
     _describe 'subcommand' subcommands
@@ -49,7 +59,7 @@ compdef _claude_switch claude`;
 
 export function generateFish(): string {
   return `complete -c claude -n '__fish_seen_subcommand_from switch' -a '${SUBCOMMANDS.join(' ')}' -d 'switch subcommand'
-complete -c claude -n '__fish_seen_subcommand_from switch' -a '(for f in ~/.claude/accounts/*.json; basename "$f" .json; end)' -d 'account'`;
+complete -c claude -n '__fish_seen_subcommand_from switch' -a '(for f in ~/.claude/accounts/*.json; set name (basename "$f" .json); string match -rq \'^[A-Za-z0-9._+@-]+$\' -- $name; and echo $name; end)' -d 'account'`;
 }
 
 export function generatePowerShell(): string {
@@ -66,7 +76,7 @@ export function generatePowerShell(): string {
     if (Test-Path $accountsDir) {
       Get-ChildItem "$accountsDir\\*.json" | ForEach-Object {
         $email = $_.BaseName
-        if ($email -like "$wordToComplete*") {
+        if ($email -match '^[A-Za-z0-9._+@-]+$' -and $email -like "$wordToComplete*") {
           [System.Management.Automation.CompletionResult]::new($email, $email, 'ParameterValue', $email)
         }
       }

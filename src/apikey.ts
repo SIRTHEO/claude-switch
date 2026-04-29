@@ -8,20 +8,14 @@
 // same blast radius. No second backend (e.g. macOS Keychain) in v1.
 
 import fs from 'node:fs';
-import path from 'node:path';
-
-const UNSAFE_FILENAME_CHARS = /[/\\:*?"<>|]/;
+import { isSafeEmail, resolvedAccountFile } from './accounts.js';
+import { writeJsonAtomic } from './atomic-write.js';
 
 function accountFilePath(email: string, accountsDirPath: string): string {
-  if (!email || UNSAFE_FILENAME_CHARS.test(email)) {
+  if (!email || !isSafeEmail(email)) {
     throw new Error(`Email contains characters unsafe for filenames: ${email}`);
   }
-  const base = path.resolve(accountsDirPath);
-  const resolved = path.resolve(accountsDirPath, `${email}.json`);
-  if (!resolved.startsWith(base + path.sep)) {
-    throw new Error(`Email resolves outside accounts directory: ${email}`);
-  }
-  return resolved;
+  return resolvedAccountFile(email, accountsDirPath);
 }
 
 function readAccountFile(file: string): Record<string, unknown> | null {
@@ -40,12 +34,7 @@ function readAccountFile(file: string): Record<string, unknown> | null {
 }
 
 function writeAccountFile(file: string, data: Record<string, unknown>): void {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-  if (process.platform !== 'win32') {
-    fs.chmodSync(tmp, 0o600);
-  }
-  fs.renameSync(tmp, file);
+  writeJsonAtomic(file, data);
 }
 
 export function getApiKey(email: string, accountsDirPath: string): string | null {
@@ -56,13 +45,17 @@ export function getApiKey(email: string, accountsDirPath: string): string | null
 }
 
 export function setApiKey(email: string, key: string, accountsDirPath: string): void {
-  if (!key) throw new Error('API key cannot be empty');
+  // Trim whitespace — pasted keys often arrive with leading/trailing
+  // spaces or newlines that Anthropic rejects with a 401, and the user
+  // has no clue why. Trim once here so both the TUI and CLI paths benefit.
+  const trimmed = key.trim();
+  if (!trimmed) throw new Error('API key cannot be empty');
   const file = accountFilePath(email, accountsDirPath);
   const data = readAccountFile(file);
   if (!data) {
     throw new Error(`No saved account for ${email}. Run: claude switch add`);
   }
-  data._apiKey = key;
+  data._apiKey = trimmed;
   writeAccountFile(file, data);
 }
 

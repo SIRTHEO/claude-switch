@@ -17,13 +17,37 @@ describe('resolver', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('returns CLAUDE_SWITCH_BIN if set', () => {
+  it('returns CLAUDE_SWITCH_BIN if set and points to a valid executable', () => {
+    const customBin = path.join(tmpDir, 'custom-claude');
+    fs.writeFileSync(customBin, '#!/bin/sh\necho real');
+    fs.chmodSync(customBin, 0o755);
     const result = resolve({
-      envBin: '/custom/path/claude',
+      envBin: customBin,
       selfPath: '/some/other/path',
       pathEnv: '',
     });
-    assert.equal(result, '/custom/path/claude');
+    assert.equal(result, customBin);
+  });
+
+  it('returns null when CLAUDE_SWITCH_BIN points to a non-existent path', () => {
+    const result = resolve({
+      envBin: '/no/such/binary',
+      selfPath: '/some/other/path',
+      pathEnv: '',
+    });
+    assert.equal(result, null);
+  });
+
+  it('returns null when CLAUDE_SWITCH_BIN points to another claude-switch wrapper', () => {
+    const wrapper = path.join(tmpDir, 'rogue-wrapper');
+    fs.writeFileSync(wrapper, '#!/usr/bin/env node\n// claude-switch');
+    fs.chmodSync(wrapper, 0o755);
+    const result = resolve({
+      envBin: wrapper,
+      selfPath: '/some/other/path',
+      pathEnv: '',
+    });
+    assert.equal(result, null);
   });
 
   it('finds claude in PATH, skipping self', () => {
