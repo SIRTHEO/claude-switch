@@ -60,7 +60,7 @@ Close your current terminal, open a fresh one. This is **required** — otherwis
 claude switch --version
 ```
 
-You should see something like `claude-switch 2.4.1`. ✅ Done.
+You should see something like `claude-switch 2.5.0`. ✅ Done.
 
 > **What just happened?** claude-switch put a tiny "wrapper" in front of the `claude` command. When you type `claude`, the wrapper picks the right account first, then runs the real Claude Code. Your original Claude Code is untouched.
 
@@ -414,7 +414,9 @@ If you're curious:
 
 ## What's new
 
-**v2.4.1** — minimum Node.js bumped to 20.12 (Node 18 is end-of-life and a transitive dependency now requires `node:util.styleText`).
+**v2.5.0** — `claude switch statusline install` adds the account badge to Claude Code's status bar in one command (no more hand-editing `~/.claude/settings.json`). The setup wizard offers it during first-time setup. Idempotent and safe with existing custom status lines.
+
+**v2.4.1** — minimum Node.js bumped to 20.12 (Node 18 is end-of-life).
 
 **v2.4.0** highlights:
 
