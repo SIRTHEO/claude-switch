@@ -70,7 +70,7 @@ Close your current terminal, open a fresh one. This is **required** — otherwis
 claude switch --version
 ```
 
-You should see something like `claude-switch 2.5.0`. ✅ Done.
+You should see something like `claude-switch 2.5.1`. ✅ Done.
 
 > **What just happened?** claude-switch put a tiny "wrapper" in front of the `claude` command. When you type `claude`, the wrapper picks the right account first, then runs the real Claude Code. Your original Claude Code is untouched.
 
