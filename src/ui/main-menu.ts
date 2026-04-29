@@ -6,7 +6,9 @@ import * as p from '@clack/prompts';
 import { getCurrent, list as listAccounts } from '../accounts.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
 import { getAutoFallbackConfig, setAutoFallbackConfig } from '../auto-fallback.js';
-import { getApiKey } from '../apikey.js';
+import { getApiKey, removeApiKey, maskApiKey } from '../apikey.js';
+import { getAliasesForEmail, setAlias, removeAlias } from '../aliases.js';
+import { withLock } from '../lock.js';
 import { readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh, fetchUsageCached, getAccessTokenFromKeychain } from '../usage.js';
 import { selectAccountInteractive } from './select-account.js';
 import { setApiKeyInteractive } from './set-apikey.js';
@@ -23,6 +25,7 @@ import { theme } from './theme.js';
 type MenuAction =
   | 'switch'
   | 'reauth'
+  | 'manage'
   | 'add'
   | 'remove'
   | 'apikey'
@@ -32,6 +35,14 @@ type MenuAction =
   | 'setup'
   | 'advanced'
   | 'exit';
+
+type ManageAction =
+  | 'apikey-set'
+  | 'apikey-remove'
+  | 'alias-add'
+  | 'alias-remove'
+  | 'remove'
+  | 'back';
 
 type AdvancedAction = 'add' | 'remove' | 'setup' | 'back';
 
@@ -59,7 +70,7 @@ function buildStatusLines(claudeJsonPath: string, accountsDirPath: string): stri
   // unexpectedly the next time the user runs claude.
   const autoCfg = getAutoFallbackConfig(accountsDirPath);
   if (autoCfg.enabled && fallbackOn) {
-    authMode += `  ${theme.dim(`(smart-switch armed: <${autoCfg.threshold}%)`)}`;
+    authMode += `  ${theme.dim(`(auto-revert armed: fallback OFF when 5h+7d < ${autoCfg.threshold}%)`)}`;
   }
   lines.push(`${theme.brand('Auth mode')}  ${authMode}`);
 
@@ -157,12 +168,21 @@ async function pickAction(claudeJsonPath: string, accountsDirPath: string): Prom
     const autoCfg = getAutoFallbackConfig(accountsDirPath);
     options.push({
       value: 'auto-fallback',
-      label: autoCfg.enabled ? 'Disable smart-switch' : 'Enable smart-switch',
+      label: autoCfg.enabled
+        ? 'Disable auto-revert to OAuth'
+        : 'Enable auto-revert to OAuth',
       hint: autoCfg.enabled
-        ? `auto-OFF when 5h+7d < ${autoCfg.threshold}%`
-        : 'auto-OFF fallback when subscription has room',
+        ? `armed: fallback OFF when 5h+7d < ${autoCfg.threshold}%`
+        : 'turn fallback OFF automatically when subscription frees up',
     });
     options.push({ value: 'apikey', label: 'Set API key', hint: 'for the active account' });
+  }
+  if (accounts.length >= 1) {
+    options.push({
+      value: 'manage',
+      label: 'Manage account…',
+      hint: 'edit API key / aliases for any saved account',
+    });
   }
   options.push({ value: 'usage', label: 'Refresh usage', hint: 'force-fetch + per-model breakdown' });
   options.push({ value: 'advanced', label: 'Advanced…', hint: 'add / remove / setup' });
@@ -203,6 +223,55 @@ async function pickAccount(prompt: string, accountsDirPath: string, exclude?: st
     options: accounts.map(a => ({ value: a, label: a })),
   });
   if (p.isCancel(choice)) return null;
+  return choice;
+}
+
+function buildAccountInfo(email: string, accountsDirPath: string, isActive: boolean): string {
+  const aliases = getAliasesForEmail(email, accountsDirPath);
+  const apiKey = getApiKey(email, accountsDirPath);
+  const lines: string[] = [
+    `${theme.brand('Email')}    ${email}${isActive ? theme.dim('  (active)') : ''}`,
+    `${theme.brand('Aliases')}  ${aliases.length ? aliases.join(', ') : theme.dim('(none)')}`,
+    `${theme.brand('API key')}  ${apiKey ? maskApiKey(apiKey) : theme.dim('(not set)')}`,
+  ];
+  return lines.join('\n');
+}
+
+async function pickManageAction(
+  email: string,
+  accountsDirPath: string,
+  isActive: boolean,
+): Promise<ManageAction> {
+  const hasKey = !!getApiKey(email, accountsDirPath);
+  const aliases = getAliasesForEmail(email, accountsDirPath);
+
+  const options: Array<{ value: ManageAction; label: string; hint?: string }> = [];
+  options.push({
+    value: 'apikey-set',
+    label: hasKey ? 'Replace API key' : 'Set API key',
+    hint: hasKey ? 'overwrite the current key' : 'paste an Anthropic key',
+  });
+  if (hasKey) {
+    options.push({ value: 'apikey-remove', label: 'Remove API key', hint: 'forget the saved key' });
+  }
+  options.push({ value: 'alias-add', label: 'Add alias', hint: 'short nickname for this account' });
+  if (aliases.length > 0) {
+    options.push({ value: 'alias-remove', label: 'Remove alias', hint: aliases.join(', ') });
+  }
+  if (!isActive) {
+    options.push({
+      value: 'remove',
+      label: 'Remove account',
+      hint: 'delete saved tokens, key, aliases',
+    });
+  }
+  options.push({ value: 'back', label: 'Back', hint: 'return to main menu' });
+
+  const choice = await p.select<ManageAction>({
+    message: `Action for ${email}`,
+    options,
+  });
+  if (p.isCancel(choice)) return 'back';
   return choice;
 }
 
@@ -325,6 +394,70 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
           }
           break;
         }
+        case 'manage': {
+          const target = await pickAccount('Manage which account?', accountsDirPath);
+          if (!target) break;
+          // Sub-loop so the user can chain multiple edits on the same
+          // account without re-picking it. Exits on Back / Esc / remove.
+          // eslint-disable-next-line no-constant-condition
+          while (true) {
+            if (useAltBuffer) process.stdout.write(CLEAR_AND_HOME);
+            const isActive = getCurrent(claudeJsonPath) === target;
+            p.note(buildAccountInfo(target, accountsDirPath, isActive), 'Account');
+            const sub = await pickManageAction(target, accountsDirPath, isActive);
+            if (sub === 'back') break;
+            try {
+              if (sub === 'apikey-set') {
+                await setApiKeyInteractive(target, accountsDirPath);
+              } else if (sub === 'apikey-remove') {
+                const ok = await p.confirm({
+                  message: `Remove the saved API key for ${target}?`,
+                  initialValue: false,
+                });
+                if (!p.isCancel(ok) && ok) {
+                  const removed = withLock(accountsDirPath, () => removeApiKey(target, accountsDirPath));
+                  p.note(removed ? 'API key removed.' : 'No key was saved.', 'Done');
+                }
+              } else if (sub === 'alias-add') {
+                const aliasRaw = await p.text({
+                  message: 'New alias',
+                  placeholder: 'work, personal, …',
+                  validate: (val) => !val ? 'Alias cannot be empty.' : undefined,
+                });
+                if (!p.isCancel(aliasRaw)) {
+                  const name = aliasRaw.trim();
+                  if (name) {
+                    setAlias(name, target, accountsDirPath);
+                    p.note(`Alias set: ${name} → ${target}`, 'Done');
+                  }
+                }
+              } else if (sub === 'alias-remove') {
+                const aliases = getAliasesForEmail(target, accountsDirPath);
+                if (aliases.length === 0) {
+                  p.note('No aliases on this account.', 'Empty');
+                  break;
+                }
+                const pick = await p.select<string>({
+                  message: 'Remove which alias?',
+                  options: aliases.map(a => ({ value: a, label: a })),
+                });
+                if (!p.isCancel(pick)) {
+                  removeAlias(pick, accountsDirPath);
+                  p.note(`Alias removed: ${pick}`, 'Done');
+                }
+              } else if (sub === 'remove') {
+                const result = await removeAccountInteractive(target, claudeJsonPath, accountsDirPath);
+                if (result.removed) {
+                  // Account is gone — back to main menu.
+                  break;
+                }
+              }
+            } catch (e) {
+              p.note((e as Error).message, 'Error');
+            }
+          }
+          break;
+        }
         case 'advanced': {
           const adv = await pickAdvancedAction(accountsDirPath);
           if (adv === 'back') break;
@@ -441,12 +574,11 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
           const cfg = getAutoFallbackConfig(accountsDirPath);
           if (cfg.enabled) {
             setAutoFallbackConfig(accountsDirPath, { enabled: false });
-            p.note('Smart-switch OFF. Fallback toggle is fully manual again.', 'Done');
+            p.note('Auto-revert OFF. Fallback toggle is fully manual again.', 'Done');
             break;
           }
-          // Enabling — let the user confirm or change the threshold.
           const tRaw = await p.text({
-            message: 'Threshold (% — fallback flips OFF when both 5h and 7d are below this)',
+            message: 'Threshold (% — fallback flips OFF when both 5h and 7d drop below this)',
             placeholder: String(cfg.threshold),
             initialValue: String(cfg.threshold),
             validate: (val) => {
@@ -460,7 +592,7 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
           const t = tRaw ? parseInt(tRaw, 10) : cfg.threshold;
           const next = setAutoFallbackConfig(accountsDirPath, { enabled: true, threshold: t });
           p.note(
-            `Smart-switch ON (threshold ${next.threshold}%).\n\n` +
+            `Auto-revert ON (threshold ${next.threshold}%).\n\n` +
             `When fallback is on, the next "claude" run will turn it back off\n` +
             `as soon as both 5h and 7d utilisation drop below ${next.threshold}% — saving\n` +
             `your API credits the moment your subscription has headroom again.`,
