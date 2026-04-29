@@ -15,10 +15,14 @@ import { removeAccountInteractive } from './remove-account.js';
 import { runSetupWizard } from './setup-wizard.js';
 import { findClaudeBinary } from '../find-claude.js';
 import { getTokenHealth } from '../token.js';
+import { reAuthenticate } from '../switcher.js';
+import { buildSpawnArgs } from '../proxy.js';
+import { spawnSync } from 'node:child_process';
 import { theme } from './theme.js';
 
 type MenuAction =
   | 'switch'
+  | 'reauth'
   | 'add'
   | 'remove'
   | 'apikey'
@@ -121,10 +125,25 @@ async function pickAction(claudeJsonPath: string, accountsDirPath: string): Prom
   const current = getCurrent(claudeJsonPath);
   const accounts = listAccounts(accountsDirPath);
   const fallbackOn = isFallbackEnabled(accountsDirPath);
+  const apiKey = current ? getApiKey(current, accountsDirPath) : null;
+  const usingApi = fallbackOn && !!apiKey;
+  const tokenHealth = current ? getTokenHealth(claudeJsonPath) : null;
+  const tokenBroken = !!tokenHealth && (tokenHealth.status === 'expired' || tokenHealth.status === 'missing');
 
   // Daily-driver actions in the main menu; rare/destructive ones live behind
   // the "Advanced…" submenu so the surface stays uncluttered.
   const options: Array<{ value: MenuAction; label: string; hint?: string }> = [];
+
+  // Re-auth surfaces at the top when OAuth is dead AND user is actually
+  // relying on it (no API key fallback masking the problem). Spares the
+  // user having to know that "Add account" is the recovery path.
+  if (current && tokenBroken && !usingApi) {
+    options.push({
+      value: 'reauth',
+      label: 'Re-authenticate (token expired)',
+      hint: 're-login current account in browser',
+    });
+  }
 
   if (accounts.length >= 2) {
     options.push({ value: 'switch', label: 'Switch account', hint: 'pick another saved account' });
@@ -260,9 +279,42 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
 
     try {
       switch (action) {
-        case 'switch':
-          await selectAccountInteractive(claudeJsonPath, accountsDirPath);
+        case 'switch': {
+          const before = getCurrent(claudeJsonPath);
+          const after = await selectAccountInteractive(claudeJsonPath, accountsDirPath);
+          // If a real switch happened (different from the previous active),
+          // exit the menu and hand control to claude immediately. The user
+          // came here to use that account; making them exit and type
+          // `claude` again is friction.
+          if (after && after !== before) {
+            const bin = findClaudeBinary(import.meta.url);
+            if (bin) {
+              restoreBuffer();
+              const { command, args, options } = buildSpawnArgs(bin, [], process.platform);
+              const result = spawnSync(command, args, options);
+              process.exit(result.status ?? 0);
+            }
+          }
           break;
+        }
+        case 'reauth': {
+          const bin = findClaudeBinary(import.meta.url);
+          if (!bin) {
+            p.note('Could not find claude binary — run setup first.', 'Setup needed');
+            break;
+          }
+          const spin = p.spinner();
+          spin.start('Opening browser for re-authentication');
+          let result: string | null = null;
+          try {
+            result = await reAuthenticate(bin, claudeJsonPath, accountsDirPath);
+            spin.stop(result ? `Tokens refreshed for ${result}` : 'Login did not complete');
+          } catch (e) {
+            spin.stop('Re-authentication failed');
+            p.note((e as Error).message, 'Error');
+          }
+          break;
+        }
         case 'advanced': {
           const adv = await pickAdvancedAction(accountsDirPath);
           if (adv === 'back') break;

@@ -193,6 +193,29 @@ export async function runTemporarySwitch(
   process.exit(result.status ?? 1);
 }
 
+/**
+ * Run `claude auth login` for the currently-active account to refresh its
+ * Keychain tokens after expiry. Differs from addAccount in that we expect
+ * the email to stay the same — we just want fresh tokens captured.
+ *
+ * Returns the email that's now active after the login, or null if login
+ * failed entirely (no oauthAccount left in claude.json).
+ */
+export async function reAuthenticate(
+  claudeBin: string,
+  claudeJsonPath: string,
+  accountsDirPath: string,
+): Promise<string | null> {
+  const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform);
+  spawnSync(command, args, options);
+  const after = getCurrent(claudeJsonPath);
+  if (!after) return null;
+  // Capture fresh Keychain tokens regardless of whether the email changed —
+  // this is the whole point of the re-auth flow.
+  withLock(accountsDirPath, () => save(after, claudeJsonPath, accountsDirPath));
+  return after;
+}
+
 export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string): Promise<void> {
   const currentEmail = getCurrent(claudeJsonPath);
   const expectedEmail = await ask('Email to add (press Enter to skip): ');
