@@ -5,6 +5,7 @@
 import * as p from '@clack/prompts';
 import { getCurrent, list as listAccounts } from '../accounts.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
+import { getAutoFallbackConfig, setAutoFallbackConfig } from '../auto-fallback.js';
 import { getApiKey } from '../apikey.js';
 import { readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh, fetchUsageCached, getAccessTokenFromKeychain } from '../usage.js';
 import { selectAccountInteractive } from './select-account.js';
@@ -22,6 +23,7 @@ type MenuAction =
   | 'remove'
   | 'apikey'
   | 'fallback'
+  | 'auto-fallback'
   | 'usage'
   | 'setup'
   | 'advanced'
@@ -48,6 +50,12 @@ function buildStatusLines(claudeJsonPath: string, accountsDirPath: string): stri
   let authMode = usingApi ? 'API key (fallback on)' : 'OAuth subscription';
   if (fallbackOn && !apiKey && current) {
     authMode = `OAuth subscription  ${theme.brand('⚠ fallback ON but no key — has no effect')}`;
+  }
+  // Hint that smart-switch is armed — explains why fallback might flip OFF
+  // unexpectedly the next time the user runs claude.
+  const autoCfg = getAutoFallbackConfig(accountsDirPath);
+  if (autoCfg.enabled && fallbackOn) {
+    authMode += `  ${theme.dim(`(smart-switch armed: <${autoCfg.threshold}%)`)}`;
   }
   lines.push(`${theme.brand('Auth mode')}  ${authMode}`);
 
@@ -106,6 +114,14 @@ async function pickAction(claudeJsonPath: string, accountsDirPath: string): Prom
       value: 'fallback',
       label: fallbackOn ? 'Turn fallback OFF (use OAuth)' : 'Turn fallback ON (use API key)',
       hint: fallbackOn ? 'back to subscription' : 'use saved API key',
+    });
+    const autoCfg = getAutoFallbackConfig(accountsDirPath);
+    options.push({
+      value: 'auto-fallback',
+      label: autoCfg.enabled ? 'Disable smart-switch' : 'Enable smart-switch',
+      hint: autoCfg.enabled
+        ? `auto-OFF when 5h+7d < ${autoCfg.threshold}%`
+        : 'auto-OFF fallback when subscription has room',
     });
     options.push({ value: 'apikey', label: 'Set API key', hint: 'for the active account' });
   }
@@ -286,6 +302,37 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
             setFallbackEnabled(accountsDirPath, false);
             p.note('Fallback OFF. The next claude run will use OAuth subscription.', 'Done');
           }
+          break;
+        }
+        case 'auto-fallback': {
+          const cfg = getAutoFallbackConfig(accountsDirPath);
+          if (cfg.enabled) {
+            setAutoFallbackConfig(accountsDirPath, { enabled: false });
+            p.note('Smart-switch OFF. Fallback toggle is fully manual again.', 'Done');
+            break;
+          }
+          // Enabling — let the user confirm or change the threshold.
+          const tRaw = await p.text({
+            message: 'Threshold (% — fallback flips OFF when both 5h and 7d are below this)',
+            placeholder: String(cfg.threshold),
+            initialValue: String(cfg.threshold),
+            validate: (val) => {
+              if (!val) return undefined;
+              const n = parseInt(val, 10);
+              if (!Number.isFinite(n) || n < 1 || n > 100) return 'Pick a number between 1 and 100.';
+              return undefined;
+            },
+          });
+          if (p.isCancel(tRaw)) break;
+          const t = tRaw ? parseInt(tRaw, 10) : cfg.threshold;
+          const next = setAutoFallbackConfig(accountsDirPath, { enabled: true, threshold: t });
+          p.note(
+            `Smart-switch ON (threshold ${next.threshold}%).\n\n` +
+            `When fallback is on, the next "claude" run will turn it back off\n` +
+            `as soon as both 5h and 7d utilisation drop below ${next.threshold}% — saving\n` +
+            `your API credits the moment your subscription has headroom again.`,
+            'Done',
+          );
           break;
         }
         case 'usage': {
