@@ -303,11 +303,16 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
     cleaned = true;
     process.stdout.write(ALT_BUFFER_EXIT);
   };
+  // Track signal handlers so we can detach them when the menu exits
+  // normally; otherwise they linger and pre-empt any handler the parent
+  // process might register later.
+  const sigintHandler = (): void => { restoreBuffer(); process.exit(130); };
+  const sigtermHandler = (): void => { restoreBuffer(); process.exit(143); };
   if (useAltBuffer) {
     process.stdout.write(ALT_BUFFER_ENTER + CLEAR_AND_HOME);
     process.once('exit', restoreBuffer);
-    process.once('SIGINT', () => { restoreBuffer(); process.exit(130); });
-    process.once('SIGTERM', () => { restoreBuffer(); process.exit(143); });
+    process.on('SIGINT', sigintHandler);
+    process.on('SIGTERM', sigtermHandler);
   }
 
   try {
@@ -645,5 +650,9 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
   }
   } finally {
     restoreBuffer();
+    if (useAltBuffer) {
+      process.removeListener('SIGINT', sigintHandler);
+      process.removeListener('SIGTERM', sigtermHandler);
+    }
   }
 }

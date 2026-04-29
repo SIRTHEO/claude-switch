@@ -206,26 +206,32 @@ export async function reAuthenticate(
   claudeJsonPath: string,
   accountsDirPath: string,
 ): Promise<string | null> {
-  // Snapshot token state before login. If it was already broken and is
-  // still broken after, the user closed the browser without completing —
-  // claude.json keeps the stale account intact and getCurrent() would
-  // otherwise lie that we refreshed something.
+  // Snapshot before login: which email is current AND its token state.
+  // If the email changes during login (user picked a different Google
+  // account in the browser), this is no longer a "re-auth" — it's a
+  // silent account swap, and we don't trust the result.
   const { getTokenHealth } = await import('./token.js');
-  const before = getTokenHealth(claudeJsonPath);
-  const wasBroken = !before || before.status === 'expired' || before.status === 'missing';
+  const emailBefore = getCurrent(claudeJsonPath);
+  const healthBefore = getTokenHealth(claudeJsonPath);
+  const wasBroken = !healthBefore || healthBefore.status === 'expired' || healthBefore.status === 'missing';
 
   const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform);
   spawnSync(command, args, options);
 
-  const after = getCurrent(claudeJsonPath);
-  if (!after) return null;
+  const emailAfter = getCurrent(claudeJsonPath);
+  if (!emailAfter) return null;
 
-  const afterHealth = getTokenHealth(claudeJsonPath);
-  const stillBroken = !afterHealth || afterHealth.status === 'expired' || afterHealth.status === 'missing';
+  // Account changed under us — bail out. The caller surfaces "Login did
+  // not complete" and the user can retry; we don't capture tokens for
+  // an account they didn't intend to re-auth.
+  if (emailBefore && emailAfter !== emailBefore) return null;
+
+  const healthAfter = getTokenHealth(claudeJsonPath);
+  const stillBroken = !healthAfter || healthAfter.status === 'expired' || healthAfter.status === 'missing';
   if (wasBroken && stillBroken) return null;
 
-  withLock(accountsDirPath, () => save(after, claudeJsonPath, accountsDirPath));
-  return after;
+  withLock(accountsDirPath, () => save(emailAfter, claudeJsonPath, accountsDirPath));
+  return emailAfter;
 }
 
 export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string): Promise<void> {

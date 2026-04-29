@@ -24,7 +24,9 @@ export async function removeAccountInteractive(
 ): Promise<RemoveAccountResult> {
   p.intro(`Remove ${email}`);
 
-  // Refuse to remove the active account up front.
+  // Up-front check is a UX courtesy — the real safety check happens
+  // inside withLock below, so a concurrent `claude switch` between this
+  // line and the actual delete can't slip past.
   const current = getCurrent(claudeJsonPath);
   if (current === email) {
     p.cancel('Cannot remove the active account. Switch to another one first.');
@@ -69,7 +71,16 @@ export async function removeAccountInteractive(
   const spin = p.spinner();
   spin.start('Removing account');
   try {
-    withLock(accountsDirPath, () => removeAccount(email, accountsDirPath));
+    withLock(accountsDirPath, () => {
+      // Re-check inside the lock: another process may have switched the
+      // active account between the up-front check and this point. If so,
+      // refuse — otherwise we'd nuke the file ~/.claude.json now points to.
+      const currentNow = getCurrent(claudeJsonPath);
+      if (currentNow === email) {
+        throw new Error('Cannot remove the active account. Switch to another one first.');
+      }
+      removeAccount(email, accountsDirPath);
+    });
     spin.stop('Removed');
   } catch (e) {
     spin.stop('Failed');
