@@ -8,20 +8,14 @@
 // same blast radius. No second backend (e.g. macOS Keychain) in v1.
 
 import fs from 'node:fs';
-import path from 'node:path';
-
-const SAFE_EMAIL_CHARS = /^[A-Za-z0-9._+@-]+$/;
+import { isSafeEmail, resolvedAccountFile } from './accounts.js';
+import { writeJsonAtomic } from './atomic-write.js';
 
 function accountFilePath(email: string, accountsDirPath: string): string {
-  if (!email || !SAFE_EMAIL_CHARS.test(email)) {
+  if (!email || !isSafeEmail(email)) {
     throw new Error(`Email contains characters unsafe for filenames: ${email}`);
   }
-  const base = path.resolve(accountsDirPath);
-  const resolved = path.resolve(accountsDirPath, `${email}.json`);
-  if (!resolved.startsWith(base + path.sep)) {
-    throw new Error(`Email resolves outside accounts directory: ${email}`);
-  }
-  return resolved;
+  return resolvedAccountFile(email, accountsDirPath);
 }
 
 function readAccountFile(file: string): Record<string, unknown> | null {
@@ -40,12 +34,7 @@ function readAccountFile(file: string): Record<string, unknown> | null {
 }
 
 function writeAccountFile(file: string, data: Record<string, unknown>): void {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
-  if (process.platform !== 'win32') {
-    fs.chmodSync(tmp, 0o600);
-  }
-  fs.renameSync(tmp, file);
+  writeJsonAtomic(file, data);
 }
 
 export function getApiKey(email: string, accountsDirPath: string): string | null {
