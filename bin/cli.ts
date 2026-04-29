@@ -19,6 +19,7 @@ import { getSavedClaudeBin, runSetup } from '../src/setup.js';
 import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
+import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback } from '../src/auto-fallback.js';
 import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
 import { selectAccountInteractive } from '../src/ui/select-account.js';
 import { runMainMenu } from '../src/ui/main-menu.js';
@@ -48,6 +49,7 @@ export type Command =
   | { action: 'apikey-remove'; target: string | undefined }
   | { action: 'apikey-show'; target: string | undefined }
   | { action: 'fallback'; mode: 'on' | 'off' | 'status' }
+  | { action: 'fallback-auto'; mode: 'on' | 'off' | 'status'; threshold?: number }
   | { action: 'usage'; force: boolean; refreshOnly: boolean }
   | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean };
 
@@ -90,7 +92,24 @@ export function parseCommand(args: string[]): Command {
       if (!sub2 || sub2 === 'status') return { action: 'fallback', mode: 'status' };
       if (sub2 === 'on') return { action: 'fallback', mode: 'on' };
       if (sub2 === 'off') return { action: 'fallback', mode: 'off' };
-      throw new ExitError('Usage: claude switch fallback <on|off|status>');
+      if (sub2 === 'auto') {
+        const sub3 = args[3];
+        if (!sub3 || sub3 === 'status') return { action: 'fallback-auto', mode: 'status' };
+        if (sub3 === 'off') return { action: 'fallback-auto', mode: 'off' };
+        if (sub3 === 'on') {
+          const tIdx = args.indexOf('--threshold');
+          if (tIdx >= 4 && args[tIdx + 1] !== undefined) {
+            const t = parseInt(args[tIdx + 1], 10);
+            if (!Number.isFinite(t) || t < 1 || t > 100) {
+              throw new ExitError('--threshold must be an integer between 1 and 100');
+            }
+            return { action: 'fallback-auto', mode: 'on', threshold: t };
+          }
+          return { action: 'fallback-auto', mode: 'on' };
+        }
+        throw new ExitError('Usage: claude switch fallback auto <on|off|status> [--threshold <1-100>]');
+      }
+      throw new ExitError('Usage: claude switch fallback <on|off|status|auto>');
     }
     case 'usage': {
       const flags = args.slice(2);
@@ -149,6 +168,8 @@ Usage:
   claude switch apikey show <a|e>        Show saved API key (masked)
   claude switch apikey remove <a|e>      Delete saved API key
   claude switch fallback on|off|status   Toggle API key fallback (overrides OAuth)
+  claude switch fallback auto on|off     Smart-switch: auto-OFF when 5h+7d drop
+                                         opts: --threshold <1-100> (default 80)
   claude switch usage [--force]          Show subscription usage % (5h, 7d)
   claude switch statusline [opts]        One-line account/mode for shell prompt
                                          opts: --full | --json | --no-color
@@ -643,6 +664,40 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'fallback-auto': {
+      const config = getAutoFallbackConfig(aDir);
+      if (cmd.mode === 'status') {
+        console.log(`Smart-switch: ${config.enabled ? 'on' : 'off'}`);
+        console.log(`Threshold:    ${config.threshold}% (5h and 7d must drop below this)`);
+        if (config.enabled) {
+          const current = getCurrent(cJson);
+          const hasKey = current ? !!getApiKey(current, aDir) : false;
+          if (!current) {
+            console.log('No active account — smart-switch only acts on the active one.');
+          } else if (!hasKey) {
+            console.log(`Note: ${current} has no saved API key, so fallback would do nothing anyway.`);
+          }
+        }
+        break;
+      }
+      const enabled = cmd.mode === 'on';
+      const next = setAutoFallbackConfig(aDir, {
+        enabled,
+        ...(cmd.threshold !== undefined ? { threshold: cmd.threshold } : {}),
+      });
+      console.log(`Smart-switch: ${next.enabled ? 'on' : 'off'}`);
+      if (enabled) {
+        console.log(`Threshold:    ${next.threshold}%`);
+        console.log(
+          `\nWhen fallback is on, claude-switch will turn it back off the next ` +
+          `time you run \`claude\` if both 5h and 7d utilisation drop below ` +
+          `${next.threshold}% — saving your API credits the moment your ` +
+          `subscription has headroom again.`,
+        );
+      }
+      break;
+    }
+
     case 'usage': {
       const token = getAccessTokenFromKeychain(cJson);
       if (!token) {
@@ -821,6 +876,17 @@ async function main(): Promise<void> {
         if (!accounts.includes(email)) {
           withLock(aDir, () => save(email, cJson, aDir));
           process.stderr.write(`Detected account: ${email} (saved automatically)\n\n`);
+        }
+        // Smart-switch: opportunistically flip fallback OFF when the cached
+        // usage shows the subscription has room again. Cheap (no network) and
+        // strictly opt-in (default off).
+        const auto = withLock(aDir, () => maybeAutoDisableFallback(aDir, cJson));
+        if (auto.disabled) {
+          const sevenStr = auto.sevenPct !== undefined ? `, 7d:${auto.sevenPct.toFixed(0)}%` : '';
+          process.stderr.write(
+            `📈 Subscription back online (5h:${auto.fivePct!.toFixed(0)}%${sevenStr}, ` +
+            `threshold ${auto.threshold}%) — switched back to OAuth\n\n`,
+          );
         }
         // Banner on stderr so we don't pollute structured stdout (e.g. when
         // claude is piped into jq with --output-format json).

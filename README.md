@@ -95,16 +95,17 @@ claude switch statusline --no-color # no ANSI codes
 claude switch sl                    # alias for statusline
 ```
 
-### Per-account API key + fallback toggle
+### Per-account API key + fallback toggle (with smart-switch)
 
-Claude Code has no built-in fallback from a Max/Pro subscription to an API key when you hit the rate limit. claude-switch gives you a manual toggle:
+Claude Code has no built-in fallback from a Max/Pro subscription to an API key when you hit the rate limit. claude-switch gives you a manual toggle, plus an opt-in smart-switch that flips it back automatically:
 
 - `claude switch apikey set <account>` — save an Anthropic API key for an account (input hidden)
 - `claude switch fallback on` — inject the saved key as `ANTHROPIC_API_KEY` on every `claude` invocation (billed against API credits)
 - `claude switch fallback off` — back to OAuth subscription
+- `claude switch fallback auto on` — **smart-switch**: when fallback is on, automatically flip it back OFF the next time you run `claude` if both 5h and 7d subscription usage drop below a configurable threshold
 - Each account keeps its own key, so switching accounts also switches which key is active
 
-See [API key fallback](#api-key-fallback-when-your-max-plan-hits-its-limit) below.
+See [API key fallback](#api-key-fallback-when-your-max-plan-hits-its-limit) and [Smart-switch](#smart-switch-auto-off-when-the-subscription-comes-back) below.
 
 ---
 
@@ -391,6 +392,8 @@ Claude Code does not switch from your subscription to an API key automatically w
    claude switch fallback off
    ```
 
+   Or let claude-switch do it for you — see [Smart-switch](#smart-switch-auto-off-when-the-subscription-comes-back) below.
+
 Each account keeps its own key, so switching accounts also switches which key is used.
 
 Other commands:
@@ -402,6 +405,30 @@ claude switch fallback                # show fallback state + whether the active
 ```
 
 The key is stored in `~/.claude/accounts/<email>.json` (perms `600`) — same place and same protection as the OAuth tokens.
+
+#### Smart-switch (auto-OFF when the subscription comes back)
+
+Forgot to flip fallback back to OAuth after your 5-hour quota reset? Smart-switch does it for you:
+
+```bash
+claude switch fallback auto on                  # default threshold: 80%
+claude switch fallback auto on --threshold 70   # custom threshold
+claude switch fallback auto status              # show current setting
+claude switch fallback auto off                 # disable
+```
+
+When smart-switch is on AND fallback is currently on AND the cached usage shows both 5-hour and 7-day utilisation strictly below the threshold, the next `claude` invocation prints:
+
+```
+📈 Subscription back online (5h:30%, 7d:15%, threshold 80%) — switched back to OAuth
+🔑 work@company.com
+```
+
+…and runs Claude Code on your subscription instead of API credits. No network calls in the hot path — the decision uses the cached usage that the statusline already keeps fresh.
+
+Strictly opt-in (default OFF). Both 5h and 7d windows are checked so you don't bounce back to OAuth only to hit the weekly cap a few minutes later.
+
+Toggle from the menu too: `claude switch` → **Enable smart-switch**.
 
 ### Use a different account for just one command
 
