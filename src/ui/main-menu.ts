@@ -59,28 +59,48 @@ function buildStatusLines(claudeJsonPath: string, accountsDirPath: string): stri
   }
   lines.push(`${theme.brand('Auth mode')}  ${authMode}`);
 
-  // Token expiry — warn if expired or expiring soon
+  // Token expiry. Only urgent when the user is actually using OAuth — if
+  // fallback is on with a saved key, all calls go through the API key and
+  // the OAuth token's state is irrelevant.
   if (tokenHealth) {
     let tokenLine: string;
-    switch (tokenHealth.status) {
-      case 'valid': {
-        const ms = tokenHealth.expiresAt ? tokenHealth.expiresAt.getTime() - Date.now() : 0;
-        if (ms < 60 * 60 * 1000) {
-          tokenLine = `${theme.brand('expires soon')} (${tokenHealth.expiresIn}) — re-login if you plan to use this account`;
-        } else {
-          tokenLine = `valid (${tokenHealth.expiresIn})`;
-        }
-        break;
+    if (usingApi) {
+      // We're not using OAuth; demote any token issue to dim parenthetical.
+      switch (tokenHealth.status) {
+        case 'valid':
+          tokenLine = theme.dim(`valid (${tokenHealth.expiresIn}) — not in use while fallback is on`);
+          break;
+        case 'expired':
+          tokenLine = theme.dim(`expired (${tokenHealth.expiresIn}) — not in use while fallback is on`);
+          break;
+        case 'present':
+          tokenLine = theme.dim('present — not in use while fallback is on');
+          break;
+        case 'missing':
+          tokenLine = theme.dim('missing — not in use while fallback is on');
+          break;
       }
-      case 'expired':
-        tokenLine = `${theme.brand('EXPIRED')} (${tokenHealth.expiresIn}) — run "Add account" to re-authenticate`;
-        break;
-      case 'present':
-        tokenLine = 'present';
-        break;
-      case 'missing':
-        tokenLine = `${theme.brand('missing')} — run "Add account" to log in`;
-        break;
+    } else {
+      switch (tokenHealth.status) {
+        case 'valid': {
+          const ms = tokenHealth.expiresAt ? tokenHealth.expiresAt.getTime() - Date.now() : 0;
+          if (ms < 60 * 60 * 1000) {
+            tokenLine = `${theme.brand('expires soon')} (${tokenHealth.expiresIn}) — re-login if you plan to use this account`;
+          } else {
+            tokenLine = `valid (${tokenHealth.expiresIn})`;
+          }
+          break;
+        }
+        case 'expired':
+          tokenLine = `${theme.brand('EXPIRED')} (${tokenHealth.expiresIn}) — run "Add account" to re-authenticate`;
+          break;
+        case 'present':
+          tokenLine = 'present';
+          break;
+        case 'missing':
+          tokenLine = `${theme.brand('missing')} — run "Add account" to log in`;
+          break;
+      }
     }
     lines.push(`${theme.brand('Token')}      ${tokenLine}`);
   }
@@ -167,11 +187,42 @@ async function pickAccount(prompt: string, accountsDirPath: string, exclude?: st
   return choice;
 }
 
+// Alternate-screen buffer control codes. Entering swaps the terminal to a
+// fresh canvas (preserving the user's scrollback); exiting restores the
+// original view. Without this, every menu iteration leaves a trail of
+// status panels in the user's terminal history, which is what the menu
+// is trying to NOT do — it should feel like a single live screen.
+const ALT_BUFFER_ENTER = '\x1b[?1049h';
+const ALT_BUFFER_EXIT  = '\x1b[?1049l';
+const CLEAR_AND_HOME   = '\x1b[2J\x1b[H';
+
+function altBufferSupported(): boolean {
+  // Only meaningful on a real TTY. CI / piped output should fall through.
+  return !!process.stdout.isTTY && process.env.TERM !== 'dumb';
+}
+
 /**
  * Run the persistent main menu loop. Returns when the user picks Exit
  * or sends Ctrl+C.
  */
 export async function runMainMenu(claudeJsonPath: string, accountsDirPath: string): Promise<void> {
+  const useAltBuffer = altBufferSupported();
+  // Register restore on every shutdown path BEFORE entering, so a panic /
+  // SIGKILL doesn't leave the user stuck in the alt buffer.
+  let cleaned = false;
+  const restoreBuffer = (): void => {
+    if (cleaned || !useAltBuffer) return;
+    cleaned = true;
+    process.stdout.write(ALT_BUFFER_EXIT);
+  };
+  if (useAltBuffer) {
+    process.stdout.write(ALT_BUFFER_ENTER + CLEAR_AND_HOME);
+    process.once('exit', restoreBuffer);
+    process.once('SIGINT', () => { restoreBuffer(); process.exit(130); });
+    process.once('SIGTERM', () => { restoreBuffer(); process.exit(143); });
+  }
+
+  try {
   p.intro(theme.heading('claude-switch'));
 
   // Fetch usage synchronously on entry so the status header has real numbers
@@ -196,6 +247,9 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
   // Loop until exit.
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Wipe the alt buffer at the top of each iteration so the menu always
+    // looks like a single live screen instead of a growing transcript.
+    if (useAltBuffer) process.stdout.write(CLEAR_AND_HOME);
     p.note(buildStatusLines(claudeJsonPath, accountsDirPath), 'Status');
     const action = await pickAction(claudeJsonPath, accountsDirPath);
 
@@ -299,6 +353,23 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
               'Important',
             );
           } else {
+            // Block the user from disarming fallback if their OAuth is dead —
+            // that would leave them with no working auth at all.
+            const current = getCurrent(claudeJsonPath);
+            const health = current ? getTokenHealth(claudeJsonPath) : null;
+            if (health && (health.status === 'expired' || health.status === 'missing')) {
+              p.note(
+                `OAuth token is ${health.status === 'expired' ? 'EXPIRED' : 'missing'}.\n` +
+                `Turning fallback OFF now means claude has no working auth until you\n` +
+                `re-authenticate with "Add account".`,
+                'Heads up',
+              );
+              const proceed = await p.confirm({
+                message: 'Turn fallback OFF anyway?',
+                initialValue: false,
+              });
+              if (p.isCancel(proceed) || !proceed) break;
+            }
             setFallbackEnabled(accountsDirPath, false);
             p.note('Fallback OFF. The next claude run will use OAuth subscription.', 'Done');
           }
@@ -377,5 +448,8 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
     } catch (e) {
       p.note((e as Error).message, 'Error');
     }
+  }
+  } finally {
+    restoreBuffer();
   }
 }
