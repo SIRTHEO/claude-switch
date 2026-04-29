@@ -699,7 +699,13 @@ async function main(): Promise<void> {
     }
 
     case 'usage': {
-      const token = getAccessTokenFromKeychain(cJson);
+      // Snapshot (token, account) atomically. A concurrent `claude switch B`
+      // between these two reads would otherwise pair token-of-A with
+      // account-label-of-B, and we'd cache A's quota under B's name.
+      const { token, currentAccount } = withLock(aDir, () => ({
+        token: getAccessTokenFromKeychain(cJson),
+        currentAccount: getCurrent(cJson) || undefined,
+      }));
       if (!token) {
         if (cmd.refreshOnly) return; // background refresh: silently no-op
         throw new ExitError(
@@ -707,7 +713,6 @@ async function main(): Promise<void> {
           'Make sure you are logged in: claude switch status',
         );
       }
-      const currentAccount = getCurrent(cJson) || undefined;
       // refresh-only: just hit the endpoint and update the cache, no output.
       // Used by the statusline to keep cache fresh asynchronously.
       if (cmd.refreshOnly) {
@@ -869,33 +874,40 @@ async function main(): Promise<void> {
       }
 
       const claudeBin = findClaude();
-      const email = getCurrent(cJson);
 
-      if (email) {
+      // Snapshot the (active email, fallback env, auto-revert decision) as a
+      // single atomic block. Without the lock a concurrent `claude switch B`
+      // could swap the active email between getCurrent() and fallbackEnvFor(),
+      // pairing email-B's identity with email-A's API key — billing the wrong
+      // account. The auto-disable also runs inside this lock so its
+      // setFallbackEnabled(false) is reflected by the fallbackEnvFor() read.
+      const snapshot = withLock(aDir, () => {
+        const e = getCurrent(cJson);
+        if (!e) return null;
         const accounts = listAccounts(aDir);
-        if (!accounts.includes(email)) {
-          withLock(aDir, () => save(email, cJson, aDir));
-          process.stderr.write(`Detected account: ${email} (saved automatically)\n\n`);
-        }
-        // Smart-switch: opportunistically flip fallback OFF when the cached
-        // usage shows the subscription has room again. Cheap (no network) and
-        // strictly opt-in (default off).
-        const auto = withLock(aDir, () => maybeAutoDisableFallback(aDir, cJson));
-        if (auto.disabled) {
-          const sevenStr = auto.sevenPct !== undefined ? `, 7d:${auto.sevenPct.toFixed(0)}%` : '';
-          process.stderr.write(
-            `📈 Subscription back online (5h:${auto.fivePct!.toFixed(0)}%${sevenStr}, ` +
-            `threshold ${auto.threshold}%) — switched back to OAuth\n\n`,
-          );
-        }
-        // Banner on stderr so we don't pollute structured stdout (e.g. when
-        // claude is piped into jq with --output-format json).
-        process.stderr.write(`🔑 ${email}\n\n`);
-      } else {
+        const wasUnsaved = !accounts.includes(e);
+        if (wasUnsaved) save(e, cJson, aDir);
+        const auto = maybeAutoDisableFallback(aDir, cJson);
+        return { email: e, wasUnsaved, auto, extraEnv: fallbackEnvFor(e, aDir) };
+      });
+      if (!snapshot) {
         throw new ExitError('No account connected. Run: claude switch add');
       }
+      const { email, wasUnsaved, auto, extraEnv } = snapshot;
 
-      const extraEnv = fallbackEnvFor(email, aDir);
+      if (wasUnsaved) {
+        process.stderr.write(`Detected account: ${email} (saved automatically)\n\n`);
+      }
+      if (auto.disabled) {
+        const sevenStr = auto.sevenPct !== undefined ? `, 7d:${auto.sevenPct.toFixed(0)}%` : '';
+        process.stderr.write(
+          `📈 Subscription back online (5h:${auto.fivePct!.toFixed(0)}%${sevenStr}, ` +
+          `threshold ${auto.threshold}%) — switched back to OAuth\n\n`,
+        );
+      }
+      // Banner on stderr so we don't pollute structured stdout (e.g. when
+      // claude is piped into jq with --output-format json).
+      process.stderr.write(`🔑 ${email}\n\n`);
       if (extraEnv) {
         process.stderr.write('(fallback on — using saved API key)\n\n');
       } else {
