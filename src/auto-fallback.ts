@@ -114,8 +114,12 @@ export function maybeAutoDisableFallback(
   result.fivePct = fivePct;
   result.sevenPct = sevenPct;
 
+  // Both windows must be present AND below threshold. If 7d is missing
+  // from the payload (Anthropic stops including it, partial response, etc.)
+  // we wait for a complete cache rather than risk bouncing back to OAuth
+  // only to slam into the weekly cap minutes later.
   const fiveOk = fivePct < config.threshold;
-  const sevenOk = sevenPct === undefined || sevenPct < config.threshold;
+  const sevenOk = typeof sevenPct === 'number' && sevenPct < config.threshold;
   if (fiveOk && sevenOk) {
     setFallbackEnabled(accountsDirPath, false);
     result.disabled = true;

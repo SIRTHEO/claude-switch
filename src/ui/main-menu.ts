@@ -292,6 +292,10 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
               restoreBuffer();
               const { command, args, options } = buildSpawnArgs(bin, [], process.platform);
               const result = spawnSync(command, args, options);
+              if (result.error) {
+                process.stderr.write(`Error: could not launch claude: ${result.error.message}\n`);
+                process.exit(1);
+              }
               process.exit(result.status ?? 0);
             }
           }
@@ -303,15 +307,21 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
             p.note('Could not find claude binary — run setup first.', 'Setup needed');
             break;
           }
-          const spin = p.spinner();
-          spin.start('Opening browser for re-authentication');
-          let result: string | null = null;
+          // No spinner here — claude auth login runs with stdio:'inherit'
+          // and prints its own URL/prompts. A spinner running on the same
+          // TTY would corrupt that output.
+          p.note(
+            'A browser window will open. Complete the login and return here.',
+            'Re-authenticating',
+          );
           try {
-            result = await reAuthenticate(bin, claudeJsonPath, accountsDirPath);
-            spin.stop(result ? `Tokens refreshed for ${result}` : 'Login did not complete');
+            const result = await reAuthenticate(bin, claudeJsonPath, accountsDirPath);
+            p.note(
+              result ? `Tokens refreshed for ${result}` : 'Login did not complete — token state unchanged.',
+              result ? 'Done' : 'Cancelled',
+            );
           } catch (e) {
-            spin.stop('Re-authentication failed');
-            p.note((e as Error).message, 'Error');
+            p.note((e as Error).message, 'Re-authentication failed');
           }
           break;
         }

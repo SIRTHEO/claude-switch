@@ -206,12 +206,24 @@ export async function reAuthenticate(
   claudeJsonPath: string,
   accountsDirPath: string,
 ): Promise<string | null> {
+  // Snapshot token state before login. If it was already broken and is
+  // still broken after, the user closed the browser without completing —
+  // claude.json keeps the stale account intact and getCurrent() would
+  // otherwise lie that we refreshed something.
+  const { getTokenHealth } = await import('./token.js');
+  const before = getTokenHealth(claudeJsonPath);
+  const wasBroken = !before || before.status === 'expired' || before.status === 'missing';
+
   const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform);
   spawnSync(command, args, options);
+
   const after = getCurrent(claudeJsonPath);
   if (!after) return null;
-  // Capture fresh Keychain tokens regardless of whether the email changed —
-  // this is the whole point of the re-auth flow.
+
+  const afterHealth = getTokenHealth(claudeJsonPath);
+  const stillBroken = !afterHealth || afterHealth.status === 'expired' || afterHealth.status === 'missing';
+  if (wasBroken && stillBroken) return null;
+
   withLock(accountsDirPath, () => save(after, claudeJsonPath, accountsDirPath));
   return after;
 }
