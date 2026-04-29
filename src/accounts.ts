@@ -86,14 +86,27 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
 export function list(accountsDirPath: string): string[] {
   try {
     const files = fs.readdirSync(accountsDirPath);
-    return files
+    const candidates = files
       .filter(f => f.endsWith('.json') && !f.startsWith('.') && f !== 'aliases.json')
-      .map(f => f.replace(/\.json$/, ''))
-      // Defense-in-depth: skip names with shell-unsafe characters even if a
-      // rogue process bypassed save()'s validation (e.g. via dotfile sync).
-      // Such files are still on disk but won't surface to consumers like
-      // shell completions where they could cause command injection.
-      .filter(isSafeEmail);
+      .map(f => f.replace(/\.json$/, ''));
+    const safe = candidates.filter(isSafeEmail);
+    // Surface (don't silence) accounts that an older claude-switch saved
+    // with characters now rejected by the tighter SAFE_EMAIL_CHARS allowlist
+    // (RFC 5321 permits !, #, $, %, etc. in the local-part — we don't, to
+    // keep them safe in shell completions). Without this warning the file
+    // would still exist on disk but vanish from `list`, `status`, the
+    // picker, etc., looking like data loss.
+    if (safe.length !== candidates.length && process.env.CLAUDE_SWITCH_QUIET !== '1') {
+      const dropped = candidates.filter(c => !safe.includes(c));
+      process.stderr.write(
+        `claude-switch: ${dropped.length} saved account(s) were skipped because their\n` +
+        `  email contains characters not allowed in the current naming scheme:\n` +
+        `    ${dropped.join(', ')}\n` +
+        `  The files in ~/.claude/accounts/ are intact. Re-add the account with\n` +
+        `  a simpler email or rename the file to recover it.\n\n`,
+      );
+    }
+    return safe;
   } catch {
     return [];
   }
