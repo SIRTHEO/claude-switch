@@ -10,6 +10,39 @@ Switch between multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-
 
 ---
 
+## What's new in v2.4.0
+
+**Smart auto-revert, in-menu re-auth, manage any account, alt-screen menu.**
+
+### Auto-revert to OAuth (smart-switch)
+
+When you flip fallback ON because you hit the 5h subscription limit, you usually forget to flip it back when the window resets. claude-switch can now do it for you:
+
+```bash
+claude switch fallback auto on                  # default threshold: 80%
+claude switch fallback auto on --threshold 70   # custom threshold
+```
+
+When fallback is on AND both 5-hour and 7-day usage drop below the threshold, the next `claude` run prints `📈 Subscription back online — switched back to OAuth` and runs on your subscription instead of API credits. Strictly opt-in. Decision uses the cached usage, so no extra network call in the hot path. See [Smart-switch](#smart-switch-auto-off-when-the-subscription-comes-back) below.
+
+### Manage any account from the menu
+
+`claude switch` → **Manage account…** lets you edit API key, aliases, or remove any saved account — active or not, no need to switch first. Replaces what previously required dropping to shell commands or switching just to change a key.
+
+### Re-authenticate without leaving the menu
+
+When the OAuth token for the active account expires, the menu now offers a top-priority **Re-authenticate (token expired)** entry that runs the browser flow inline and refreshes Keychain tokens — no need to know that "Add account" was the recovery path. Detects mid-flow account changes and incomplete logins, so you don't get a misleading "Tokens refreshed" confirmation.
+
+### Auto-launch after switch
+
+Picking a new account from `claude switch` now exits the menu and hands stdio to a fresh `claude` invocation automatically. Switching to use an account, immediately followed by needing to type `claude` again, was friction that no longer exists.
+
+### Alt-screen menu (no more scrollback noise)
+
+The interactive menu now opens in the terminal's alternate screen buffer (like `vim`, `htop`, `lazygit`). Each iteration redraws in place instead of accumulating panels in your scrollback; on exit the terminal looks exactly as it did before you opened the menu. Falls back gracefully on non-TTY (CI / piped output).
+
+---
+
 ## What's new in v2.3.0
 
 **Interactive TUI, subscription usage monitoring, and shell statusline.**
@@ -172,7 +205,7 @@ Close your current terminal window and open a fresh one. This is required so you
 claude switch --version
 ```
 
-You should see something like `claude-switch 2.3.0`. If you do, you're all set.
+You should see something like `claude-switch 2.4.0`. If you do, you're all set.
 
 > **What changed?** claude-switch places a thin wrapper in front of the `claude` command. Your original Claude Code installation is untouched — the wrapper just intercepts the command, shows which account is active, and then calls the real binary.
 
@@ -449,9 +482,9 @@ claude switch update
 Checks the npm registry for a newer version and offers to install it:
 
 ```
-Current version: 2.3.0
+Current version: 2.4.0
 Checking for updates...
-New version available: 2.3.0 → 2.4.0
+New version available: 2.4.0 → 2.5.0
 Update now? [y/N]
 ```
 
