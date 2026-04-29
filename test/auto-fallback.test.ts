@@ -111,7 +111,9 @@ describe('maybeAutoDisableFallback', () => {
     assert.strictEqual(isFallbackEnabled(dir), true);
   });
 
-  it('disables when 7d is missing and 5h is below threshold', () => {
+  it('does NOT disable when 7d is missing — wait for a complete cache', () => {
+    // If 7d is absent we can't guarantee the user won't immediately hit
+    // the weekly cap, so we hold fallback ON until both windows are known.
     setAutoFallbackConfig(dir, { enabled: true, threshold: 80 });
     setFallbackEnabled(dir, true);
     writeAccount('me@x.com');
@@ -119,7 +121,8 @@ describe('maybeAutoDisableFallback', () => {
       five_hour: { utilization: 10 },
     }});
     const result = maybeAutoDisableFallback(dir, claudeJson);
-    assert.strictEqual(result.disabled, true);
+    assert.strictEqual(result.disabled, false);
+    assert.strictEqual(isFallbackEnabled(dir), true);
   });
 
   it('does not disable when in a 429 backoff window', () => {
