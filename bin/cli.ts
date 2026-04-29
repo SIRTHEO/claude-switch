@@ -51,7 +51,10 @@ export type Command =
   | { action: 'fallback'; mode: 'on' | 'off' | 'status' }
   | { action: 'fallback-auto'; mode: 'on' | 'off' | 'status'; threshold?: number }
   | { action: 'usage'; force: boolean; refreshOnly: boolean }
-  | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean };
+  | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean }
+  | { action: 'statusline-install'; variant: 'plain' | 'ccstatusline' }
+  | { action: 'statusline-uninstall' }
+  | { action: 'statusline-status' };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -119,6 +122,17 @@ export function parseCommand(args: string[]): Command {
     }
     case 'statusline':
     case 'sl': {
+      const sub2 = args[2];
+      if (sub2 === 'install') {
+        const variant = args.includes('--ccstatusline') ? 'ccstatusline' : 'plain';
+        return { action: 'statusline-install', variant };
+      }
+      if (sub2 === 'uninstall' || sub2 === 'remove') {
+        return { action: 'statusline-uninstall' };
+      }
+      if (sub2 === 'status') {
+        return { action: 'statusline-status' };
+      }
       const rest = args.slice(2);
       const fmt = rest.includes('--full') ? 'full' : rest.includes('--json') ? 'json' : 'compact';
       const color = !rest.includes('--no-color');
@@ -173,6 +187,10 @@ Usage:
   claude switch usage [--force]          Show subscription usage % (5h, 7d)
   claude switch statusline [opts]        One-line account/mode for shell prompt
                                          opts: --full | --json | --no-color
+  claude switch statusline install       Add badge to Claude Code status bar
+                                         opts: --ccstatusline (chain instead of replace)
+  claude switch statusline uninstall     Remove the badge from Claude Code
+  claude switch statusline status        Show what's configured in settings.json
   claude switch update                   Check for updates and install if available
   claude switch help                     Show this help
   claude switch setup                    Re-run first-time setup
@@ -348,6 +366,45 @@ async function main(): Promise<void> {
   // strictly need.
   if (cmd.action === 'statusline') {
     renderStatusline(cmd.format, cmd.color, cJson, aDir);
+    return;
+  }
+  if (cmd.action === 'statusline-install') {
+    const { installStatusLine, PLAIN_COMMAND, CCSTATUSLINE_COMMAND, claudeSettingsPath } = await import('../src/statusline-install.js');
+    const command = cmd.variant === 'ccstatusline' ? CCSTATUSLINE_COMMAND : PLAIN_COMMAND;
+    installStatusLine(command);
+    console.log(`Installed status line in ${claudeSettingsPath()}`);
+    console.log(`  command: ${command}`);
+    console.log('\nReopen Claude Code to see the badge in its status bar.');
+    return;
+  }
+  if (cmd.action === 'statusline-uninstall') {
+    const { uninstallStatusLine, claudeSettingsPath } = await import('../src/statusline-install.js');
+    const removed = uninstallStatusLine();
+    console.log(removed
+      ? `Removed claude-switch status line from ${claudeSettingsPath()}`
+      : 'No claude-switch status line was installed (or settings.json has a foreign one — left untouched).');
+    return;
+  }
+  if (cmd.action === 'statusline-status') {
+    const { detectExistingStatusLine, claudeSettingsPath } = await import('../src/statusline-install.js');
+    const status = detectExistingStatusLine();
+    console.log(`Settings file: ${claudeSettingsPath()}`);
+    switch (status.kind) {
+      case 'absent':
+        console.log('Status line: not configured');
+        console.log('Run: claude switch statusline install');
+        break;
+      case 'ours-plain':
+        console.log('Status line: claude-switch badge (plain)');
+        break;
+      case 'ours-ccstatusline':
+        console.log('Status line: claude-switch badge + ccstatusline');
+        break;
+      case 'foreign':
+        console.log('Status line: a different command is configured');
+        console.log(`  command: ${status.command}`);
+        break;
+    }
     return;
   }
 
