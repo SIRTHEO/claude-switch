@@ -1,4 +1,4 @@
-# claude-switch
+# claude-switch — multi-account manager for Claude Code
 
 [![npm version](https://img.shields.io/npm/v/@sirtheo/claude-switch)](https://www.npmjs.com/package/@sirtheo/claude-switch)
 [![npm downloads](https://img.shields.io/npm/dm/@sirtheo/claude-switch)](https://www.npmjs.com/package/@sirtheo/claude-switch)
@@ -6,30 +6,40 @@
 [![Node.js CI](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml)
 [![Node.js](https://img.shields.io/node/v/@sirtheo/claude-switch)](package.json)
 
-**Use multiple Claude Code accounts on the same computer.** Switch between them in one second. No browser, no logout, no waiting.
+**Use multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) accounts on the same computer. Sign in to each one in your browser ONCE. After that, switch between them in one second — no browser, no logout, no waiting.**
 
----
-
-## Why does this exist?
-
-Claude Code lets you log in with **one** account at a time. So if you have a work account and a personal account, every time you want to switch you have to:
-
-1. Log out of Claude Code
-2. Open a browser
-3. Sign in again
-4. Wait for the session to load
-
-claude-switch saves all your accounts and lets you jump between them with **one command**:
+Plus: bypass your Max/Pro rate limit by switching to your Anthropic API key with one command, and let claude-switch flip back automatically when your subscription frees up.
 
 ```bash
-claude switch personal
+claude switch personal       # instant switch, no browser
+claude switch work
+claude switch fallback on    # hit the 5h limit? bill against API credits instead
 ```
-
-That's it. No browser. Instant.
 
 ---
 
-## Install (5 minutes, one time only)
+## What it does
+
+- 🔐 **Multiple accounts on one machine** — work + personal + client + side-project, all saved, all signed in. Switch with one command.
+- 🌐 **Browser opens once per account** — only when you first add it. Every switch after is instant and offline.
+- 💳 **Bypass Max/Pro rate limits** — save your Anthropic API key, flip a toggle, keep working when your subscription hits the 5-hour or 7-day cap.
+- 🤖 **Smart auto-revert** — let claude-switch flip back to your subscription automatically when usage drops, so you don't burn API credits when you don't need to.
+- 📊 **See your usage live** — 5-hour and 7-day quota numbers in your shell prompt or Claude Code's status bar, fetched from Anthropic's quota API.
+- 🎛️ **Interactive menu** — type `claude switch` and do everything from one screen: switch, manage keys, toggle fallback, re-authenticate, edit aliases.
+- ⚡ **Instant, offline, no telemetry** — switching is just a file operation. No network calls. No data sent anywhere. All credentials live on your computer with `0600` permissions.
+- 🍎 **macOS, Linux, Windows** — same commands everywhere.
+
+---
+
+## Quick links
+
+**Quick links:** [Install](#install) · [First use](#your-first-time-using-it) · [Interactive menu](#the-interactive-menu-the-easy-way) · [Bypass rate limit](#when-you-hit-your-subscription-limit) · [Status bar](#show-your-account-in-your-shell-prompt-or-status-bar) · [Troubleshooting](#when-something-goes-wrong)
+
+---
+
+## Install
+
+**3 minutes, one time only.**
 
 ### What you need first
 
@@ -376,6 +386,16 @@ claude switch --version
 ```
 
 …and [open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) with the output, plus your OS and `node --version`.
+
+---
+
+## Why this exists
+
+Claude Code lets you log in with **one** account at a time. So if you have a work account and a personal account, every time you want to switch you have to log out, open a browser, sign in again, and wait for the session to load — then again, in reverse, when you want to go back. Five minutes of clicks every time.
+
+Plus: when you hit your Max/Pro subscription rate limit, Claude Code stops working until the window resets. Even if you have API credits sitting unused.
+
+claude-switch fixes both: instant offline switching between saved accounts, and a one-command toggle that bills against your API key when your subscription is capped.
 
 ---
 

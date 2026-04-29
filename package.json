@@ -1,7 +1,7 @@
 {
   "name": "@sirtheo/claude-switch",
   "version": "2.5.0",
-  "description": "Switch between multiple Claude Code accounts instantly from the terminal — cross-platform CLI",
+  "description": "Multi-account manager for Claude Code. Sign in once per account, switch instantly. Bypass Max/Pro rate limits with API key fallback and auto-revert. macOS · Linux · Windows.",
   "type": "module",
   "bin": {
     "claude": "dist/bin/cli.js"
@@ -18,13 +18,28 @@
   "keywords": [
     "claude",
     "claude-code",
-    "multi-account",
-    "switch",
-    "account-switching",
+    "claude-cli",
     "anthropic",
-    "cli",
+    "anthropic-api",
+    "multi-account",
+    "account-switching",
+    "switch-account",
+    "oauth",
+    "api-key",
+    "fallback",
+    "rate-limit",
+    "max-plan",
+    "pro-plan",
+    "subscription",
+    "usage",
+    "statusline",
+    "ccstatusline",
     "credentials",
-    "developer-tools"
+    "keychain",
+    "cli",
+    "tui",
+    "developer-tools",
+    "productivity"
   ],
   "author": {
     "name": "SIRTHEO",
