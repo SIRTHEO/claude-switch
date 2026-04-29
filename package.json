@@ -1,6 +1,6 @@
 {
   "name": "@sirtheo/claude-switch",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Switch between multiple Claude Code accounts instantly from the terminal — cross-platform CLI",
   "type": "module",
   "bin": {
@@ -40,7 +40,7 @@
   },
   "homepage": "https://github.com/SIRTHEO/claude-switch#readme",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.12.0"
   },
   "files": [
     "dist/bin/",

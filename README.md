@@ -6,94 +6,269 @@
 [![Node.js CI](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml)
 [![Node.js](https://img.shields.io/node/v/@sirtheo/claude-switch)](package.json)
 
-Switch between multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) accounts instantly — no logout, no browser, no waiting.
+**Use multiple Claude Code accounts on the same computer.** Switch between them in one second. No browser, no logout, no waiting.
 
 ---
 
-## What's new in v2.4.0
+## Why does this exist?
 
-**Smart auto-revert, in-menu re-auth, manage any account, alt-screen menu.**
+Claude Code lets you log in with **one** account at a time. So if you have a work account and a personal account, every time you want to switch you have to:
 
-### Auto-revert to OAuth (smart-switch)
+1. Log out of Claude Code
+2. Open a browser
+3. Sign in again
+4. Wait for the session to load
 
-When you flip fallback ON because you hit the 5h subscription limit, you usually forget to flip it back when the window resets. claude-switch can now do it for you:
+claude-switch saves all your accounts and lets you jump between them with **one command**:
 
 ```bash
-claude switch fallback auto on                  # default threshold: 80%
+claude switch personal
+```
+
+That's it. No browser. Instant.
+
+---
+
+## Install (5 minutes, one time only)
+
+### What you need first
+
+- **Node.js 20.12 or newer** — type `node --version` in your terminal. If it says less than `v20.12`, [install Node](https://nodejs.org/) (Node 18 is end-of-life).
+- **Claude Code already installed and working** — if `claude` doesn't already work in your terminal, [install Claude Code first](https://docs.anthropic.com/en/docs/claude-code).
+
+### Step 1 — Install claude-switch
+
+```bash
+npm install -g @sirtheo/claude-switch
+```
+
+### Step 2 — Run the setup wizard
+
+```bash
+claude switch setup
+```
+
+This finds your real Claude Code on the computer and remembers where it is. It also adds the right folder to your PATH if needed.
+
+### Step 3 — Open a NEW terminal window
+
+Close your current terminal, open a fresh one. This is **required** — otherwise your shell still uses the old `claude` command.
+
+### Step 4 — Check it worked
+
+```bash
+claude switch --version
+```
+
+You should see something like `claude-switch 2.4.1`. ✅ Done.
+
+> **What just happened?** claude-switch put a tiny "wrapper" in front of the `claude` command. When you type `claude`, the wrapper picks the right account first, then runs the real Claude Code. Your original Claude Code is untouched.
+
+---
+
+## Your first time using it
+
+### 1. Save your current account
+
+Just run `claude` like you normally would:
+
+```bash
+claude
+```
+
+claude-switch sees you're already logged in and saves that account automatically:
+
+```
+Detected account: work@company.com (saved automatically)
+
+🔑 work@company.com
+```
+
+You don't have to do anything. Done.
+
+### 2. Add a second account
+
+```bash
+claude switch add
+```
+
+A browser opens. Sign in with your **other** account. When you come back to the terminal, claude-switch will ask if you want a short nickname (alias):
+
+```
+Email of the account you are about to add: personal@gmail.com
+✔ Saved: personal@gmail.com
+Optional alias: personal
+✔ Done
+```
+
+Now you have two accounts saved.
+
+### 3. Switch between them
+
+```bash
+claude switch personal      # use the alias
+claude switch work          # back to work
+claude switch               # opens a menu to pick from a list
+```
+
+The switch is instant — no browser, no waiting.
+
+---
+
+## The interactive menu (the easy way)
+
+If you don't want to remember commands, just type:
+
+```bash
+claude switch
+```
+
+A menu pops up showing:
+
+- which account is currently active
+- whether you're using OAuth (subscription) or your API key
+- if your token is still valid
+- your current usage % (5 hours and 7 days)
+
+From the menu you can:
+
+- 🔄 **Switch account** — pick another account, claude opens automatically
+- 🔑 **Turn fallback ON / OFF** — switch between subscription billing and API key billing
+- 🤖 **Enable auto-revert to OAuth** — automatic switch back when subscription frees up
+- 🗝️ **Set API key** for the active account
+- ⚙️ **Manage account…** — edit any saved account (API key, alias, remove)
+- ➕ **Advanced…** — add new account, run setup wizard, etc.
+
+Press `Ctrl+C` or pick "Exit" to leave. Your terminal goes back to normal — no leftover stuff in the scrollback.
+
+---
+
+## Common things you'll want to do
+
+### See your accounts
+
+```bash
+claude switch list
+```
+
+```
+Saved accounts:
+
+  * work@company.com (active) [work, w]
+    personal@gmail.com [personal]
+```
+
+The `*` is which account is active right now. The names in `[brackets]` are aliases.
+
+### Check what's going on
+
+```bash
+claude switch status
+```
+
+Tells you:
+- which account is active
+- if your token is still good (or expired)
+- if you have an API key saved
+- if fallback is ON or OFF
+
+### Add nicknames (aliases)
+
+Tired of typing `personal@gmail.com`? Give it a short name:
+
+```bash
+claude switch alias p personal@gmail.com   # now "claude switch p" works
+claude switch alias --list                 # show all aliases
+claude switch alias --remove p             # delete an alias
+```
+
+### Remove an account
+
+```bash
+claude switch remove old@email.com
+```
+
+(You can't remove the account you're currently using — switch to a different one first.)
+
+### Use a different account just for ONE command
+
+```bash
+claude --as personal "review this code"
+```
+
+This runs the command as `personal`, then switches **back** to your original account automatically. Even if you press Ctrl+C in the middle, it restores correctly.
+
+---
+
+## When you hit your subscription limit
+
+Claude's Max/Pro plans have rate limits (5-hour and 7-day). When you hit one, Claude Code stops working for a while — even though you have API credits available.
+
+claude-switch fixes this with a **manual fallback toggle**:
+
+### Step 1 — save an API key for an account
+
+```bash
+claude switch apikey set work
+# paste sk-ant-... (the key is hidden as you type)
+```
+
+### Step 2 — turn fallback ON when you hit the limit
+
+```bash
+claude switch fallback on
+```
+
+Now `claude` runs with your API key instead of your subscription. You'll be billed against API credits until you turn fallback off.
+
+> ⚠️ **First time:** Claude Code will ask `Use this API key? [y/N]` — press **y**. Your choice is remembered. If you press N or miss this prompt, fallback won't actually work.
+
+### Step 3 — turn it back off when your subscription resets
+
+```bash
+claude switch fallback off
+```
+
+…or, even better, let claude-switch do it for you:
+
+### Auto-revert (smart-switch)
+
+Forgot to turn fallback off after your 5-hour reset? Auto-revert handles it:
+
+```bash
+claude switch fallback auto on                  # default: revert when usage < 80%
 claude switch fallback auto on --threshold 70   # custom threshold
 ```
 
-When fallback is on AND both 5-hour and 7-day usage drop below the threshold, the next `claude` run prints `📈 Subscription back online — switched back to OAuth` and runs on your subscription instead of API credits. Strictly opt-in. Decision uses the cached usage, so no extra network call in the hot path. See [Smart-switch](#smart-switch-auto-off-when-the-subscription-comes-back) below.
+When fallback is ON and your 5-hour AND 7-day usage both drop below the threshold, the next time you run `claude` you'll see:
 
-### Manage any account from the menu
+```
+📈 Subscription back online (5h:30%, 7d:15%) — switched back to OAuth
+🔑 work@company.com
+```
 
-`claude switch` → **Manage account…** lets you edit API key, aliases, or remove any saved account — active or not, no need to switch first. Replaces what previously required dropping to shell commands or switching just to change a key.
+claude-switch automatically flipped fallback OFF and you're back on your subscription. No more wasted API credits.
 
-### Re-authenticate without leaving the menu
-
-When the OAuth token for the active account expires, the menu now offers a top-priority **Re-authenticate (token expired)** entry that runs the browser flow inline and refreshes Keychain tokens — no need to know that "Add account" was the recovery path. Detects mid-flow account changes and incomplete logins, so you don't get a misleading "Tokens refreshed" confirmation.
-
-### Auto-launch after switch
-
-Picking a new account from `claude switch` now exits the menu and hands stdio to a fresh `claude` invocation automatically. Switching to use an account, immediately followed by needing to type `claude` again, was friction that no longer exists.
-
-### Alt-screen menu (no more scrollback noise)
-
-The interactive menu now opens in the terminal's alternate screen buffer (like `vim`, `htop`, `lazygit`). Each iteration redraws in place instead of accumulating panels in your scrollback; on exit the terminal looks exactly as it did before you opened the menu. Falls back gracefully on non-TTY (CI / piped output).
+Turn it off:
+```bash
+claude switch fallback auto off
+```
 
 ---
 
-## What's new in v2.3.0
+## Show your account in your shell prompt or status bar
 
-**Interactive TUI, subscription usage monitoring, and shell statusline.**
-
-### Interactive menu
-
-Running `claude switch` with no arguments now opens a persistent menu instead of a numbered list:
-
-```
-◆ Status ────────────────────────────────
-│ Account    work@company.com
-│ Auth mode  OAuth subscription
-│ Token      valid (expires in 3 days)
-│ Usage      5h 42%  7d 18%
-└────────────────────────────────────────
-
-◆ What would you like to do?
-● Switch account
-○ Turn fallback ON (use API key)
-○ Set API key
-○ Refresh usage
-○ Advanced…
-○ Exit
-```
-
-All actions — switching, adding/removing accounts, setting an API key, toggling fallback — are accessible from the menu. After each action the menu reappears, so you can do multiple things without re-running the command.
-
-### Subscription usage monitoring
-
-claude-switch can now read your Max/Pro subscription quota from Anthropic's API:
+Want to always see which account is active?
 
 ```bash
-claude switch usage           # show 5-hour and 7-day utilisation %
-claude switch usage --force   # force a fresh fetch
+claude switch sl                # short version: "🔑 work OAuth 5h:42%"
+claude switch sl --full         # full email instead of nickname
+claude switch sl --json         # for scripts
 ```
 
-Usage is shown in the interactive menu and in the shell statusline (see below). The data is cached for 15 minutes to respect Anthropic's rate limits; a background refresh keeps it near-live while Claude Code is running.
+The badge turns yellow at 75% usage and red at 90%, so you can see when you're getting close to the limit.
 
-### Shell statusline (`claude switch statusline`)
-
-Add a live account badge to your shell prompt or [ccstatusline](https://github.com/simonw/ccstatusline):
-
-```
-🔑 work OAuth  5h:42%
-```
-
-Colors: account name in cyan, `OAuth` in green, `API` in yellow, usage in red when ≥ 90%.
-
-Integration options:
-
-**ccstatusline** (recommended — shown inside Claude Code's status bar):
+### Add it to ccstatusline (inside Claude Code)
 
 ```json
 // ~/.claude/settings.json
@@ -103,405 +278,25 @@ Integration options:
 }
 ```
 
-**Starship:**
+### Add it to your shell prompt
 
+**Bash / Zsh** — paste at the end of `~/.bashrc` or `~/.zshrc`:
+```bash
+PS1='$(claude switch sl --no-color) \$ '
+```
+
+**Starship** — add to `~/.config/starship.toml`:
 ```toml
-# ~/.config/starship.toml
 [custom.claude]
 command = "claude switch sl --no-color"
 when = "true"
 ```
 
-**Plain shell prompt (bash/zsh):**
-
-```bash
-PS1='$(claude switch sl --no-color) \$ '
-```
-
-Available flags:
-
-```bash
-claude switch statusline            # compact: alias + mode + usage
-claude switch statusline --full     # full: email + mode + usage
-claude switch statusline --json     # machine-readable JSON
-claude switch statusline --no-color # no ANSI codes
-claude switch sl                    # alias for statusline
-```
-
-### Per-account API key + fallback toggle (with smart-switch)
-
-Claude Code has no built-in fallback from a Max/Pro subscription to an API key when you hit the rate limit. claude-switch gives you a manual toggle, plus an opt-in smart-switch that flips it back automatically:
-
-- `claude switch apikey set <account>` — save an Anthropic API key for an account (input hidden)
-- `claude switch fallback on` — inject the saved key as `ANTHROPIC_API_KEY` on every `claude` invocation (billed against API credits)
-- `claude switch fallback off` — back to OAuth subscription
-- `claude switch fallback auto on` — **smart-switch**: when fallback is on, automatically flip it back OFF the next time you run `claude` if both 5h and 7d subscription usage drop below a configurable threshold
-- Each account keeps its own key, so switching accounts also switches which key is active
-
-See [API key fallback](#api-key-fallback-when-your-max-plan-hits-its-limit) and [Smart-switch](#smart-switch-auto-off-when-the-subscription-comes-back) below.
-
 ---
 
-## What's new in v2.2.0
+## Tab completion (less typing)
 
-**Important fix — accounts were using the wrong API tokens on macOS.**
-
-Claude Code stores OAuth tokens in the macOS Keychain, not in `~/.claude.json`. Previous versions of claude-switch only swapped the account metadata in that file, leaving the Keychain untouched. The result: after switching, the Claude CLI showed the right account name but silently made API calls using a different account's tokens.
-
-v2.2.0 fixes this by saving and restoring Keychain tokens alongside account metadata.
-
-**If you are upgrading from an older version:**
-1. Run `claude switch status` — this automatically updates your active account file
-2. Run `claude switch add` for each of your other accounts — this re-authenticates and captures their tokens
-
----
-
-## The problem it solves
-
-Claude Code only supports one account at a time. If you use it for work _and_ personal projects, switching means logging out, opening a browser, and logging back in — every time.
-
-**claude-switch** saves all your accounts and lets you switch between them in under a second, entirely from the terminal.
-
----
-
-## How it works
-
-Claude Code authenticates via OAuth. The active account identity is stored in `~/.claude.json`, and the actual tokens (access token, refresh token) are stored in the macOS Keychain. Switching accounts means updating both.
-
-claude-switch handles this for you — instantly, with no network requests. The browser is only needed **once per account**, when you first add it.
-
----
-
-## Requirements
-
-- **Node.js** version 18 or newer — check with `node --version`
-- **Claude Code** CLI — install from the [official docs](https://docs.anthropic.com/en/docs/claude-code)
-
----
-
-## Installation
-
-### Step 1 — Install the package
-
-```bash
-npm install -g @sirtheo/claude-switch
-```
-
-### Step 2 — Run setup
-
-```bash
-claude switch setup
-```
-
-This tells claude-switch where the real `claude` binary is on your machine, and optionally adds it to your shell's PATH if needed.
-
-### Step 3 — Open a new terminal
-
-Close your current terminal window and open a fresh one. This is required so your shell picks up the new `claude` wrapper.
-
-### Step 4 — Verify it works
-
-```bash
-claude switch --version
-```
-
-You should see something like `claude-switch 2.4.0`. If you do, you're all set.
-
-> **What changed?** claude-switch places a thin wrapper in front of the `claude` command. Your original Claude Code installation is untouched — the wrapper just intercepts the command, shows which account is active, and then calls the real binary.
-
----
-
-## Getting started
-
-### Your first account is saved automatically
-
-Just run `claude` as you normally would. If you are already logged in to Claude Code, claude-switch detects your current account and saves it:
-
-```
-Detected account: work@company.com (saved automatically)
-
-🔑 work@company.com
-```
-
-No extra steps needed.
-
-### Add a second account
-
-```bash
-claude switch add
-```
-
-This opens your browser for sign-in. After you authenticate, you will be asked if you want to set a short alias:
-
-```
-✔ Add a new claude account
-◆ Email of the account you are about to add
-│  work@company.com
-│
-◇ A browser window will open shortly.
-│  Sign in with the new account, then come back to this terminal.
-│
-✔ Saved: work@company.com
-◆ Optional alias (a short nickname you can type instead of the email)
-│  work
-└─ Done
-   Email: work@company.com
-   Alias: work
-```
-
-An alias is just a nickname — instead of typing the full email, you can type `work`.
-
-### Switch between accounts
-
-```bash
-claude switch work
-```
-
-That's it. The switch is instant. Run `claude` again and you'll see the new account is active.
-
-Or open the interactive menu for a full overview:
-
-```bash
-claude switch
-```
-
----
-
-## All commands
-
-### Interactive menu
-
-```bash
-claude switch
-```
-
-Opens a persistent TUI menu showing your current account, auth mode, token expiry, and usage percentage. All common actions are available from the menu:
-
-- **Switch account** — pick from your saved accounts
-- **Turn fallback ON/OFF** — toggle between OAuth and API key billing
-- **Set API key** — save an Anthropic key for the active account
-- **Refresh usage** — force-fetch subscription quota
-- **Advanced…** — add account, remove account, re-run setup wizard
-
-### Switch to an account
-
-```bash
-claude switch personal               # switch by alias
-claude switch personal@gmail.com     # switch by full email
-claude switch pers                   # fuzzy match — finds "personal@gmail.com"
-```
-
-### List your accounts
-
-```bash
-claude switch list
-```
-
-Output:
-
-```
-Saved accounts:
-
-  * work@company.com (active) [work, w]
-    personal@gmail.com [personal]
-```
-
-The `*` shows the currently active account. Names in brackets `[...]` are aliases.
-
-### Check account status
-
-```bash
-claude switch status
-```
-
-Output:
-
-```
-Active account: work@company.com
-  Alias: work
-  Token: valid (expires in 3 days)
-  API key: sk-ant-api03…WXYZ
-  Fallback: off
-```
-
-### Add or remove accounts
-
-```bash
-claude switch add                      # add a new account (opens browser, guided TUI)
-claude switch remove old@email.com     # remove a saved account
-```
-
-> You cannot remove the currently active account. Switch to another account first.
-
-### Subscription usage
-
-```bash
-claude switch usage           # show cached 5-hour and 7-day utilisation %
-claude switch usage --force   # force a fresh fetch from Anthropic's API
-```
-
-Output:
-
-```
-Subscription usage (fetched just now):
-  5-hour:  42.0%
-  7-day:   18.3%
-    Opus:  12.1%
-    Sonnet: 6.2%
-```
-
-Usage is automatically cached for 15 minutes. When the cache is stale, a background process refreshes it so the statusline always shows near-live numbers.
-
-### Shell statusline
-
-```bash
-claude switch statusline        # compact: alias/local-part + auth mode + usage
-claude switch statusline --full # full email instead of alias
-claude switch statusline --json # machine-readable JSON
-claude switch sl                # shorthand alias
-```
-
-Example output (compact):
-```
-🔑 work OAuth  5h:42%
-```
-
-When usage reaches 75% the badge turns yellow; at 90% it turns red.
-
-JSON output format:
-```json
-{
-  "email": "work@company.com",
-  "shortName": "work",
-  "mode": "oauth",
-  "fallback": false,
-  "hasApiKey": true,
-  "fiveHour": 42.0,
-  "sevenDay": 18.3
-}
-```
-
-### Aliases
-
-Aliases are short nicknames for your accounts. You can have multiple aliases per account.
-
-```bash
-claude switch alias work work@company.com    # create alias "work" for that email
-claude switch alias w    work@company.com    # create another alias "w" for the same email
-claude switch alias --list                   # show all aliases
-claude switch alias --remove w               # delete alias "w"
-```
-
-### API key fallback (when your Max plan hits its limit)
-
-Claude Code does not switch from your subscription to an API key automatically when you hit the Max plan rate limit ([feature request open since 2024](https://github.com/anthropics/claude-code/issues/2944)). claude-switch gives you a manual toggle that does the next-best thing:
-
-1. Save an Anthropic API key for any account:
-
-   ```bash
-   claude switch apikey set work
-   # paste sk-ant-… (input is hidden)
-   ```
-
-   Or use the interactive menu: `claude switch` → **Set API key**.
-
-2. When you hit the limit, turn fallback on:
-
-   ```bash
-   claude switch fallback on
-   ```
-
-   From now on, every `claude` invocation runs with `ANTHROPIC_API_KEY` set to the saved key for the active account — Claude Code uses your API credits instead of the subscription.
-
-   > **First-time approval:** the first time Claude Code sees a new API key it will ask:
-   > ```
-   > Use this API key? [y/N]
-   > ```
-   > Press **y** to approve. This choice is remembered. If you miss the prompt or press N, claude silently keeps using OAuth and the fallback looks broken — watch for it on the first launch.
-
-3. When the subscription quota refreshes, turn it back off:
-
-   ```bash
-   claude switch fallback off
-   ```
-
-   Or let claude-switch do it for you — see [Smart-switch](#smart-switch-auto-off-when-the-subscription-comes-back) below.
-
-Each account keeps its own key, so switching accounts also switches which key is used.
-
-Other commands:
-
-```bash
-claude switch apikey show work        # show the saved key, masked
-claude switch apikey remove work      # delete the saved key
-claude switch fallback                # show fallback state + whether the active account has a key
-```
-
-The key is stored in `~/.claude/accounts/<email>.json` (perms `600`) — same place and same protection as the OAuth tokens.
-
-#### Smart-switch (auto-OFF when the subscription comes back)
-
-Forgot to flip fallback back to OAuth after your 5-hour quota reset? Smart-switch does it for you:
-
-```bash
-claude switch fallback auto on                  # default threshold: 80%
-claude switch fallback auto on --threshold 70   # custom threshold
-claude switch fallback auto status              # show current setting
-claude switch fallback auto off                 # disable
-```
-
-When smart-switch is on AND fallback is currently on AND the cached usage shows both 5-hour and 7-day utilisation strictly below the threshold, the next `claude` invocation prints:
-
-```
-📈 Subscription back online (5h:30%, 7d:15%, threshold 80%) — switched back to OAuth
-🔑 work@company.com
-```
-
-…and runs Claude Code on your subscription instead of API credits. No network calls in the hot path — the decision uses the cached usage that the statusline already keeps fresh.
-
-Strictly opt-in (default OFF). Both 5h and 7d windows are checked so you don't bounce back to OAuth only to hit the weekly cap a few minutes later.
-
-Toggle from the menu too: `claude switch` → **Enable smart-switch**.
-
-### Use a different account for just one command
-
-```bash
-claude --as personal "review this code"
-```
-
-This temporarily switches to `personal`, runs the command, then automatically restores your original account when done. The active account never changes permanently.
-
-If the command is interrupted (Ctrl+C or a crash), the original account is restored automatically on the next `claude` invocation.
-
-### Update claude-switch
-
-```bash
-claude switch update
-```
-
-Checks the npm registry for a newer version and offers to install it:
-
-```
-Current version: 2.4.0
-Checking for updates...
-New version available: 2.4.0 → 2.5.0
-Update now? [y/N]
-```
-
-You can also let claude-switch notify you automatically — if a new version is available, it will prompt you the next time you run any `claude switch` command.
-
-### Setup
-
-```bash
-claude switch setup
-```
-
-Finds the real `claude` binary and saves its location. Run this if:
-- you installed claude-switch on a new machine
-- you moved or reinstalled Claude Code
-- `claude` stops working after a system update
-
-### Shell completions (tab to autocomplete)
+Pick your shell, run the command once, then open a new terminal:
 
 ```bash
 # Bash
@@ -517,149 +312,131 @@ claude switch --completions fish > ~/.config/fish/completions/claude.fish
 claude switch --completions powershell >> $PROFILE
 ```
 
-After adding completions, open a new terminal. Then press Tab after `claude switch` to see available commands and account names.
+Now press Tab after `claude switch ` to see all commands and account names.
 
 ---
 
-## Integrating the statusline
-
-### Inside Claude Code (ccstatusline)
-
-Add this to `~/.claude/settings.json` to show the account badge in Claude Code's bottom status bar:
-
-```json
-"statusLine": {
-  "type": "command",
-  "command": "bash -c 'INPUT=$(cat); claude switch sl; echo \"$INPUT\" | npx -y ccstatusline@latest'"
-}
-```
-
-This runs claude-switch first (outputting the account badge), then pipes the original Claude Code context to ccstatusline.
-
-### Starship prompt
-
-```toml
-# ~/.config/starship.toml
-[custom.claude]
-command = "claude switch sl --no-color"
-when = "true"
-symbol = ""
-```
-
-### Bash / Zsh prompt
+## Update claude-switch
 
 ```bash
-# Add to ~/.bashrc or ~/.zshrc
-PS1='$(claude switch sl --no-color) \$ '
+claude switch update
 ```
 
-### Oh My Zsh
-
-Create `~/.oh-my-zsh/custom/themes/claude.zsh-theme`:
-
-```zsh
-PROMPT='$(claude switch sl --no-color) %~ $ '
-```
+Checks for a new version and offers to install it. claude-switch also notifies you automatically when an update is available.
 
 ---
 
-## Using claude-switch with VS Code
+## When something goes wrong
 
-claude-switch works with the Claude Code extension in VS Code. To switch accounts:
+### `claude` doesn't exist after install
 
-1. Open the integrated terminal in VS Code
-2. Run `claude switch work` (or whatever account you want)
-3. Restart the Claude Code session in VS Code
-
-Sessions that are already open keep their original account until restarted.
-
----
-
-## Troubleshooting
-
-### `claude` command not found after installing
-
-Run setup, then open a **new** terminal window:
+You skipped step 3. Open a **new** terminal window. If still broken:
 
 ```bash
 claude switch setup
-# then close and reopen your terminal
+# then close the terminal and open a new one
 ```
 
-### claude-switch can't find the real `claude` binary
+### claude-switch can't find Claude Code
 
-Set the path manually using an environment variable:
+Tell it where Claude Code is:
 
 ```bash
-export CLAUDE_SWITCH_BIN="/path/to/the/real/claude"
+export CLAUDE_SWITCH_BIN="/path/to/claude"
 ```
 
-You can find the path with `which claude` (before installing claude-switch) or by looking in your npm global bin directory.
+Find the path with `which claude` (in a terminal where claude-switch isn't installed yet) or check your npm global folder.
 
-### `claude switch usage` shows nothing or an error
+### "Token: EXPIRED" appears
 
-Usage monitoring requires a **Max or Pro** Claude subscription (OAuth login). It is not available for API-key-only accounts. If you are rate-limited, wait a few minutes before retrying — Anthropic's usage endpoint enforces aggressive limits.
+Your OAuth login has expired. From the menu, click **Re-authenticate** — a browser opens, you sign in again, done.
 
-### Fallback is on but claude still uses OAuth
-
-The first time Claude Code sees a new `ANTHROPIC_API_KEY` it asks for approval:
+Or from the command line:
+```bash
+claude switch add  # re-runs the login flow for the active account
 ```
-Use this API key? [y/N]
-```
-If you missed this prompt or pressed N, run `claude` once interactively and watch for the prompt.
 
-### After upgrading to v2.2.0, a second account shows a token warning
+### `claude switch usage` says nothing
 
-Run `claude switch add` for that account to re-authenticate and capture its tokens. You only need to do this once.
+Usage tracking only works for **Max/Pro subscribers** — it reads from Anthropic's quota endpoint. If you're on the free tier or only using API keys, this is normal.
 
-### Something else is wrong
+### Fallback is ON but `claude` still uses OAuth
 
-Check your setup:
+The first time Claude Code sees a new API key, it asks `Use this API key? [y/N]`. If you missed this prompt, run `claude` once interactively and press **y** when it appears.
+
+### Anything else
 
 ```bash
-claude switch status      # is an account active?
-claude switch list        # are accounts saved?
-claude switch --version   # is the wrapper running?
+claude switch status
+claude switch list
+claude switch --version
 ```
 
-If you are still stuck, [open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) and include:
-- Your OS and Node.js version (`node --version`)
-- The output of `claude switch --version`
-- What you ran and what happened
+…and [open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) with the output, plus your OS and `node --version`.
+
+---
+
+## How it works (under the hood)
+
+If you're curious:
+
+- Claude Code stores your **identity** (which email, which avatar, etc.) in `~/.claude.json`.
+- Claude Code stores your **tokens** (the secrets that prove you're you) in the macOS **Keychain** (or in `~/.claude.json` on Linux/Windows).
+- claude-switch saves both pieces for each account in `~/.claude/accounts/<email>.json` — file permissions `600`, only readable by you.
+- When you switch, claude-switch swaps both at the same time. No network calls. Instant.
+- A small file lock (`~/.claude/accounts/.lock`) prevents two `claude switch` running at the same time from corrupting your accounts.
 
 ---
 
 ## Good to know
 
-- **Switching is local and offline.** No network request is made when you switch. It's just a file operation.
-- **Your tokens are never invalidated.** Switching does not log you out. All accounts stay authenticated.
-- **The browser is only needed once** per account — during `claude switch add`.
-- **Accounts are saved per machine.** You need to run `claude switch add` on each machine you use.
-- **Usage data is cached.** Fetches are rate-limited by Anthropic; claude-switch caches responses for 15 minutes and refreshes in the background.
+- **Switching is offline.** No data is sent anywhere.
+- **Your tokens are never invalidated.** Switching does not log you out — all accounts stay signed in.
+- **The browser is only needed once per account** — when you first add it.
+- **Accounts are saved per machine.** Add them again on each computer you use.
+- **Usage data is cached.** Anthropic's quota endpoint is rate-limited, so claude-switch caches numbers for 15 minutes and refreshes in the background.
 
 ---
 
 ## Security
 
-- Account credentials (including OAuth tokens) are stored in `~/.claude/accounts/` with permissions `600` (only readable by you)
-- On macOS, tokens are also saved in and restored from the login Keychain
-- Temporary files are created with `600` permissions before being atomically renamed into place — credentials are never world-readable even briefly
-- All `save()`/`load()` operations are protected by an advisory file lock to prevent concurrent processes from corrupting account state
-- Email addresses used as filenames are validated against an allowlist (`[A-Za-z0-9._+@-]`) before any file operation
-- No data is sent anywhere — everything stays on your machine
-- No install scripts run automatically — setup requires you to explicitly run `claude switch setup`
+- All credentials live in `~/.claude/accounts/` with file permissions `600` (owner-only).
+- On macOS, OAuth tokens are also stored in the login Keychain — same protection as Claude Code uses by default.
+- Temporary files are written restricted from the moment they're created — credentials are never world-readable, even briefly.
+- Account switches are protected by an advisory file lock, so concurrent processes can't corrupt your saved state.
+- No automatic install scripts — you have to explicitly run `claude switch setup`.
+- No telemetry. No analytics. Everything stays on your computer.
+
+---
+
+## What's new
+
+**v2.4.1** — minimum Node.js bumped to 20.12 (Node 18 is end-of-life and a transitive dependency now requires `node:util.styleText`).
+
+**v2.4.0** highlights:
+
+- **Auto-revert to OAuth** — opt-in toggle that flips fallback OFF when your subscription frees up
+- **Manage any account** — edit API key / aliases / remove without switching to it first
+- **Re-authenticate inline** — when your token expires, fix it from the menu (no shell commands)
+- **Auto-launch claude after switch** — switching from the menu now opens claude automatically
+- **Alt-screen menu** — the interactive menu opens in a fresh canvas (like vim or htop) and leaves your scrollback untouched
+
+Earlier highlights:
+
+- **v2.3.0** — interactive TUI, subscription usage monitoring, shell statusline, per-account API key + fallback toggle
+- **v2.2.0** — fixed account switching to also swap macOS Keychain tokens (critical bug fix)
 
 ---
 
 ## Contributing
 
-Contributions are welcome. For significant changes, please [open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) first to discuss the approach.
+Pull requests welcome. For big changes, [open an issue first](https://github.com/SIRTHEO/claude-switch/issues/new/choose) so we can talk about the approach.
 
-When reporting a bug, include:
+When reporting a bug, please include:
 - Your OS and Node.js version (`node --version`)
-- The output of `claude switch --version`
-- Steps to reproduce the problem
-- What you expected vs what happened
+- Output of `claude switch --version`
+- Steps to reproduce
+- What you expected vs what actually happened
 
 ---
 
