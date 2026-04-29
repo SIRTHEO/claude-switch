@@ -44,8 +44,14 @@ describe('proxy', () => {
   it('merges extraEnv with process.env', () => {
     const result = buildSpawnArgs('/usr/local/bin/claude', [], 'darwin', { ANTHROPIC_API_KEY: 'sk-ant-test' });
     assert.equal(result.options.env?.ANTHROPIC_API_KEY, 'sk-ant-test');
-    // Sanity check: a process.env var is preserved (PATH is always set on every test runner).
-    assert.equal(result.options.env?.PATH, process.env.PATH);
+    // Sanity check: a process.env var is preserved. Use case-insensitive
+    // lookup because Windows stores PATH as "Path" (and Node.js exposes it
+    // case-insensitively via process.env.PATH, but the spread {...process.env}
+    // preserves the original key). On unix the real key is always uppercase.
+    const env = result.options.env ?? {};
+    const pathKey = Object.keys(env).find(k => k.toLowerCase() === 'path');
+    assert.ok(pathKey, 'expected a PATH-like key to be present');
+    assert.equal(env[pathKey], process.env.PATH);
   });
 
   it('extraEnv overrides parent process.env', () => {
