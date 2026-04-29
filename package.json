@@ -1,6 +1,6 @@
 {
   "name": "@sirtheo/claude-switch",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "description": "Switch between multiple Claude Code accounts instantly from the terminal — cross-platform CLI",
   "type": "module",
   "bin": {
