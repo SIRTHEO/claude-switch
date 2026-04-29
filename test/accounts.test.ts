@@ -149,6 +149,49 @@ describe('list', () => {
   it('returns empty array when dir does not exist', () => {
     assert.deepEqual(list(path.join(tmpDir, 'nope')), []);
   });
+
+  it('warns on stderr (and skips) accounts saved by older versions with chars now rejected', () => {
+    // Older claude-switch used a blocklist that allowed e.g. "!" in local-part.
+    // The file is still on disk but the new allowlist rejects it. Verify we
+    // surface this rather than silently dropping the account from the list.
+    fs.writeFileSync(path.join(accDir, 'a@b.com.json'), '{}');
+    fs.writeFileSync(path.join(accDir, 'foo!bar@x.com.json'), '{}');
+    const stderrChunks: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      stderrChunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString());
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const result = list(accDir);
+      assert.deepEqual(result, ['a@b.com']);
+      const stderrAll = stderrChunks.join('');
+      assert.match(stderrAll, /skipped/);
+      assert.match(stderrAll, /foo!bar@x\.com/);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+  });
+
+  it('respects CLAUDE_SWITCH_QUIET=1 to suppress the legacy-email warning', () => {
+    fs.writeFileSync(path.join(accDir, 'foo!bar@x.com.json'), '{}');
+    const stderrChunks: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      stderrChunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString());
+      return true;
+    }) as typeof process.stderr.write;
+    const prev = process.env.CLAUDE_SWITCH_QUIET;
+    process.env.CLAUDE_SWITCH_QUIET = '1';
+    try {
+      list(accDir);
+      assert.strictEqual(stderrChunks.join(''), '');
+    } finally {
+      process.stderr.write = origWrite;
+      if (prev === undefined) delete process.env.CLAUDE_SWITCH_QUIET;
+      else process.env.CLAUDE_SWITCH_QUIET = prev;
+    }
+  });
 });
 
 describe('save - validation', () => {

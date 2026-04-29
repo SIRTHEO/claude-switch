@@ -437,7 +437,15 @@ async function main(): Promise<void> {
 
     case 'list': {
       const accounts = listAccounts(aDir);
-      const current = getCurrent(cJson);
+      // EACCES on ~/.claude.json shouldn't break `list` — historically this
+      // command returned the saved account list even if the active marker
+      // was unreadable. Surface the issue on stderr but keep the listing.
+      let current = '';
+      try {
+        current = getCurrent(cJson);
+      } catch (e) {
+        process.stderr.write(`Note: could not determine active account — ${(e as Error).message}\n\n`);
+      }
       if (accounts.length === 0) {
         console.log('No saved accounts. Run: claude switch add');
       } else {
