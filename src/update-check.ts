@@ -65,15 +65,28 @@ function writeCache(cache: CheckCache): void {
 // Version comparison
 // ---------------------------------------------------------------------------
 
-/** Returns true if `latest` is strictly newer than `current`. */
+/**
+ * Returns true if `latest` is strictly newer than `current`.
+ *
+ * We never propose pre-release versions (`x.y.z-rc.1`, `x.y.z-beta`) as updates
+ * — users running stable should not be auto-bumped to a pre-release.
+ */
 export function isNewer(current: string, latest: string): boolean {
+  const stripped = (v: string): string => v.replace(/^v/, '').split('-')[0];
+  const isPreRelease = (v: string): boolean => v.replace(/^v/, '').includes('-');
+  if (isPreRelease(latest)) return false;
   const parse = (v: string): number[] =>
-    v.replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
-  const [ca, cb, cc] = parse(current);
-  const [la, lb, lc] = parse(latest);
+    stripped(v).split('.').map(n => parseInt(n, 10) || 0);
+  // Default each component to 0 so `2.3` compares as `2.3.0`.
+  const [ca = 0, cb = 0, cc = 0] = parse(current);
+  const [la = 0, lb = 0, lc = 0] = parse(latest);
   if (la !== ca) return la > ca;
   if (lb !== cb) return lb > cb;
-  return lc > cc;
+  if (lc !== cc) return lc > cc;
+  // Same base version — but per semver, a pre-release is "less than" its
+  // matching stable release (1.0.0-rc.1 < 1.0.0), so users on rc.1 should
+  // be notified when the stable lands.
+  return isPreRelease(current) && !isPreRelease(latest);
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +97,17 @@ function fetchLatestVersionBackground(): void {
   const req = https.get(REGISTRY_URL, { timeout: 5000 }, (res) => {
     if (res.statusCode !== 200) { res.resume(); return; }
     let body = '';
-    res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+    let aborted = false;
+    res.on('data', (chunk: Buffer) => {
+      if (aborted) return;
+      body += chunk.toString();
+      // Cap response size — npm /latest is ~2 KB, anything more is suspect
+      // (compromised registry or MITM). 64 KB is generous.
+      if (body.length > 64 * 1024) {
+        aborted = true;
+        res.destroy();
+      }
+    });
     res.on('end', () => {
       try {
         const version = (JSON.parse(body) as Record<string, unknown>).version;
@@ -109,7 +132,10 @@ export function fetchLatestVersionSync(): Promise<string | null> {
     const req = https.get(REGISTRY_URL, { timeout: 8000 }, (res) => {
       if (res.statusCode !== 200) { res.resume(); resolve(null); return; }
       let body = '';
-      res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      res.on('data', (chunk: Buffer) => {
+        body += chunk.toString();
+        if (body.length > 64 * 1024) { res.destroy(); resolve(null); }
+      });
       res.on('end', () => {
         try {
           const version = (JSON.parse(body) as Record<string, unknown>).version;
@@ -138,19 +164,25 @@ export function detectInstallCommand(): string[] {
   } catch { /* import.meta unavailable in some test contexts */ }
 
   const binaryPath = selfDir || process.execPath;
+  // Match against path segments, not raw substring — otherwise a user
+  // whose home directory contains "volta" or whose project is in a
+  // "pnpm-workspace" folder would be misclassified.
+  const segments = binaryPath.split(path.sep);
+  const hasSeg = (...names: string[]): boolean =>
+    segments.some(s => names.includes(s));
 
   // Volta — manages its own shims
-  if (binaryPath.includes('.volta')) {
+  if (hasSeg('.volta', 'volta')) {
     return ['volta', 'install', PACKAGE_NAME];
   }
 
   // pnpm global
-  if (binaryPath.includes('pnpm')) {
+  if (hasSeg('pnpm', '.pnpm', 'pnpm-global')) {
     return ['pnpm', 'add', '-g', PACKAGE_NAME];
   }
 
   // yarn global (v1)
-  if (binaryPath.includes('yarn')) {
+  if (hasSeg('yarn', '.yarn')) {
     return ['yarn', 'global', 'add', PACKAGE_NAME];
   }
 

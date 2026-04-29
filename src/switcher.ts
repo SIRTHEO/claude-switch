@@ -7,6 +7,7 @@ import { getCurrent, save, load, list } from './accounts.js';
 import { setAlias } from './aliases.js';
 import { buildSpawnArgs } from './proxy.js';
 import { ExitError } from './errors.js';
+import { withLock } from './lock.js';
 
 function ask(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -19,21 +20,23 @@ function ask(question: string): Promise<string> {
 }
 
 export function switchTo(targetEmail: string, claudeJsonPath: string, accountsDirPath: string): string {
-  const currentEmail = getCurrent(claudeJsonPath);
+  return withLock(accountsDirPath, () => {
+    const currentEmail = getCurrent(claudeJsonPath);
 
-  if (targetEmail === currentEmail) {
-    return `Already on ${targetEmail}`;
-  }
+    if (targetEmail === currentEmail) {
+      return `Already on ${targetEmail}`;
+    }
 
-  if (currentEmail) {
-    save(currentEmail, claudeJsonPath, accountsDirPath);
-  }
+    if (currentEmail) {
+      save(currentEmail, claudeJsonPath, accountsDirPath);
+    }
 
-  const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
-  const warning = keychainRestored
-    ? ''
-    : '\nWarning: no saved credentials for this account — API tokens may be wrong.\nRun: claude switch add (to re-authenticate and capture tokens)';
-  return `Switched to ${targetEmail}${warning}`;
+    const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
+    const warning = keychainRestored
+      ? ''
+      : '\nWarning: no saved credentials for this account — API tokens may be wrong.\nRun: claude switch add (to re-authenticate and capture tokens)';
+    return `Switched to ${targetEmail}${warning}`;
+  });
 }
 
 export function fuzzyMatch(input: string, accounts: string[]): string[] {
@@ -88,17 +91,27 @@ export function savePendingRestore(email: string, accountsDirPath: string): void
 
 export function checkPendingRestore(claudeJsonPath: string, accountsDirPath: string): string | null {
   const filePath = path.join(accountsDirPath, '.pending-restore');
+  let email: string;
   try {
-    const email = fs.readFileSync(filePath, 'utf-8').trim();
-    if (email) {
-      load(email, claudeJsonPath, accountsDirPath);
-      fs.unlinkSync(filePath);
-      return email;
-    }
+    email = fs.readFileSync(filePath, 'utf-8').trim();
   } catch {
-    // No pending restore
+    return null;
   }
-  return null;
+  if (!email) return null;
+
+  // Drop the pending marker first, then attempt the restore. If the restore
+  // throws, we don't want a stale marker to wedge subsequent invocations
+  // into an infinite retry loop.
+  try { fs.unlinkSync(filePath); } catch { /* already gone */ }
+
+  try {
+    withLock(accountsDirPath, () => {
+      load(email, claudeJsonPath, accountsDirPath);
+    });
+    return email;
+  } catch {
+    return null;
+  }
 }
 
 export function clearPendingRestore(accountsDirPath: string): void {
@@ -126,16 +139,24 @@ export async function runTemporarySwitch(
     process.exit(result.status ?? 1);
   }
 
-  if (currentEmail) {
-    savePendingRestore(currentEmail, accountsDirPath);
-    save(currentEmail, claudeJsonPath, accountsDirPath);
-  }
+  // Critical section: save current + load target must be atomic w.r.t. other
+  // claude-switch processes. We acquire the lock, perform the swap, and
+  // release before spawning (which can be long-running).
+  let keychainRestored = false;
+  withLock(accountsDirPath, () => {
+    if (currentEmail) {
+      savePendingRestore(currentEmail, accountsDirPath);
+      save(currentEmail, claudeJsonPath, accountsDirPath);
+    }
+    const result = load(targetEmail, claudeJsonPath, accountsDirPath);
+    keychainRestored = result.keychainRestored;
+  });
 
-  const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
   if (!keychainRestored && process.platform === 'darwin') {
-    console.warn(`Warning: no saved credentials for ${targetEmail} — API tokens may belong to a different account.\nRun: claude switch add (to re-authenticate and capture tokens)\n`);
+    process.stderr.write(`Warning: no saved credentials for ${targetEmail} — API tokens may belong to a different account.\nRun: claude switch add (to re-authenticate and capture tokens)\n\n`);
   }
-  console.log(`🔑 ${targetEmail} (temporary)\n`);
+  // Banner on stderr to keep stdout clean for structured output.
+  process.stderr.write(`🔑 ${targetEmail} (temporary)\n\n`);
 
   // Register SIGINT handler so we restore the original account even on Ctrl-C.
   // spawnSync is a blocking call: when SIGINT arrives the OS delivers it to
@@ -146,7 +167,11 @@ export async function runTemporarySwitch(
     if (restored) return;
     restored = true;
     if (currentEmail) {
-      try { load(currentEmail, claudeJsonPath, accountsDirPath); } catch { /* best-effort */ }
+      try {
+        withLock(accountsDirPath, () => {
+          load(currentEmail, claudeJsonPath, accountsDirPath);
+        });
+      } catch { /* best-effort */ }
       clearPendingRestore(accountsDirPath);
     }
   };
@@ -168,12 +193,53 @@ export async function runTemporarySwitch(
   process.exit(result.status ?? 1);
 }
 
+/**
+ * Run `claude auth login` for the currently-active account to refresh its
+ * Keychain tokens after expiry. Differs from addAccount in that we expect
+ * the email to stay the same — we just want fresh tokens captured.
+ *
+ * Returns the email that's now active after the login, or null if login
+ * failed entirely (no oauthAccount left in claude.json).
+ */
+export async function reAuthenticate(
+  claudeBin: string,
+  claudeJsonPath: string,
+  accountsDirPath: string,
+): Promise<string | null> {
+  // Snapshot before login: which email is current AND its token state.
+  // If the email changes during login (user picked a different Google
+  // account in the browser), this is no longer a "re-auth" — it's a
+  // silent account swap, and we don't trust the result.
+  const { getTokenHealth } = await import('./token.js');
+  const emailBefore = getCurrent(claudeJsonPath);
+  const healthBefore = getTokenHealth(claudeJsonPath);
+  const wasBroken = !healthBefore || healthBefore.status === 'expired' || healthBefore.status === 'missing';
+
+  const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform);
+  spawnSync(command, args, options);
+
+  const emailAfter = getCurrent(claudeJsonPath);
+  if (!emailAfter) return null;
+
+  // Account changed under us — bail out. The caller surfaces "Login did
+  // not complete" and the user can retry; we don't capture tokens for
+  // an account they didn't intend to re-auth.
+  if (emailBefore && emailAfter !== emailBefore) return null;
+
+  const healthAfter = getTokenHealth(claudeJsonPath);
+  const stillBroken = !healthAfter || healthAfter.status === 'expired' || healthAfter.status === 'missing';
+  if (wasBroken && stillBroken) return null;
+
+  withLock(accountsDirPath, () => save(emailAfter, claudeJsonPath, accountsDirPath));
+  return emailAfter;
+}
+
 export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string): Promise<void> {
   const currentEmail = getCurrent(claudeJsonPath);
   const expectedEmail = await ask('Email to add (press Enter to skip): ');
 
   if (currentEmail) {
-    save(currentEmail, claudeJsonPath, accountsDirPath);
+    withLock(accountsDirPath, () => save(currentEmail, claudeJsonPath, accountsDirPath));
   }
 
   console.log('\nLog in with the new account in your browser.\n');
@@ -185,7 +251,7 @@ export async function addAccount(claudeBin: string, claudeJsonPath: string, acco
     const newEmail = getCurrent(claudeJsonPath);
     if (!newEmail) {
       if (currentEmail) {
-        load(currentEmail, claudeJsonPath, accountsDirPath);
+        withLock(accountsDirPath, () => load(currentEmail, claudeJsonPath, accountsDirPath));
       }
       throw new ExitError('Login failed or cancelled.');
     }
@@ -198,7 +264,7 @@ export async function addAccount(claudeBin: string, claudeJsonPath: string, acco
 
     console.log(`\nAuthenticated: ${newEmail}`);
     // Save immediately after login so the Keychain tokens are captured.
-    save(newEmail, claudeJsonPath, accountsDirPath);
+    withLock(accountsDirPath, () => save(newEmail, claudeJsonPath, accountsDirPath));
     console.log(`Saved: ${newEmail}`);
 
     if (list(accountsDirPath).length === 1) {

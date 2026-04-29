@@ -49,8 +49,17 @@ function candidateNames(): string[] {
 }
 
 export function resolve({ envBin, selfPath, pathEnv }: ResolveOptions): string | null {
-  // Tier 1: explicit env var
-  if (envBin) return envBin;
+  // Tier 1: explicit env var (still validated — must be executable and not
+  // another claude-switch wrapper, to prevent accidental infinite recursion).
+  if (envBin) {
+    try {
+      fs.accessSync(envBin, fs.constants.X_OK);
+      if (isClaudeSwitchWrapper(envBin)) return null;
+      return envBin;
+    } catch {
+      return null;
+    }
+  }
 
   const separator = process.platform === 'win32' ? ';' : ':';
   const hasExplicitPath = pathEnv !== undefined;
