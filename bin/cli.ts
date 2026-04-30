@@ -61,7 +61,8 @@ export type Command =
   | { action: 'profile-use'; name: string; args: string[] }
   | { action: 'profile-login'; name: string }
   | { action: 'profile-remove'; name: string }
-  | { action: 'profile-status'; name: string | undefined };
+  | { action: 'profile-status'; name: string | undefined }
+  | { action: 'profile-import'; email: string; profileName?: string };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -171,7 +172,13 @@ export function parseCommand(args: string[]): Command {
         return { action: 'profile-remove', name: args[3] };
       }
       if (sub2 === 'status') return { action: 'profile-status', name: args[3] };
-      throw new ExitError('Usage: claude switch profile <list|create|use|login|remove|status> [name]');
+      if (sub2 === 'import' || sub2 === 'import-from-account') {
+        if (!args[3]) throw new ExitError('Usage: claude switch profile import <email> [--as <profile-name>]');
+        const asIdx = args.indexOf('--as');
+        const profileName = asIdx >= 4 && args[asIdx + 1] ? args[asIdx + 1] : undefined;
+        return { action: 'profile-import', email: args[3], profileName };
+      }
+      throw new ExitError('Usage: claude switch profile <list|create|use|login|import|remove|status> [name]');
     }
     default: return { action: 'switch-to', target: sub };
   }
@@ -220,6 +227,10 @@ Usage:
                                          opts: --ccstatusline (chain instead of replace)
   claude switch statusline uninstall     Remove the badge from Claude Code
   claude switch statusline status        Show what's configured in settings.json
+  claude switch profile import <email>   Convert an existing saved account into an
+                                         isolated profile (no browser re-login needed
+                                         on macOS — uses the saved Keychain snapshot)
+                                         opt: --as <profile-name>
   claude switch profile create <name>    Create an isolated profile (separate from
                                          the global account swap flow above)
   claude switch profile login <name>     Authenticate a profile (browser opens)
@@ -547,6 +558,33 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     process.exit(result.status ?? 0);
+  }
+  if (cmd.action === 'profile-import') {
+    const { importProfileFromAccount } = await import('../src/profiles.js');
+    let result;
+    try {
+      result = importProfileFromAccount(cmd.email, aDir, cmd.profileName);
+    } catch (e) {
+      throw new ExitError((e as Error).message);
+    }
+    console.log(`✔ Imported "${result.emailAddress}" into profile "${result.profileName}"`);
+    console.log(`  Path:    ${result.profilePath}`);
+    console.log(`  User ID: ${result.userID.slice(0, 16)}…`);
+    if (result.wroteToKeychain) {
+      console.log(`  Tokens:  written to macOS Keychain (account=${result.userID.slice(0, 16)}…)`);
+    } else if (result.needsLogin) {
+      console.log('');
+      console.log('⚠ This account predates v2.2 (no _keychain snapshot saved).');
+      console.log(`  Run:  claude switch profile login ${result.profileName}`);
+      console.log('  to authenticate the profile.');
+    } else {
+      console.log(`  Tokens:  written to ${result.profilePath}/.claude.json`);
+    }
+    if (!result.needsLogin) {
+      console.log('');
+      console.log(`Use it now with:  claude switch profile use ${result.profileName}`);
+    }
+    return;
   }
   if (cmd.action === 'profile-remove') {
     const { removeProfile } = await import('../src/profiles.js');
