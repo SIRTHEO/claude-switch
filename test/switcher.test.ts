@@ -104,3 +104,69 @@ describe('savePendingRestore', () => {
     assert.equal(stat.mode & 0o777, 0o600);
   });
 });
+
+import { reAuthOutcome } from '../src/switcher.js';
+
+describe('reAuthOutcome — re-auth decision logic', () => {
+  it('success: token was broken, login fixed it (same account)', () => {
+    const out = reAuthOutcome(
+      'me@x.com',
+      { status: 'expired' },
+      'me@x.com',
+      { status: 'valid' },
+    );
+    assert.strictEqual(out, 'me@x.com');
+  });
+
+  it('success: token was valid, refreshed (still valid)', () => {
+    const out = reAuthOutcome(
+      'me@x.com',
+      { status: 'valid' },
+      'me@x.com',
+      { status: 'valid' },
+    );
+    assert.strictEqual(out, 'me@x.com');
+  });
+
+  it('failure: login left no active account', () => {
+    const out = reAuthOutcome('me@x.com', { status: 'expired' }, '', null);
+    assert.strictEqual(out, null);
+  });
+
+  it('failure: login changed the active account (silent swap)', () => {
+    const out = reAuthOutcome(
+      'me@x.com',
+      { status: 'expired' },
+      'someone-else@x.com',
+      { status: 'valid' },
+    );
+    assert.strictEqual(out, null);
+  });
+
+  it('failure: token was broken before and is still broken after (login cancelled)', () => {
+    const out = reAuthOutcome(
+      'me@x.com',
+      { status: 'expired' },
+      'me@x.com',
+      { status: 'expired' },
+    );
+    assert.strictEqual(out, null);
+  });
+
+  it('failure: missing → still missing (login cancelled)', () => {
+    const out = reAuthOutcome(
+      'me@x.com',
+      { status: 'missing' },
+      'me@x.com',
+      { status: 'missing' },
+    );
+    assert.strictEqual(out, null);
+  });
+
+  it('first-time auth: no previous email, login created the account', () => {
+    // emailBefore empty (no prior account) — should accept the new login
+    // since there's no "previous account" to compare against.
+    const out = reAuthOutcome('', null, 'me@x.com', { status: 'valid' });
+    assert.strictEqual(out, 'me@x.com');
+  });
+});

@@ -194,44 +194,57 @@ export async function runTemporarySwitch(
 }
 
 /**
+ * Pure decision logic for whether a re-auth attempt actually refreshed
+ * the tokens. Extracted so it can be unit-tested without spawning a
+ * real `claude auth login`.
+ *
+ * Returns the email to save (success), or null when:
+ *   - login left no active account (emailAfter empty),
+ *   - login changed the active account (silent swap — don't trust),
+ *   - token was broken before AND is still broken after (login cancelled).
+ */
+export function reAuthOutcome(
+  emailBefore: string,
+  healthBefore: { status: string } | null | undefined,
+  emailAfter: string,
+  healthAfter: { status: string } | null | undefined,
+): string | null {
+  if (!emailAfter) return null;
+  if (emailBefore && emailAfter !== emailBefore) return null;
+  const wasBroken = !healthBefore || healthBefore.status === 'expired' || healthBefore.status === 'missing';
+  const stillBroken = !healthAfter || healthAfter.status === 'expired' || healthAfter.status === 'missing';
+  if (wasBroken && stillBroken) return null;
+  return emailAfter;
+}
+
+/**
  * Run `claude auth login` for the currently-active account to refresh its
  * Keychain tokens after expiry. Differs from addAccount in that we expect
  * the email to stay the same — we just want fresh tokens captured.
  *
  * Returns the email that's now active after the login, or null if login
- * failed entirely (no oauthAccount left in claude.json).
+ * failed entirely (no oauthAccount left in claude.json) or was cancelled.
  */
 export async function reAuthenticate(
   claudeBin: string,
   claudeJsonPath: string,
   accountsDirPath: string,
 ): Promise<string | null> {
-  // Snapshot before login: which email is current AND its token state.
-  // If the email changes during login (user picked a different Google
-  // account in the browser), this is no longer a "re-auth" — it's a
-  // silent account swap, and we don't trust the result.
   const { getTokenHealth } = await import('./token.js');
   const emailBefore = getCurrent(claudeJsonPath);
   const healthBefore = getTokenHealth(claudeJsonPath);
-  const wasBroken = !healthBefore || healthBefore.status === 'expired' || healthBefore.status === 'missing';
 
   const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform);
   spawnSync(command, args, options);
 
   const emailAfter = getCurrent(claudeJsonPath);
-  if (!emailAfter) return null;
-
-  // Account changed under us — bail out. The caller surfaces "Login did
-  // not complete" and the user can retry; we don't capture tokens for
-  // an account they didn't intend to re-auth.
-  if (emailBefore && emailAfter !== emailBefore) return null;
-
   const healthAfter = getTokenHealth(claudeJsonPath);
-  const stillBroken = !healthAfter || healthAfter.status === 'expired' || healthAfter.status === 'missing';
-  if (wasBroken && stillBroken) return null;
 
-  withLock(accountsDirPath, () => save(emailAfter, claudeJsonPath, accountsDirPath));
-  return emailAfter;
+  const outcome = reAuthOutcome(emailBefore, healthBefore, emailAfter, healthAfter);
+  if (!outcome) return null;
+
+  withLock(accountsDirPath, () => save(outcome, claudeJsonPath, accountsDirPath));
+  return outcome;
 }
 
 export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string): Promise<void> {

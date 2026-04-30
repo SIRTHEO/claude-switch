@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readUsageCache, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter } from '../src/usage.js';
+import { readUsageCache, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter, readUsageCacheFor } from '../src/usage.js';
 
 describe('readUsageCache', () => {
   let dir: string;
@@ -140,5 +140,49 @@ describe('getAccessTokenFromKeychain — Linux/Windows fallback', () => {
     const claudeJson = path.join(dir, 'claude.json');
     fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'me@x.com' } }));
     assert.strictEqual(getAccessTokenFromKeychain(claudeJson), null);
+  });
+});
+
+describe('readUsageCacheFor — strict per-account safety', () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-usage-for-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  const writeCache = (cache: object): void => {
+    fs.writeFileSync(path.join(dir, '.usage-cache.json'), JSON.stringify(cache));
+  };
+
+  it('returns the cache when account matches', () => {
+    const cache = {
+      fetchedAt: Date.now(),
+      account: 'me@x.com',
+      payload: { five_hour: { utilization: 30 }, seven_day: { utilization: 10 } },
+    };
+    writeCache(cache);
+    assert.deepStrictEqual(readUsageCacheFor(dir, 'me@x.com'), cache);
+  });
+
+  it('returns null when cache is for a different account', () => {
+    writeCache({
+      fetchedAt: Date.now(),
+      account: 'someone-else@x.com',
+      payload: { five_hour: { utilization: 99 }, seven_day: { utilization: 99 } },
+    });
+    // Critical safety guarantee: never leak A's quota numbers to B.
+    assert.strictEqual(readUsageCacheFor(dir, 'me@x.com'), null);
+  });
+
+  it('returns null for a pre-account-aware cache (no account field)', () => {
+    // Old cache format from before per-account isolation. We can't tell who
+    // it belongs to, so refuse to display it.
+    writeCache({
+      fetchedAt: Date.now(),
+      payload: { five_hour: { utilization: 30 }, seven_day: { utilization: 10 } },
+    });
+    assert.strictEqual(readUsageCacheFor(dir, 'me@x.com'), null);
+  });
+
+  it('returns null when no cache file exists', () => {
+    assert.strictEqual(readUsageCacheFor(dir, 'me@x.com'), null);
   });
 });
