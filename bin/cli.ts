@@ -55,7 +55,13 @@ export type Command =
   | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean }
   | { action: 'statusline-install'; variant: 'plain' | 'ccstatusline' }
   | { action: 'statusline-uninstall' }
-  | { action: 'statusline-status' };
+  | { action: 'statusline-status' }
+  | { action: 'profile-list' }
+  | { action: 'profile-create'; name: string }
+  | { action: 'profile-use'; name: string; args: string[] }
+  | { action: 'profile-login'; name: string }
+  | { action: 'profile-remove'; name: string }
+  | { action: 'profile-status'; name: string | undefined };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -145,6 +151,28 @@ export function parseCommand(args: string[]): Command {
       if (sub2 === '--remove') return { action: 'alias-remove', name: args[3] };
       return { action: 'alias-set', name: sub2, email: args[3] };
     }
+    case 'profile': {
+      const sub2 = args[2];
+      if (!sub2 || sub2 === 'list' || sub2 === 'ls') return { action: 'profile-list' };
+      if (sub2 === 'create') {
+        if (!args[3]) throw new ExitError('Usage: claude switch profile create <name>');
+        return { action: 'profile-create', name: args[3] };
+      }
+      if (sub2 === 'use') {
+        if (!args[3]) throw new ExitError('Usage: claude switch profile use <name> [extra claude args]');
+        return { action: 'profile-use', name: args[3], args: args.slice(4) };
+      }
+      if (sub2 === 'login') {
+        if (!args[3]) throw new ExitError('Usage: claude switch profile login <name>');
+        return { action: 'profile-login', name: args[3] };
+      }
+      if (sub2 === 'remove' || sub2 === 'rm') {
+        if (!args[3]) throw new ExitError('Usage: claude switch profile remove <name>');
+        return { action: 'profile-remove', name: args[3] };
+      }
+      if (sub2 === 'status') return { action: 'profile-status', name: args[3] };
+      throw new ExitError('Usage: claude switch profile <list|create|use|login|remove|status> [name]');
+    }
     default: return { action: 'switch-to', target: sub };
   }
 }
@@ -192,6 +220,14 @@ Usage:
                                          opts: --ccstatusline (chain instead of replace)
   claude switch statusline uninstall     Remove the badge from Claude Code
   claude switch statusline status        Show what's configured in settings.json
+  claude switch profile create <name>    Create an isolated profile (separate from
+                                         the global account swap flow above)
+  claude switch profile login <name>     Authenticate a profile (browser opens)
+  claude switch profile use <name>       Start claude using only that profile
+                                         — other terminals are unaffected
+  claude switch profile list             List profiles + which account each has
+  claude switch profile remove <name>    Delete a profile and its state
+  claude switch profile status [<name>]  Show profile metadata
   claude switch update                   Check for updates and install if available
   claude switch help                     Show this help
   claude switch setup                    Re-run first-time setup
@@ -394,6 +430,135 @@ async function main(): Promise<void> {
         console.log('Status line: a different command is configured');
         console.log(`  command: ${status.command}`);
         break;
+    }
+    return;
+  }
+
+  // Profile subcommands — isolated per-terminal claude sessions via
+  // CLAUDE_CONFIG_DIR. See ~/.claude/profiles/<name>/ for the per-profile
+  // state (each gets its own userID, Keychain entry, sessions, etc.).
+  if (cmd.action === 'profile-list') {
+    const { listProfiles, readProfile } = await import('../src/profiles.js');
+    const profiles = listProfiles();
+    if (profiles.length === 0) {
+      console.log('No profiles. Create one with: claude switch profile create <name>');
+      return;
+    }
+    console.log('Profiles:\n');
+    for (const name of profiles) {
+      const info = readProfile(name);
+      const right = info.hasLogin
+        ? `→  ${info.emailAddress ?? '<unknown>'}`
+        : '(not logged in — run: claude switch profile login ' + name + ')';
+      console.log(`  ${name.padEnd(20)} ${right}`);
+    }
+    return;
+  }
+  if (cmd.action === 'profile-create') {
+    const { createProfile } = await import('../src/profiles.js');
+    let dir: string;
+    try { dir = createProfile(cmd.name); }
+    catch (e) { throw new ExitError((e as Error).message); }
+    console.log(`Created profile "${cmd.name}" at ${dir}`);
+    console.log('');
+    console.log('Next steps:');
+    console.log(`  1. claude switch profile login ${cmd.name}    # browser opens, sign in`);
+    console.log(`  2. claude switch profile use ${cmd.name}      # start using the profile`);
+    return;
+  }
+  if (cmd.action === 'profile-status') {
+    const { readProfile, listProfiles } = await import('../src/profiles.js');
+    if (cmd.name) {
+      let info;
+      try { info = readProfile(cmd.name); }
+      catch (e) { throw new ExitError((e as Error).message); }
+      console.log(`Profile: ${info.name}`);
+      console.log(`Path:    ${info.path}`);
+      console.log(`Email:   ${info.emailAddress ?? '(not logged in yet)'}`);
+      console.log(`User ID: ${info.userID ?? '(not yet assigned — run claude once in this profile)'}`);
+      return;
+    }
+    // No name: show all
+    const profiles = listProfiles();
+    if (profiles.length === 0) {
+      console.log('No profiles configured.');
+      return;
+    }
+    for (const n of profiles) {
+      const info = readProfile(n);
+      console.log(`${n}: ${info.emailAddress ?? '(not logged in)'} [${info.userID?.slice(0, 12) ?? '-'}…]`);
+    }
+    return;
+  }
+  if (cmd.action === 'profile-login') {
+    const { profilePath, profileExists, createProfile, readProfile } = await import('../src/profiles.js');
+    let dir: string;
+    try {
+      if (!profileExists(cmd.name)) {
+        createProfile(cmd.name);
+        console.log(`Created profile "${cmd.name}".`);
+      }
+      dir = profilePath(cmd.name);
+    } catch (e) { throw new ExitError((e as Error).message); }
+    const claudeBin = findClaude();
+    process.stderr.write(`🔐 Opening browser to authenticate profile "${cmd.name}"...\n\n`);
+    const { buildSpawnArgs } = await import('../src/proxy.js');
+    const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform, {
+      CLAUDE_CONFIG_DIR: dir,
+    });
+    const { spawnSync } = await import('node:child_process');
+    spawnSync(command, args, options);
+    const info = readProfile(cmd.name);
+    if (info.emailAddress) {
+      console.log(`\n✔ Profile "${cmd.name}" logged in as ${info.emailAddress}`);
+      console.log(`Use it with:  claude switch profile use ${cmd.name}`);
+    } else {
+      console.log(`\nLogin did not complete for profile "${cmd.name}". Try again with:`);
+      console.log(`  claude switch profile login ${cmd.name}`);
+    }
+    return;
+  }
+  if (cmd.action === 'profile-use') {
+    const { profilePath, profileExists, readProfile } = await import('../src/profiles.js');
+    if (!profileExists(cmd.name)) {
+      throw new ExitError(
+        `Profile "${cmd.name}" does not exist. Create it with: claude switch profile create ${cmd.name}`,
+      );
+    }
+    let info;
+    try { info = readProfile(cmd.name); }
+    catch (e) { throw new ExitError((e as Error).message); }
+    if (!info.hasLogin) {
+      throw new ExitError(
+        `Profile "${cmd.name}" has no login yet. Run: claude switch profile login ${cmd.name}`,
+      );
+    }
+    const dir = profilePath(cmd.name);
+    const claudeBin = findClaude();
+    process.stderr.write(`🔑 ${cmd.name} (profile, isolated) — ${info.emailAddress}\n\n`);
+    const { buildSpawnArgs } = await import('../src/proxy.js');
+    const { command, args, options } = buildSpawnArgs(claudeBin, cmd.args, process.platform, {
+      CLAUDE_CONFIG_DIR: dir,
+    });
+    const { spawnSync } = await import('node:child_process');
+    const result = spawnSync(command, args, options);
+    if (result.error) {
+      console.error(`Error: could not run claude: ${result.error.message}`);
+      process.exit(1);
+    }
+    process.exit(result.status ?? 0);
+  }
+  if (cmd.action === 'profile-remove') {
+    const { removeProfile } = await import('../src/profiles.js');
+    let result;
+    try { result = removeProfile(cmd.name); }
+    catch (e) { throw new ExitError((e as Error).message); }
+    console.log(`Removed profile dir: ${result.dir}`);
+    if (result.userID && process.platform === 'darwin') {
+      console.log('');
+      console.log(`Note: macOS Keychain still has an entry created by claude for this profile.`);
+      console.log(`To remove it manually:`);
+      console.log(`  security delete-generic-password -a "${result.userID}" -s "Claude Code-credentials"`);
     }
     return;
   }
