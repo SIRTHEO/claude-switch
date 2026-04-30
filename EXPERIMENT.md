@@ -137,15 +137,56 @@ Or from the menu: a new "Profiles" submenu sibling of "Manage account".
 
 Default `claude` (no flag, no profile) continues to use the global state — backward compatible. Profiles are opt-in; the FAQ + a one-line note in the menu point to them when the user wants real per-terminal isolation.
 
+## Migration / rollout story
+
+### Who upgrades to a release with profiles?
+
+Everyone who runs `npm install -g @sirtheo/claude-switch@latest` or `claude switch update`. Backward-compat is **total** — profiles are an additive feature behind a brand-new subcommand (`claude switch profile *`). Existing users see no behaviour change unless they explicitly create a profile.
+
+### What gets migrated for existing users?
+
+**Nothing automatically.** That is by design.
+
+- The legacy global state (`~/.claude.json` + the default Keychain entry) is **untouched** by the profile flow. Profiles live in `~/.claude/profiles/<name>/` and Claude Code is told to use them via `CLAUDE_CONFIG_DIR=…`.
+- Saved accounts (`~/.claude/accounts/<email>.json`), aliases, fallback config, auto-revert config, usage cache — all continue to work for the legacy flow.
+- The two flows coexist with zero interference. Users can run `claude switch work` (legacy) and `claude switch profile use clientA` (isolated) on the same machine in different terminals.
+
+### Why no auto-migration of an existing account into a profile?
+
+Claude Code generates a fresh `userID` on the first run inside a fresh `CLAUDE_CONFIG_DIR`. That `userID` becomes the macOS Keychain entry's `account` field. We cannot move existing Keychain credentials into a profile's userID-keyed entry — the userID for the profile didn't exist when the original tokens were issued.
+
+What we CAN do (and do): when the user runs `claude switch profile login <name>`, we spawn `claude auth login` with `CLAUDE_CONFIG_DIR=<profile-dir>`. Claude Code does the OAuth flow, generates the new profile's userID, and writes tokens to its own Keychain entry. The user signs in once per profile and is done.
+
+For the user's mental model:
+> "claude switch X" — same machine, swap who I am everywhere
+> "claude switch profile use Y" — this terminal, isolated session as Y, others untouched
+
+These are different needs and we expose them as different commands.
+
+### Documentation rollout
+
+When this branch lands on `main`, three doc updates ship together:
+
+1. README FAQ entry "**I switched accounts in one terminal but my other open Claude Code sessions still show the old account**" updated to point at `claude switch profile use` as the proper isolation primitive (currently linked to a roadmap issue).
+2. New "**Profiles — true per-terminal isolation**" section in the README.
+3. `claude switch help` shows the new commands at the bottom of the help text.
+
+### Versioning
+
+`feat:` commits trigger a minor bump via release-please. Profiles will land as `2.7.0`.
+
 ## Status
 
 - [x] Branch created
 - [x] H1 test (HOME) — `$HOME` works but `CLAUDE_CONFIG_DIR` is the right primitive
 - [x] Discovered `CLAUDE_CONFIG_DIR` natively supported
 - [x] Verified per-profile userID + Keychain isolation (macOS)
-- [ ] Verify same on Linux (no Keychain — should be easier)
-- [ ] Design: `claude switch profile *` subcommand surface
-- [ ] Implement create/use/list/remove
-- [ ] Tests (mock `CLAUDE_CONFIG_DIR` end-to-end)
-- [ ] FAQ + menu integration
-- [ ] Merge to main
+- [x] Designed: `claude switch profile create/login/use/list/remove/status`
+- [x] Implemented `src/profiles.ts` + CLI dispatch + spawn with CLAUDE_CONFIG_DIR
+- [x] 20 unit tests on profiles primitives (validation, create/list/remove, parsing)
+- [x] End-to-end smoke tests (sandboxed HOME, all CLI commands)
+- [x] Verified Claude Code real spawn honours CLAUDE_CONFIG_DIR (banner shows isolated profile, real ~/.claude.json untouched)
+- [ ] Menu UI integration (next session)
+- [ ] FAQ update + README "Profiles" section
+- [ ] Verify same flow on Linux (best-effort, since main test machine is macOS)
+- [ ] Merge to main → release 2.7.0
