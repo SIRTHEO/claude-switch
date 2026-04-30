@@ -27,20 +27,22 @@ claude                        # then keep using claude as you always have
 
 ## Frequently asked questions
 
+> 📌 **TL;DR for every "how do I…" question below:** type `claude switch` and follow the menu. The menu shows your current state and walks you through every action — adding accounts, setting API keys, toggling fallback, viewing usage, re-authenticating. You never need to remember any of the specific commands shown below — they're shortcuts for power users.
+
 **How do I use multiple Claude Code accounts on the same machine?**
-Install claude-switch, then run `claude switch add` to register each account (browser opens once per account). After that `claude switch <name>` swaps between them in under a second, with no browser.
+Type `claude switch` → pick **Advanced…** → **Add account**. The menu opens your browser, you sign in with the new account, and you're done. Repeat for each account you want. After that, switching is instant.
 
 **How do I switch Claude Code accounts without logging out?**
-Run `claude switch <alias>`. It rewrites the active account in `~/.claude.json` and restores the OAuth tokens in your macOS Keychain (or Linux/Windows equivalent). No network calls. No logout.
+Type `claude switch` → pick **Switch account** → choose from the list. No browser. No logout. Under a second.
 
 **Can I use my Anthropic API key when my Max/Pro subscription hits the rate limit?**
-Yes. Save the key once with `claude switch apikey set <account>`, then `claude switch fallback on` when you hit the limit. claude-switch will inject `ANTHROPIC_API_KEY` into every `claude` invocation until you turn fallback off.
+Yes. From the menu: **Set API key** → paste the key. Then **Turn fallback ON**. From now on `claude` runs against your API credits until you turn fallback off.
 
 **Will claude-switch flip back to my subscription automatically when the limit resets?**
-Yes — turn on auto-revert: `claude switch fallback auto on`. When your 5-hour and 7-day usage both drop below the threshold (default 80%), the next time you run `claude` you'll see `📈 Subscription back online — switched back to OAuth` and you're back on your subscription.
+Yes. From the menu: **Enable auto-revert to OAuth** → set a threshold (default 80%). When your 5-hour and 7-day usage both drop below it, the next `claude` run prints `📈 Subscription back online — switched back to OAuth` and you're back on your subscription.
 
 **Do I have to learn a bunch of new commands?**
-No. The only new command is `claude switch` — that opens an interactive menu with everything in it.
+No. **The only new command is `claude switch`** — everything happens in the menu it opens. Direct command shortcuts exist (e.g. `claude switch personal`, `claude switch fallback on`) but you never need them.
 
 **Does it work on macOS, Linux and Windows?**
 Yes. Requires Node.js **20.12 or newer**.
@@ -85,59 +87,63 @@ claude switch --version       # should print "claude-switch 2.5.1"
 
 ---
 
-## Daily use — the 3 commands you actually need
+## Daily use — just type `claude switch`
 
 ```bash
-claude switch                  # open the menu (do anything from here)
-claude switch <alias>          # switch directly by alias or email
-claude --as <alias> "task"     # use another account for ONE command, then auto-restore
+claude switch
 ```
 
-Everything else is in the menu — adding accounts, setting API keys, toggling fallback, viewing usage, re-authenticating an expired token.
+That's it. The menu opens and shows:
+
+```
+◆ Status
+│ Account     work@company.com
+│ Auth mode   OAuth subscription
+│ Token       valid (expires in 3 days)
+│ Usage       5h 42%   7d 18%
+└──
+
+◆ What would you like to do?
+● Switch account
+○ Turn fallback ON (use API key)
+○ Enable auto-revert to OAuth
+○ Set API key
+○ Manage account…
+○ Refresh usage
+○ Advanced…
+○ Exit
+```
+
+Pick what you want. The menu walks you through everything — switching, adding accounts, setting API keys, toggling fallback, re-authenticating an expired token, even installing the status badge in Claude Code.
+
+When you switch accounts from the menu, claude-switch automatically opens claude on the new account. So your typical flow is just:
+
+```bash
+claude switch     # type this once, pick the account, claude opens automatically
+```
 
 ---
 
 ## Smart features
 
-### Per-account API key + manual fallback
+### Auto-revert to OAuth (the killer feature)
 
-Each saved account can have its own Anthropic API key. When the subscription hits its limit, flip the global toggle:
+Hit your Max/Pro 5-hour rate limit, turn on fallback, then **forget about it**. claude-switch will switch you back to your subscription automatically the moment your usage drops below your threshold.
 
-```bash
-claude switch apikey set work         # save the key (input is hidden)
-claude switch fallback on             # bill against API credits from now on
-claude switch fallback off            # back to subscription
-```
+From the menu: **Enable auto-revert to OAuth** → set a threshold (default 80%).
 
-> ⚠️ The first time Claude Code sees a new API key it asks `Use this API key? [y/N]`. Press **y**. Your choice is remembered.
-
-### Auto-revert to OAuth
-
-Forget to turn fallback off when your subscription frees up? Auto-revert handles it:
-
-```bash
-claude switch fallback auto on                    # default threshold: 80%
-claude switch fallback auto on --threshold 70     # custom threshold
-```
-
-When fallback is on AND both your 5-hour and 7-day usage drop below the threshold, the next `claude` run flips fallback off automatically and prints:
+The next time you run `claude` after your subscription frees up, you'll see:
 
 ```
 📈 Subscription back online (5h:30%, 7d:15%) — switched back to OAuth
 🔑 work@company.com
 ```
 
-### Live usage in your status bar
+…and you're back on your subscription. No more burning API credits when you don't have to. Both 5-hour AND 7-day usage are checked, so you don't bounce back to OAuth only to slam into the weekly cap a few minutes later.
 
-Show the active account + usage % in Claude Code's status bar:
+### Per-account API key
 
-```bash
-claude switch statusline install
-```
-
-(Patches `~/.claude/settings.json` for you. Idempotent — won't touch a custom status line you've already set.)
-
-The badge turns yellow at 75% usage and red at 90%, so you can see when you're getting close to the limit.
+Each saved account can have its own Anthropic API key. Switching accounts also switches which key is used for fallback billing. From the menu: **Set API key**.
 
 ### One-shot switch with `--as`
 
@@ -147,9 +153,19 @@ Use a different account for a single command, then snap back:
 claude --as personal "review this code"
 ```
 
-If the command is interrupted (Ctrl+C, crash) the original account is restored automatically on the next `claude` run.
+The original account is restored when the command finishes — even if you press Ctrl+C or claude crashes mid-task.
 
-### Tab completion
+### Live usage in Claude Code's status bar
+
+From the menu: **Advanced…** → **Install status bar badge**. Or one-liner:
+
+```bash
+claude switch statusline install
+```
+
+The badge turns yellow at 75% usage and red at 90%, so you can see when you're approaching the limit at a glance. Idempotent — won't touch a custom status line you already configured.
+
+### Tab completion in your shell
 
 ```bash
 claude switch --completions bash >> ~/.bashrc       # or zsh / fish / powershell
@@ -161,13 +177,13 @@ claude switch --completions bash >> ~/.bashrc       # or zsh / fish / powershell
 
 **`claude` not found after install** → open a NEW terminal. If still broken, run `claude switch setup` again.
 
-**"Token: EXPIRED" in the menu** → click **Re-authenticate** in `claude switch`. A browser opens, you sign in, done.
+**"Token: EXPIRED" in the menu** → the menu shows a **Re-authenticate** entry at the top. Click it. Browser opens, sign in, done.
 
-**Fallback is on but `claude` still uses OAuth** → first time, Claude Code asks `Use this API key? [y/N]` — press **y**. If you missed it, run `claude` once interactively.
+**Fallback is on but `claude` still uses OAuth** → the first time Claude Code sees a new API key it asks `Use this API key? [y/N]`. Press **y**. If you missed it, run `claude` once interactively.
 
-**`claude switch usage` shows nothing** → only works for Max/Pro subscribers. If you're free-tier or API-key-only, this is normal.
+**Usage stats show nothing** → only works for Max/Pro subscribers. If you're free-tier or API-key-only, this is normal.
 
-**Anything else** → run `claude switch status` and `claude switch --version`, then [open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) with your OS and `node --version`.
+**Anything else** → open `claude switch`, look at the **Status** panel at the top, and [open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) with what you see + your OS and `node --version`.
 
 ---
 
