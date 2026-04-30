@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.0](https://github.com/SIRTHEO/claude-switch/compare/v2.5.2...v2.6.0) (2026-04-30)
+
+
+### Features
+
+* **switch:** warn when other claude sessions are running ([f9be1c7](https://github.com/SIRTHEO/claude-switch/commit/f9be1c7a299bf3481d86be634b15a96e0ff2738f))
+
 ## [2.5.2](https://github.com/SIRTHEO/claude-switch/compare/v2.5.1...v2.5.2) (2026-04-30)
 
 
