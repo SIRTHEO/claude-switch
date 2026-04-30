@@ -19,6 +19,7 @@ import { getSavedClaudeBin, runSetup } from '../src/setup.js';
 import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
+import { fallbackEnvFor } from '../src/fallback-env.js';
 import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback } from '../src/auto-fallback.js';
 import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
 import { selectAccountInteractive } from '../src/ui/select-account.js';
@@ -245,19 +246,8 @@ function resolveTargetEmail(target: string, accountsDirPath: string): string {
   throw new ExitError(`No account matching "${target}". Run: claude switch list`);
 }
 
-/**
- * If fallback is enabled and the given account has a saved API key,
- * return an env override containing ANTHROPIC_API_KEY. Otherwise null.
- *
- * When null is returned, the spawned claude inherits the parent env unchanged
- * — including any user-set ANTHROPIC_API_KEY in the shell. We don't strip it.
- */
-function fallbackEnvFor(email: string, accountsDirPath: string): NodeJS.ProcessEnv | null {
-  if (!isFallbackEnabled(accountsDirPath)) return null;
-  const key = getApiKey(email, accountsDirPath);
-  if (!key) return null;
-  return { ANTHROPIC_API_KEY: key };
-}
+// fallbackEnvFor moved to src/fallback-env.ts so the multi-account
+// hot-path decision is testable in isolation. Behaviour unchanged.
 
 /** Prompt for y/n on stderr and return true if the user typed y or Y. */
 async function askYN(question: string): Promise<boolean> {
