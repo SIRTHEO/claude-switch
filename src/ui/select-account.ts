@@ -106,6 +106,17 @@ export async function selectAccountInteractive(
     return current;
   }
 
+  // Warn if other claude sessions are running. Doesn't block — the user
+  // sees the warning, then we proceed. Dynamic import keeps this module
+  // free of the child_process dependency for testing.
+  try {
+    const { countActiveClaudeSessions, buildActiveSessionsWarning } = await import('../active-sessions.js');
+    const { getSavedClaudeBin } = await import('../setup.js');
+    const sessions = countActiveClaudeSessions(getSavedClaudeBin());
+    const warning = buildActiveSessionsWarning(sessions.count);
+    if (warning) p.note(warning, 'Heads up');
+  } catch { /* detection is best-effort */ }
+
   const spin = p.spinner();
   spin.start(`Switching to ${choice}`);
   try {

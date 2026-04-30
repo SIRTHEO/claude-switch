@@ -50,6 +50,9 @@ Yes. Requires Node.js **20.12 or newer**.
 **Does claude-switch send my data anywhere?**
 No. Everything stays on your computer. Switching accounts is a local file operation. The only network calls claude-switch makes are: (1) your subscription quota at `api.anthropic.com` when you ask for usage stats, and (2) the npm registry to check for updates. No telemetry, no analytics.
 
+**I switched accounts in one terminal but my other open Claude Code sessions still show the old account. Bug?**
+Not a bug — it's how Claude Code itself works. The active account is stored globally per user (`~/.claude.json` + macOS Keychain), so all `claude` processes share the same state. Already-running sessions hold their tokens **in memory** and keep using them; they only see the new account after you exit and restart them. claude-switch warns you before a switch when it detects other sessions running so you aren't surprised. **Per-terminal isolation is on the roadmap** — track progress in [#per-terminal-isolation](https://github.com/SIRTHEO/claude-switch/issues?q=is%3Aissue+per-terminal+isolation). For now, if you want a single command to use a different account without affecting other terminals, use `claude --as <account> "task"` — that swaps for one command and restores afterwards.
+
 ---
 
 ## Install

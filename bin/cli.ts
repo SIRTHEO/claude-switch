@@ -461,6 +461,12 @@ async function main(): Promise<void> {
       const accounts = listAccounts(aDir);
       const matches = fuzzyMatch(resolved, accounts);
       if (matches.length === 1) {
+        // Warn (don't block) if other claude sessions are running — they
+        // won't see the switch until restarted. See FAQ in README.
+        const { countActiveClaudeSessions, buildActiveSessionsWarning } = await import('../src/active-sessions.js');
+        const sessions = countActiveClaudeSessions(getSavedClaudeBin());
+        const warning = buildActiveSessionsWarning(sessions.count);
+        if (warning) process.stderr.write(`${warning}\n\n`);
         console.log(switchTo(matches[0], cJson, aDir));
       } else if (matches.length > 1) {
         console.log('Multiple matches:');
