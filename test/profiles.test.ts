@@ -11,6 +11,7 @@ import {
   createProfile,
   readProfile,
   removeProfile,
+  importProfileFromAccount,
 } from '../src/profiles.js';
 
 // All tests redirect HOME so the profiles dir is sandboxed in /tmp.
@@ -158,5 +159,107 @@ describe('removeProfile', () => {
     createProfile('work');
     const result = removeProfile('work');
     assert.strictEqual(result.userID, null);
+  });
+});
+
+describe('importProfileFromAccount', () => {
+  let accountsDir: string;
+  beforeEach(() => {
+    accountsDir = path.join(tmpHome, '.claude', 'accounts');
+    fs.mkdirSync(accountsDir, { recursive: true });
+  });
+
+  it('throws for unknown account', () => {
+    assert.throws(
+      () => importProfileFromAccount('nope@x.com', accountsDir),
+      /No saved account for nope@x\.com/,
+    );
+  });
+
+  it('uses email local-part as default profile name', () => {
+    fs.writeFileSync(path.join(accountsDir, 'work@example.com.json'), JSON.stringify({
+      emailAddress: 'work@example.com',
+    }));
+    const result = importProfileFromAccount('work@example.com', accountsDir);
+    assert.strictEqual(result.profileName, 'work');
+    assert.strictEqual(result.emailAddress, 'work@example.com');
+  });
+
+  it('respects an explicit profile name override', () => {
+    fs.writeFileSync(path.join(accountsDir, 'a@b.com.json'), JSON.stringify({
+      emailAddress: 'a@b.com',
+    }));
+    const result = importProfileFromAccount('a@b.com', accountsDir, 'custom-name');
+    assert.strictEqual(result.profileName, 'custom-name');
+  });
+
+  it('flags needsLogin=true for legacy accounts without _keychain snapshot', () => {
+    fs.writeFileSync(path.join(accountsDir, 'pre-v22@x.com.json'), JSON.stringify({
+      emailAddress: 'pre-v22@x.com',
+    }));
+    const result = importProfileFromAccount('pre-v22@x.com', accountsDir);
+    assert.strictEqual(result.needsLogin, true);
+    assert.strictEqual(result.wroteToKeychain, false);
+    // Profile dir created, but only userID — no oauthAccount yet.
+    const cfg = JSON.parse(fs.readFileSync(path.join(result.profilePath, '.claude.json'), 'utf-8'));
+    assert.ok(cfg.userID);
+    assert.strictEqual(cfg.oauthAccount, undefined,
+      'should NOT pre-populate oauthAccount when there are no tokens — otherwise the profile-use guard incorrectly thinks the profile is logged in');
+  });
+
+  it('generates a userID that is 64 hex chars (matches Claude Code format)', () => {
+    fs.writeFileSync(path.join(accountsDir, 'a@b.com.json'), JSON.stringify({
+      emailAddress: 'a@b.com',
+    }));
+    const result = importProfileFromAccount('a@b.com', accountsDir);
+    assert.match(result.userID, /^[0-9a-f]{64}$/);
+  });
+
+  it('generates DIFFERENT userIDs for two imports — each profile gets its own', () => {
+    fs.writeFileSync(path.join(accountsDir, 'a@b.com.json'), JSON.stringify({ emailAddress: 'a@b.com' }));
+    fs.writeFileSync(path.join(accountsDir, 'c@d.com.json'), JSON.stringify({ emailAddress: 'c@d.com' }));
+    const r1 = importProfileFromAccount('a@b.com', accountsDir);
+    const r2 = importProfileFromAccount('c@d.com', accountsDir);
+    assert.notStrictEqual(r1.userID, r2.userID);
+  });
+
+  it('refuses to import twice into the same profile name', () => {
+    fs.writeFileSync(path.join(accountsDir, 'a@b.com.json'), JSON.stringify({ emailAddress: 'a@b.com' }));
+    importProfileFromAccount('a@b.com', accountsDir, 'mine');
+    assert.throws(
+      () => importProfileFromAccount('a@b.com', accountsDir, 'mine'),
+      /already exists/,
+    );
+  });
+
+  it('on Linux/Windows, embeds tokens directly in oauthAccount.accessToken when _keychain is present',
+    { skip: process.platform === 'darwin' }, () => {
+    fs.writeFileSync(path.join(accountsDir, 'work@x.com.json'), JSON.stringify({
+      emailAddress: 'work@x.com',
+      _keychain: {
+        claudeAiOauth: {
+          accessToken: 'tok-A',
+          refreshToken: 'rtok-A',
+          expiresAt: 9999999999999,
+        },
+      },
+    }));
+    const result = importProfileFromAccount('work@x.com', accountsDir);
+    assert.strictEqual(result.needsLogin, false);
+    assert.strictEqual(result.wroteToKeychain, false);
+    const cfg = JSON.parse(fs.readFileSync(path.join(result.profilePath, '.claude.json'), 'utf-8'));
+    assert.strictEqual(cfg.oauthAccount.accessToken, 'tok-A');
+    assert.strictEqual(cfg.oauthAccount.refreshToken, 'rtok-A');
+    assert.strictEqual(cfg.oauthAccount.emailAddress, 'work@x.com');
+  });
+
+  it('rejects emails whose local-part contains chars that would make an invalid profile name', () => {
+    // Email allowed by accounts.ts validation but produces an invalid profile name.
+    // Localpart char "+": accounts.ts allows it, but profile names don't (PROFILE_NAME_RE).
+    fs.writeFileSync(path.join(accountsDir, 'foo+bar@x.com.json'), JSON.stringify({ emailAddress: 'foo+bar@x.com' }));
+    // Auto-derived name "foo+bar" → contains '+' which isn't in our profile alphabet.
+    // Our impl does .replace(/[^A-Za-z0-9_-]/g, '_') so it becomes "foo_bar". Verify.
+    const result = importProfileFromAccount('foo+bar@x.com', accountsDir);
+    assert.strictEqual(result.profileName, 'foo_bar');
   });
 });
