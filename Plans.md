@@ -41,7 +41,7 @@ Last 2 main runs failed (Windows test + deprecation warnings). Must be green bef
 | 1.1 | Fix Windows CI failure in `active-sessions.test.ts` | `null` check precedes platform check in `src/active-sessions.ts`; test passes on Windows in CI | 0.3 | cc:完了 |
 | 1.2 | Bump `actions/checkout` and `actions/setup-node` to versions running on Node 24 | Deprecation warning gone from CI logs | - | cc:完了 |
 | 1.3 | Run profile E2E scripts (`scripts/setup-profiles-test.sh`, `scripts/verify-isolation.sh`) on macOS runner in CI | New job in `ci.yml`, only on macos-latest, only when relevant paths change (`src/profiles.ts`, `src/keychain.ts`, `bin/cli.ts`) | 1.1 | cc:TODO |
-| 1.4 | Add `tsc --noEmit` step to CI (typecheck without build) | CI fails on type errors before tests run | 1.1 | cc:TODO |
+| 1.4 | Add `tsc --noEmit` step to CI (typecheck without build) | CI fails on type errors before tests run | 1.1 | cc:完了 |
 | 1.5 | Add lint step (eslint or biome) | Lint config in repo; CI runs it; existing violations either fixed or grandfathered | 1.4 | cc:TODO |
 | 1.6 | Fail-fast strategy review on matrix | Either keep `fail-fast: true` (default) or document why we want full matrix to run | 1.1 | cc:TODO |
 | 1.7 | Coverage upload to PR comments (codecov or actions/summary) | Coverage diff visible on PRs touching `src/` | 0.5 | cc:TODO |
