@@ -5,7 +5,7 @@
 import * as p from '@clack/prompts';
 import { getCurrent, list as listAccounts } from '../accounts.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
-import { getAutoFallbackConfig, setAutoFallbackConfig } from '../auto-fallback.js';
+import { getAutoFallbackConfig } from '../auto-fallback.js';
 import { getApiKey, removeApiKey } from '../apikey.js';
 import { getAliasesForEmail, setAlias, removeAlias } from '../aliases.js';
 import { withLock } from '../lock.js';
@@ -24,6 +24,7 @@ import { theme } from './theme.js';
 import { buildStatusLines, buildAccountInfo } from './menu/status.js';
 import { ALT_BUFFER_ENTER, ALT_BUFFER_EXIT, CLEAR_AND_HOME, altBufferSupported } from './menu/lifecycle.js';
 import { runProfilesMenu } from './profiles-menu.js';
+import { runAutoFallbackMenu } from './auto-fallback-menu.js';
 
 type MenuAction =
   | 'switch'
@@ -84,14 +85,14 @@ async function pickAction(claudeJsonPath: string, accountsDirPath: string): Prom
       hint: fallbackOn ? 'back to subscription' : 'use saved API key',
     });
     const autoCfg = getAutoFallbackConfig(accountsDirPath);
+    const autoHint = [
+      autoCfg.enabled ? `revert<${autoCfg.threshold}%` : 'revert:off',
+      autoCfg.engageEnabled ? `engage≥${autoCfg.engageThreshold}%` : 'engage:off',
+    ].join(' · ');
     options.push({
       value: 'auto-fallback',
-      label: autoCfg.enabled
-        ? 'Disable auto-revert to OAuth'
-        : 'Enable auto-revert to OAuth',
-      hint: autoCfg.enabled
-        ? `armed: fallback OFF when 5h+7d < ${autoCfg.threshold}%`
-        : 'turn fallback OFF automatically when subscription frees up',
+      label: 'Auto-fallback settings…',
+      hint: autoHint,
     });
     options.push({ value: 'apikey', label: 'Set API key', hint: 'for the active account' });
   }
@@ -470,33 +471,7 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
           break;
         }
         case 'auto-fallback': {
-          const cfg = getAutoFallbackConfig(accountsDirPath);
-          if (cfg.enabled) {
-            setAutoFallbackConfig(accountsDirPath, { enabled: false });
-            p.note('Auto-revert OFF. Fallback toggle is fully manual again.', 'Done');
-            break;
-          }
-          const tRaw = await p.text({
-            message: 'Threshold (% — fallback flips OFF when both 5h and 7d drop below this)',
-            placeholder: String(cfg.threshold),
-            initialValue: String(cfg.threshold),
-            validate: (val) => {
-              if (!val) return undefined;
-              const n = parseInt(val, 10);
-              if (!Number.isFinite(n) || n < 1 || n > 100) return 'Pick a number between 1 and 100.';
-              return undefined;
-            },
-          });
-          if (p.isCancel(tRaw)) break;
-          const t = tRaw ? parseInt(tRaw, 10) : cfg.threshold;
-          const next = setAutoFallbackConfig(accountsDirPath, { enabled: true, threshold: t });
-          p.note(
-            `Auto-revert ON (threshold ${next.threshold}%).\n\n` +
-            `When fallback is on, the next "claude" run will turn it back off\n` +
-            `as soon as both 5h and 7d utilisation drop below ${next.threshold}% — saving\n` +
-            `your API credits the moment your subscription has headroom again.`,
-            'Done',
-          );
+          await runAutoFallbackMenu(accountsDirPath);
           break;
         }
         case 'profiles': {
