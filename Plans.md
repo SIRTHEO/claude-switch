@@ -28,7 +28,7 @@ Branch must be green and committable.
 | 0.6 | Cover `switcher.ts` testable paths (best-effort within current architecture) | 10 new tests added: `switchTo` warning path + first-time-use, `savePendingRestore` overwrite + missing-dir, full `checkPendingRestore`/`clearPendingRestore` lifecycle. Branch coverage 88.89 → **97.50%**. Line stays at 43.36% because the uncovered remainder is `runTemporarySwitch` / `addAccount` / `reAuthenticate` which all spawn `claude` (impossible to unit-test without DI refactor — see 0.6b) | 0.5 | cc:完了 |
 | 0.6b | Refactor `switcher.ts` for testability: inject `spawnSync` + `readline` | Replace direct `spawnSync`/`readline` calls with injected helpers; existing call sites pass real impls; tests pass mocks. Target: ≥ 75% line on switcher.ts | 0.6 | cc:TODO |
 | 0.7 | Cover `find-claude.ts` (currently 50% line / 0% funcs) | Tests for missing-binary fallback + PATH search; target ≥ 75% line | 0.5 | cc:完了 |
-| 0.8 | Cover `usage.ts` rate-limit + background-refresh paths (currently 69.92% line) | Tests for `rateLimitedUntil` honouring + `triggerBackgroundUsageRefresh` non-blocking semantics; target ≥ 80% line. Required before unparking auto-engage WIP | 0.5 | cc:TODO |
+| 0.8 | Cover `usage.ts` rate-limit + background-refresh paths (currently 69.92% line) | Tests for `rateLimitedUntil` honouring + `triggerBackgroundUsageRefresh` non-blocking semantics; target ≥ 80% line. Required before unparking auto-engage WIP | 0.5 | cc:完了 |
 
 ---
 
