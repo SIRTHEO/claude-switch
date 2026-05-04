@@ -82,7 +82,7 @@ Primitives shipped (eef0f0c, 55c041a, 5b1514d, a0f2659). Remaining: real verific
 | 3a.1b | Interactive smoke: `profile login`, `profile use`, two-terminal isolation | Browser OAuth flow completed; spawned `claude` REPL banner shows the right account; refreshed-token import path verified | 3a.1a | cc:TODO |
 | 3a.2 | Regression: legacy `claude switch <account>` still works after profile operations | Default Keychain entry intact; covered in same report | 3a.1a | cc:完了 |
 | 3a.3 | Audit `src/keychain.ts` profile codepaths for orphan-entry leaks | `security find-generic-password -s "Claude Code-credentials"` shows clean state after `profile remove`; documented | 3a.1a | cc:完了 |
-| 3a.4 | Linux behaviour spike (Docker container) | Findings in `.claude/docs/reports/profiles-linux.md`: tokens land in `<profile>/.claude.json`, no Keychain assumption; edge cases listed | 3a.1 | cc:TODO |
+| 3a.4 | Linux behaviour spike (Docker container) | Findings in `.claude/docs/reports/profiles-linux.md`: tokens land in `<profile>/.claude.json`, no Keychain assumption; edge cases listed | 3a.1 | cc:WIP |
 | 3a.5 | Concurrency: two terminals on the same profile | Documented behaviour (lock contention, last-writer-wins, etc.) | 3a.1 | cc:完了 |
 | 3a.6 | Sub-process inheritance (MCP servers) | Verify spawned MCP processes inherit `CLAUDE_CONFIG_DIR`; documented | 3a.1a | cc:完了 |
 
