@@ -6,10 +6,10 @@ import * as p from '@clack/prompts';
 import { getCurrent, list as listAccounts } from '../accounts.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
 import { getAutoFallbackConfig, setAutoFallbackConfig } from '../auto-fallback.js';
-import { getApiKey, removeApiKey, maskApiKey } from '../apikey.js';
+import { getApiKey, removeApiKey } from '../apikey.js';
 import { getAliasesForEmail, setAlias, removeAlias } from '../aliases.js';
 import { withLock } from '../lock.js';
-import { readUsageCache, readUsageCacheFor, isUsageCacheStale, fetchUsageCached, getAccessTokenFromKeychain } from '../usage.js';
+import { readUsageCache, isUsageCacheStale, fetchUsageCached, getAccessTokenFromKeychain } from '../usage.js';
 import { selectAccountInteractive } from './select-account.js';
 import { setApiKeyInteractive } from './set-apikey.js';
 import { addAccountInteractive } from './add-account.js';
@@ -21,6 +21,8 @@ import { reAuthenticate } from '../switcher.js';
 import { buildSpawnArgs } from '../proxy.js';
 import { spawnSync } from 'node:child_process';
 import { theme } from './theme.js';
+import { buildStatusLines, buildAccountInfo } from './menu/status.js';
+import { ALT_BUFFER_ENTER, ALT_BUFFER_EXIT, CLEAR_AND_HOME, altBufferSupported } from './menu/lifecycle.js';
 
 type MenuAction =
   | 'switch'
@@ -45,92 +47,6 @@ type ManageAction =
   | 'back';
 
 type AdvancedAction = 'add' | 'remove' | 'setup' | 'back';
-
-function buildStatusLines(claudeJsonPath: string, accountsDirPath: string): string {
-  const current = getCurrent(claudeJsonPath);
-  const fallbackOn = isFallbackEnabled(accountsDirPath);
-  const apiKey = current ? getApiKey(current, accountsDirPath) : null;
-  const usingApi = fallbackOn && !!apiKey;
-  const cache = current ? readUsageCacheFor(accountsDirPath, current) : null;
-  const five = cache?.payload?.five_hour?.utilization;
-  const seven = cache?.payload?.seven_day?.utilization;
-  const tokenHealth = current ? getTokenHealth(claudeJsonPath) : null;
-
-  const lines: string[] = [];
-
-  // Account
-  lines.push(`${theme.brand('Account')}    ${current || theme.dim('(none — add one with “Add”)')}`);
-
-  // Auth mode + warning if fallback ON but no key
-  let authMode = usingApi ? 'API key (fallback on)' : 'OAuth subscription';
-  if (fallbackOn && !apiKey && current) {
-    authMode = `OAuth subscription  ${theme.brand('⚠ fallback ON but no key — has no effect')}`;
-  }
-  // Hint that smart-switch is armed — explains why fallback might flip OFF
-  // unexpectedly the next time the user runs claude.
-  const autoCfg = getAutoFallbackConfig(accountsDirPath);
-  if (autoCfg.enabled && fallbackOn) {
-    authMode += `  ${theme.dim(`(auto-revert armed: fallback OFF when 5h+7d < ${autoCfg.threshold}%)`)}`;
-  }
-  lines.push(`${theme.brand('Auth mode')}  ${authMode}`);
-
-  // Token expiry. Only urgent when the user is actually using OAuth — if
-  // fallback is on with a saved key, all calls go through the API key and
-  // the OAuth token's state is irrelevant.
-  if (tokenHealth) {
-    let tokenLine: string;
-    if (usingApi) {
-      // We're not using OAuth; demote any token issue to dim parenthetical.
-      switch (tokenHealth.status) {
-        case 'valid':
-          tokenLine = theme.dim(`valid (${tokenHealth.expiresIn}) — not in use while fallback is on`);
-          break;
-        case 'expired':
-          tokenLine = theme.dim(`expired (${tokenHealth.expiresIn}) — not in use while fallback is on`);
-          break;
-        case 'present':
-          tokenLine = theme.dim('present — not in use while fallback is on');
-          break;
-        case 'missing':
-          tokenLine = theme.dim('missing — not in use while fallback is on');
-          break;
-      }
-    } else {
-      switch (tokenHealth.status) {
-        case 'valid': {
-          const ms = tokenHealth.expiresAt ? tokenHealth.expiresAt.getTime() - Date.now() : 0;
-          if (ms < 60 * 60 * 1000) {
-            tokenLine = `${theme.brand('expires soon')} (${tokenHealth.expiresIn}) — re-login if you plan to use this account`;
-          } else {
-            tokenLine = `valid (${tokenHealth.expiresIn})`;
-          }
-          break;
-        }
-        case 'expired':
-          tokenLine = `${theme.brand('EXPIRED')} (${tokenHealth.expiresIn}) — run "Add account" to re-authenticate`;
-          break;
-        case 'present':
-          tokenLine = 'present';
-          break;
-        case 'missing':
-          tokenLine = `${theme.brand('missing')} — run "Add account" to log in`;
-          break;
-      }
-    }
-    lines.push(`${theme.brand('Token')}      ${tokenLine}`);
-  }
-
-  // Usage
-  if (five !== undefined) {
-    const sevenStr = seven !== undefined ? `, 7d ${seven.toFixed(0)}%` : '';
-    const warn = five >= 90 ? '  ⚠ near limit' : '';
-    lines.push(`${theme.brand('Usage')}      5h ${five.toFixed(0)}%${sevenStr}${warn}`);
-  } else {
-    lines.push(`${theme.brand('Usage')}      ${theme.dim('unavailable')}`);
-  }
-
-  return lines.join('\n');
-}
 
 async function pickAction(claudeJsonPath: string, accountsDirPath: string): Promise<MenuAction> {
   const current = getCurrent(claudeJsonPath);
@@ -226,17 +142,6 @@ async function pickAccount(prompt: string, accountsDirPath: string, exclude?: st
   return choice;
 }
 
-function buildAccountInfo(email: string, accountsDirPath: string, isActive: boolean): string {
-  const aliases = getAliasesForEmail(email, accountsDirPath);
-  const apiKey = getApiKey(email, accountsDirPath);
-  const lines: string[] = [
-    `${theme.brand('Email')}    ${email}${isActive ? theme.dim('  (active)') : ''}`,
-    `${theme.brand('Aliases')}  ${aliases.length ? aliases.join(', ') : theme.dim('(none)')}`,
-    `${theme.brand('API key')}  ${apiKey ? maskApiKey(apiKey) : theme.dim('(not set)')}`,
-  ];
-  return lines.join('\n');
-}
-
 async function pickManageAction(
   email: string,
   accountsDirPath: string,
@@ -273,20 +178,6 @@ async function pickManageAction(
   });
   if (p.isCancel(choice)) return 'back';
   return choice;
-}
-
-// Alternate-screen buffer control codes. Entering swaps the terminal to a
-// fresh canvas (preserving the user's scrollback); exiting restores the
-// original view. Without this, every menu iteration leaves a trail of
-// status panels in the user's terminal history, which is what the menu
-// is trying to NOT do — it should feel like a single live screen.
-const ALT_BUFFER_ENTER = '\x1b[?1049h';
-const ALT_BUFFER_EXIT  = '\x1b[?1049l';
-const CLEAR_AND_HOME   = '\x1b[2J\x1b[H';
-
-function altBufferSupported(): boolean {
-  // Only meaningful on a real TTY. CI / piped output should fall through.
-  return !!process.stdout.isTTY && process.env.TERM !== 'dumb';
 }
 
 /**
