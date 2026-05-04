@@ -21,14 +21,14 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           TARGET: ${{ github.event.inputs.up_to_version }}
         run: |
-          VERSIONS=$(npm view claudeswitch versions --json 2>/dev/null | node -e "
+          VERSIONS=$(npm view @sirtheo/claude-switch versions --json 2>/dev/null | node -e "
             const target = process.env.TARGET.split('.').map(Number);
             const lt = v => { const p = v.split('.').map(Number); for (let i=0;i<3;i++) { if (p[i]<target[i]) return true; if (p[i]>target[i]) return false; } return false; };
             const all = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
             console.log(all.filter(lt).join(' '));
           ")
-          MSG="Please upgrade: npm install -g claudeswitch — ${TARGET} is the latest stable release."
+          MSG="Please upgrade: npm install -g @sirtheo/claude-switch — ${TARGET} is the latest stable release."
           for v in $VERSIONS; do
-            echo "Deprecating claudeswitch@$v..."
-            npm deprecate "claudeswitch@${v}" "$MSG"
+            echo "Deprecating @sirtheo/claude-switch@$v..."
+            npm deprecate "@sirtheo/claude-switch@${v}" "$MSG"
           done
