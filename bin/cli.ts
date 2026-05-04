@@ -110,7 +110,7 @@ export function parseCommand(args: string[]): Command {
         if (sub3 === 'on') {
           const tIdx = args.indexOf('--threshold');
           if (tIdx >= 4 && args[tIdx + 1] !== undefined) {
-            const t = parseInt(args[tIdx + 1], 10);
+            const t = parseInt(args[tIdx + 1]!, 10);
             if (!Number.isFinite(t) || t < 1 || t > 100) {
               throw new ExitError('--threshold must be an integer between 1 and 100');
             }
@@ -149,7 +149,11 @@ export function parseCommand(args: string[]): Command {
     case 'alias': {
       const sub2 = args[2];
       if (!sub2 || sub2 === '--list') return { action: 'alias-list' };
-      if (sub2 === '--remove') return { action: 'alias-remove', name: args[3] };
+      if (sub2 === '--remove') {
+        if (!args[3]) throw new ExitError('Usage: claude switch alias --remove <name>');
+        return { action: 'alias-remove', name: args[3] };
+      }
+      if (!args[3]) throw new ExitError('Usage: claude switch alias <name> <email>');
       return { action: 'alias-set', name: sub2, email: args[3] };
     }
     case 'profile': {
@@ -283,10 +287,10 @@ function resolveTargetEmail(target: string, accountsDirPath: string): string {
   const resolved = resolveAlias(target, accountsDirPath);
   const accounts = listAccounts(accountsDirPath);
   const matches = accounts.filter(a => a === resolved);
-  if (matches.length === 1) return matches[0];
+  if (matches.length === 1) return matches[0]!;
   // Fuzzy fallback for partial matches (mirrors switch behaviour).
   const fuzzy = accounts.filter(a => a.toLowerCase().includes(resolved.toLowerCase()));
-  if (fuzzy.length === 1) return fuzzy[0];
+  if (fuzzy.length === 1) return fuzzy[0]!;
   if (fuzzy.length > 1) {
     throw new ExitError(`Multiple matches for "${target}":\n${fuzzy.map(m => `  ${m}`).join('\n')}\nBe more specific.`);
   }
@@ -359,7 +363,7 @@ function renderStatusline(
 
   // Short-form display name: prefer the first alias if any, else the local part.
   const aliases = getAliasesForEmail(email, accountsDirPath);
-  const shortName = aliases[0] ?? email.split('@')[0];
+  const shortName = aliases[0] ?? email.split('@')[0] ?? email;
 
   if (format === 'json') {
     const json = {
@@ -670,7 +674,7 @@ async function main(): Promise<void> {
         const sessions = countActiveClaudeSessions(getSavedClaudeBin());
         const warning = buildActiveSessionsWarning(sessions.count);
         if (warning) process.stderr.write(`${warning}\n\n`);
-        console.log(switchTo(matches[0], cJson, aDir));
+        console.log(switchTo(matches[0]!, cJson, aDir));
       } else if (matches.length > 1) {
         console.log('Multiple matches:');
         matches.forEach(m => console.log(`  ${m}`));
@@ -1070,11 +1074,12 @@ async function main(): Promise<void> {
       }
 
       // runTemporarySwitch handles save/restore (incl. Keychain), SIGINT, and never returns.
-      const extraEnv = fallbackEnvFor(matches[0], aDir);
+      const matched = matches[0]!;
+      const extraEnv = fallbackEnvFor(matched, aDir);
       if (extraEnv) {
-        process.stderr.write(`(fallback on — using saved API key for ${matches[0]})\n\n`);
+        process.stderr.write(`(fallback on — using saved API key for ${matched})\n\n`);
       }
-      await runTemporarySwitch(claudeBin, matches[0], cmd.args, cJson, aDir, extraEnv);
+      await runTemporarySwitch(claudeBin, matched, cmd.args, cJson, aDir, extraEnv);
       break;
     }
 

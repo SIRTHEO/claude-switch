@@ -88,7 +88,7 @@ export async function selectAccountInteractive(
   const rows = buildRows(accounts, current, accountsDirPath);
   const choice = await p.select<string>({
     message: 'Pick an account',
-    initialValue: rows.find(r => r.active)?.email ?? rows[0].email,
+    initialValue: rows.find(r => r.active)?.email ?? rows[0]?.email,
     options: rows.map(r => ({
       value: r.email,
       label: formatLabel(r),
