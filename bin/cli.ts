@@ -18,12 +18,12 @@ import { getTokenHealth } from '../src/token.js';
 import { getSavedClaudeBin, runSetup } from '../src/setup.js';
 import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
-import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
+import { isFallbackEnabled, isFallbackAutoEngaged, setFallbackEnabled } from '../src/fallback.js';
 import { fallbackEnvFor } from '../src/fallback-env.js';
 import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback, maybeAutoEngageFallback } from '../src/auto-fallback.js';
 import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
-import { selectAccountInteractive } from '../src/ui/select-account.js';
 import { runMainMenu } from '../src/ui/main-menu.js';
+import { profilesDir } from '../src/profiles.js';
 import { setApiKeyInteractive } from '../src/ui/set-apikey.js';
 import { runSetupWizard } from '../src/ui/setup-wizard.js';
 import { addAccountInteractive } from '../src/ui/add-account.js';
@@ -56,7 +56,14 @@ export type Command =
   | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean }
   | { action: 'statusline-install'; variant: 'plain' | 'ccstatusline' }
   | { action: 'statusline-uninstall' }
-  | { action: 'statusline-status' };
+  | { action: 'statusline-status' }
+  | { action: 'profile-list' }
+  | { action: 'profile-create'; name: string }
+  | { action: 'profile-use'; name: string; args: string[] }
+  | { action: 'profile-login'; name: string }
+  | { action: 'profile-remove'; name: string }
+  | { action: 'profile-status'; name: string | undefined }
+  | { action: 'profile-import'; email: string; profileName?: string };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -105,7 +112,7 @@ export function parseCommand(args: string[]): Command {
         if (sub3 === 'on') {
           const tIdx = args.indexOf('--threshold');
           if (tIdx >= 4 && args[tIdx + 1] !== undefined) {
-            const t = parseInt(args[tIdx + 1], 10);
+            const t = parseInt(args[tIdx + 1]!, 10);
             if (!Number.isFinite(t) || t < 1 || t > 100) {
               throw new ExitError('--threshold must be an integer between 1 and 100');
             }
@@ -138,14 +145,48 @@ export function parseCommand(args: string[]): Command {
       }
       const rest = args.slice(2);
       const fmt = rest.includes('--full') ? 'full' : rest.includes('--json') ? 'json' : 'compact';
-      const color = !rest.includes('--no-color');
+      // Honour both the CLI flag and the de-facto NO_COLOR env standard
+      // (https://no-color.org). Either turning colour off is enough.
+      const color = !rest.includes('--no-color') && !process.env.NO_COLOR;
       return { action: 'statusline', format: fmt as 'compact' | 'full' | 'json', color };
     }
     case 'alias': {
       const sub2 = args[2];
       if (!sub2 || sub2 === '--list') return { action: 'alias-list' };
-      if (sub2 === '--remove') return { action: 'alias-remove', name: args[3] };
+      if (sub2 === '--remove') {
+        if (!args[3]) throw new ExitError('Usage: claude switch alias --remove <name>');
+        return { action: 'alias-remove', name: args[3] };
+      }
+      if (!args[3]) throw new ExitError('Usage: claude switch alias <name> <email>');
       return { action: 'alias-set', name: sub2, email: args[3] };
+    }
+    case 'profile': {
+      const sub2 = args[2];
+      if (!sub2 || sub2 === 'list' || sub2 === 'ls') return { action: 'profile-list' };
+      if (sub2 === 'create') {
+        if (!args[3]) throw new ExitError('Usage: claude switch profile create <name>');
+        return { action: 'profile-create', name: args[3] };
+      }
+      if (sub2 === 'use') {
+        if (!args[3]) throw new ExitError('Usage: claude switch profile use <name> [extra claude args]');
+        return { action: 'profile-use', name: args[3], args: args.slice(4) };
+      }
+      if (sub2 === 'login') {
+        if (!args[3]) throw new ExitError('Usage: claude switch profile login <name>');
+        return { action: 'profile-login', name: args[3] };
+      }
+      if (sub2 === 'remove' || sub2 === 'rm') {
+        if (!args[3]) throw new ExitError('Usage: claude switch profile remove <name>');
+        return { action: 'profile-remove', name: args[3] };
+      }
+      if (sub2 === 'status') return { action: 'profile-status', name: args[3] };
+      if (sub2 === 'import' || sub2 === 'import-from-account') {
+        if (!args[3]) throw new ExitError('Usage: claude switch profile import <email> [--as <profile-name>]');
+        const asIdx = args.indexOf('--as');
+        const profileName = asIdx >= 4 && args[asIdx + 1] ? args[asIdx + 1] : undefined;
+        return { action: 'profile-import', email: args[3], profileName };
+      }
+      throw new ExitError('Usage: claude switch profile <list|create|use|login|import|remove|status> [name]');
     }
     default: return { action: 'switch-to', target: sub };
   }
@@ -194,6 +235,18 @@ Usage:
                                          opts: --ccstatusline (chain instead of replace)
   claude switch statusline uninstall     Remove the badge from Claude Code
   claude switch statusline status        Show what's configured in settings.json
+  claude switch profile import <email>   Convert an existing saved account into an
+                                         isolated profile (no browser re-login needed
+                                         on macOS — uses the saved Keychain snapshot)
+                                         opt: --as <profile-name>
+  claude switch profile create <name>    Create an isolated profile (separate from
+                                         the global account swap flow above)
+  claude switch profile login <name>     Authenticate a profile (browser opens)
+  claude switch profile use <name>       Start claude using only that profile
+                                         — other terminals are unaffected
+  claude switch profile list             List profiles + which account each has
+  claude switch profile remove <name>    Delete a profile and its state
+  claude switch profile status [<name>]  Show profile metadata
   claude switch update                   Check for updates and install if available
   claude switch help                     Show this help
   claude switch setup                    Re-run first-time setup
@@ -238,10 +291,10 @@ function resolveTargetEmail(target: string, accountsDirPath: string): string {
   const resolved = resolveAlias(target, accountsDirPath);
   const accounts = listAccounts(accountsDirPath);
   const matches = accounts.filter(a => a === resolved);
-  if (matches.length === 1) return matches[0];
+  if (matches.length === 1) return matches[0]!;
   // Fuzzy fallback for partial matches (mirrors switch behaviour).
   const fuzzy = accounts.filter(a => a.toLowerCase().includes(resolved.toLowerCase()));
-  if (fuzzy.length === 1) return fuzzy[0];
+  if (fuzzy.length === 1) return fuzzy[0]!;
   if (fuzzy.length > 1) {
     throw new ExitError(`Multiple matches for "${target}":\n${fuzzy.map(m => `  ${m}`).join('\n')}\nBe more specific.`);
   }
@@ -314,23 +367,24 @@ function renderStatusline(
 
   // Short-form display name: prefer the first alias if any, else the local part.
   const aliases = getAliasesForEmail(email, accountsDirPath);
-  const shortName = aliases[0] ?? email.split('@')[0];
+  const shortName = aliases[0] ?? email.split('@')[0] ?? email;
 
-  if (format === 'json') {
-    const json = {
-      email,
-      shortName,
-      mode: usingApiKey ? 'api' : 'oauth',
-      fallback: fallbackOn,
-      hasApiKey: !!apiKey,
-      fiveHour: fivePct ?? null,
-      sevenDay: sevenPct ?? null,
-    };
-    process.stdout.write(JSON.stringify(json) + '\n');
-    return;
-  }
+  // Profile badge: shown when this process was launched inside a profile
+  // session (CLAUDE_CONFIG_DIR points into ~/.claude/profiles/<name>/).
+  const activeProfile = (() => {
+    const ccd = process.env.CLAUDE_CONFIG_DIR;
+    if (!ccd) return null;
+    const base = profilesDir() + path.sep;
+    if (!ccd.startsWith(base)) return null;
+    const rest = ccd.slice(base.length);
+    const name = rest.split(path.sep)[0];
+    return name || null;
+  })();
 
-  const modeLabel = usingApiKey ? yellow('API') : green('OAuth');
+  const autoEngaged = isFallbackAutoEngaged(accountsDirPath);
+  const modeLabel = usingApiKey
+    ? yellow(autoEngaged ? 'API auto' : 'API')
+    : green('OAuth');
   const usageBadge = (() => {
     if (fivePct === undefined) return '';
     const pctStr = `${fivePct.toFixed(0)}%`;
@@ -338,12 +392,29 @@ function renderStatusline(
     if (fivePct >= 75) return ` ${yellow(`5h:${pctStr}`)}`;
     return ` ${dim(`5h:${pctStr}`)}`;
   })();
+  const profileBadge = activeProfile ? ` ${cyan(`[${activeProfile}]`)}` : '';
+
+  if (format === 'json') {
+    const json = {
+      email,
+      shortName,
+      mode: usingApiKey ? 'api' : 'oauth',
+      fallback: fallbackOn,
+      fallbackAutoEngaged: isFallbackAutoEngaged(accountsDirPath),
+      hasApiKey: !!apiKey,
+      fiveHour: fivePct ?? null,
+      sevenDay: sevenPct ?? null,
+      profile: activeProfile,
+    };
+    process.stdout.write(JSON.stringify(json) + '\n');
+    return;
+  }
 
   if (format === 'full') {
-    process.stdout.write(`🔑 ${cyan(email)} · ${modeLabel}${usageBadge}\n`);
+    process.stdout.write(`🔑 ${cyan(email)} · ${modeLabel}${usageBadge}${profileBadge}\n`);
   } else {
-    // compact (default) — short alias + mode badge + optional usage
-    process.stdout.write(`🔑 ${cyan(shortName)} ${modeLabel}${usageBadge}\n`);
+    // compact (default) — short alias + mode badge + optional usage + profile
+    process.stdout.write(`🔑 ${cyan(shortName)} ${modeLabel}${usageBadge}${profileBadge}\n`);
   }
 }
 
@@ -396,6 +467,196 @@ async function main(): Promise<void> {
         console.log('Status line: a different command is configured');
         console.log(`  command: ${status.command}`);
         break;
+    }
+    return;
+  }
+
+  // Profile subcommands — isolated per-terminal claude sessions via
+  // CLAUDE_CONFIG_DIR. See ~/.claude/profiles/<name>/ for the per-profile
+  // state (each gets its own userID, Keychain entry, sessions, etc.).
+  if (cmd.action === 'profile-list') {
+    const { listProfiles, readProfile } = await import('../src/profiles.js');
+    const profiles = listProfiles();
+    if (profiles.length === 0) {
+      console.log('No profiles. Create one with: claude switch profile create <name>');
+      return;
+    }
+    console.log('Profiles:\n');
+    for (const name of profiles) {
+      const info = readProfile(name);
+      const right = info.hasLogin
+        ? `→  ${info.emailAddress ?? '<unknown>'}`
+        : '(not logged in — run: claude switch profile login ' + name + ')';
+      console.log(`  ${name.padEnd(20)} ${right}`);
+    }
+    return;
+  }
+  if (cmd.action === 'profile-create') {
+    const { createProfile } = await import('../src/profiles.js');
+    let dir: string;
+    try { dir = createProfile(cmd.name); }
+    catch (e) { throw new ExitError((e as Error).message); }
+    console.log(`Created profile "${cmd.name}" at ${dir}`);
+    console.log('');
+    console.log('Next steps:');
+    console.log(`  1. claude switch profile login ${cmd.name}    # browser opens, sign in`);
+    console.log(`  2. claude switch profile use ${cmd.name}      # start using the profile`);
+    return;
+  }
+  if (cmd.action === 'profile-status') {
+    const { readProfile, listProfiles } = await import('../src/profiles.js');
+    if (cmd.name) {
+      let info: ReturnType<typeof readProfile>;
+      try { info = readProfile(cmd.name); }
+      catch (e) { throw new ExitError((e as Error).message); }
+
+      const profileClaudeJson = path.join(info.path, '.claude.json');
+      const tokenHealth = info.hasLogin ? getTokenHealth(profileClaudeJson) : null;
+      const tokenLine = (() => {
+        if (!tokenHealth) return '(not logged in yet)';
+        switch (tokenHealth.status) {
+          case 'valid': return `valid (expires ${tokenHealth.expiresIn})`;
+          case 'expired': return `EXPIRED (${tokenHealth.expiresIn}) — run: claude switch profile login ${info.name}`;
+          case 'present': return 'present (expiry unknown)';
+          case 'missing': return 'missing — run: claude switch profile login ' + info.name;
+        }
+      })();
+
+      let keychainLine = '(not applicable on this platform)';
+      if (process.platform === 'darwin' && info.userID) {
+        const { spawnSync: ss } = await import('node:child_process');
+        const r = ss('security', [
+          'find-generic-password', '-a', info.userID, '-s', 'Claude Code-credentials',
+        ], { stdio: 'pipe' });
+        keychainLine = r.status === 0 ? `present (account=${info.userID.slice(0, 16)}…)` : 'absent';
+      } else if (!info.userID) {
+        keychainLine = '(no userID yet — run claude once in this profile)';
+      }
+
+      let lastUsed = '(never)';
+      try {
+        const mtime = fs.statSync(profileClaudeJson).mtime;
+        lastUsed = mtime.toLocaleString();
+      } catch { /* fresh profile */ }
+
+      console.log(`Profile: ${info.name}`);
+      console.log(`Path:    ${info.path}`);
+      console.log(`Email:   ${info.emailAddress ?? '(not logged in yet)'}`);
+      console.log(`Token:   ${tokenLine}`);
+      console.log(`Keychain:${' '.repeat(1)}${keychainLine}`);
+      console.log(`Last run:${' '.repeat(1)}${lastUsed}`);
+      console.log(`User ID: ${info.userID ?? '(not yet assigned — run claude once in this profile)'}`);
+      return;
+    }
+    // No name: show all
+    const profiles = listProfiles();
+    if (profiles.length === 0) {
+      console.log('No profiles configured.');
+      return;
+    }
+    for (const n of profiles) {
+      const info = readProfile(n);
+      const status = info.hasLogin ? (info.emailAddress ?? '(email unknown)') : '(not logged in)';
+      console.log(`${n}: ${status} [${info.userID?.slice(0, 12) ?? '-'}…]`);
+    }
+    return;
+  }
+  if (cmd.action === 'profile-login') {
+    const { profilePath, profileExists, createProfile, readProfile } = await import('../src/profiles.js');
+    let dir: string;
+    try {
+      if (!profileExists(cmd.name)) {
+        createProfile(cmd.name);
+        console.log(`Created profile "${cmd.name}".`);
+      }
+      dir = profilePath(cmd.name);
+    } catch (e) { throw new ExitError((e as Error).message); }
+    const claudeBin = findClaude();
+    process.stderr.write(`🔐 Opening browser to authenticate profile "${cmd.name}"...\n\n`);
+    const { buildSpawnArgs } = await import('../src/proxy.js');
+    const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform, {
+      CLAUDE_CONFIG_DIR: dir,
+    });
+    const { spawnSync } = await import('node:child_process');
+    spawnSync(command, args, options);
+    const info = readProfile(cmd.name);
+    if (info.emailAddress) {
+      console.log(`\n✔ Profile "${cmd.name}" logged in as ${info.emailAddress}`);
+      console.log(`Use it with:  claude switch profile use ${cmd.name}`);
+    } else {
+      console.log(`\nLogin did not complete for profile "${cmd.name}". Try again with:`);
+      console.log(`  claude switch profile login ${cmd.name}`);
+    }
+    return;
+  }
+  if (cmd.action === 'profile-use') {
+    const { profilePath, profileExists, readProfile } = await import('../src/profiles.js');
+    if (!profileExists(cmd.name)) {
+      throw new ExitError(
+        `Profile "${cmd.name}" does not exist. Create it with: claude switch profile create ${cmd.name}`,
+      );
+    }
+    let info: ReturnType<typeof readProfile>;
+    try { info = readProfile(cmd.name); }
+    catch (e) { throw new ExitError((e as Error).message); }
+    if (!info.hasLogin) {
+      throw new ExitError(
+        `Profile "${cmd.name}" has no login yet. Run: claude switch profile login ${cmd.name}`,
+      );
+    }
+    const dir = profilePath(cmd.name);
+    const claudeBin = findClaude();
+    process.stderr.write(`🔑 ${cmd.name} (profile, isolated) — ${info.emailAddress}\n\n`);
+    const { buildSpawnArgs } = await import('../src/proxy.js');
+    const { command, args, options } = buildSpawnArgs(claudeBin, cmd.args, process.platform, {
+      CLAUDE_CONFIG_DIR: dir,
+    });
+    const { spawnSync } = await import('node:child_process');
+    const result = spawnSync(command, args, options);
+    if (result.error) {
+      console.error(`Error: could not run claude: ${result.error.message}`);
+      process.exit(1);
+    }
+    process.exit(result.status ?? 0);
+  }
+  if (cmd.action === 'profile-import') {
+    const { importProfileFromAccount } = await import('../src/profiles.js');
+    let result: ReturnType<typeof importProfileFromAccount>;
+    try {
+      result = importProfileFromAccount(cmd.email, aDir, cmd.profileName);
+    } catch (e) {
+      throw new ExitError((e as Error).message);
+    }
+    console.log(`✔ Imported "${result.emailAddress}" into profile "${result.profileName}"`);
+    console.log(`  Path:    ${result.profilePath}`);
+    console.log(`  User ID: ${result.userID.slice(0, 16)}…`);
+    if (result.wroteToKeychain) {
+      console.log(`  Tokens:  written to macOS Keychain (account=${result.userID.slice(0, 16)}…)`);
+    } else if (result.needsLogin) {
+      console.log('');
+      console.log('⚠ This account predates v2.2 (no _keychain snapshot saved).');
+      console.log(`  Run:  claude switch profile login ${result.profileName}`);
+      console.log('  to authenticate the profile.');
+    } else {
+      console.log(`  Tokens:  written to ${result.profilePath}/.claude.json`);
+    }
+    if (!result.needsLogin) {
+      console.log('');
+      console.log(`Use it now with:  claude switch profile use ${result.profileName}`);
+    }
+    return;
+  }
+  if (cmd.action === 'profile-remove') {
+    const { removeProfile } = await import('../src/profiles.js');
+    let result: ReturnType<typeof removeProfile>;
+    try { result = removeProfile(cmd.name); }
+    catch (e) { throw new ExitError((e as Error).message); }
+    console.log(`Removed profile dir: ${result.dir}`);
+    if (result.userID && process.platform === 'darwin') {
+      console.log('');
+      console.log(`Note: macOS Keychain still has an entry created by claude for this profile.`);
+      console.log(`To remove it manually:`);
+      console.log(`  security delete-generic-password -a "${result.userID}" -s "Claude Code-credentials"`);
     }
     return;
   }
@@ -469,10 +730,10 @@ async function main(): Promise<void> {
         const sessions = countActiveClaudeSessions(getSavedClaudeBin());
         const warning = buildActiveSessionsWarning(sessions.count);
         if (warning) process.stderr.write(`${warning}\n\n`);
-        console.log(switchTo(matches[0], cJson, aDir));
+        console.log(switchTo(matches[0]!, cJson, aDir));
       } else if (matches.length > 1) {
         console.log('Multiple matches:');
-        matches.forEach(m => console.log(`  ${m}`));
+        for (const m of matches) console.log(`  ${m}`);
         console.log('Be more specific.');
       } else {
         console.log(`No account matching "${cmd.target}". Run: claude switch list`);
@@ -842,7 +1103,7 @@ async function main(): Promise<void> {
         const fmtReset = (iso?: string): string => {
           if (!iso) return '';
           const d = new Date(iso);
-          if (isNaN(d.getTime())) return '';
+          if (Number.isNaN(d.getTime())) return '';
           const min = Math.round((d.getTime() - Date.now()) / 60_000);
           if (min < 60) return ` (resets in ${min}m)`;
           if (min < 60 * 24) return ` (resets in ${Math.round(min / 60)}h)`;
@@ -907,11 +1168,12 @@ async function main(): Promise<void> {
       }
 
       // runTemporarySwitch handles save/restore (incl. Keychain), SIGINT, and never returns.
-      const extraEnv = fallbackEnvFor(matches[0], aDir);
+      const matched = matches[0]!;
+      const extraEnv = fallbackEnvFor(matched, aDir);
       if (extraEnv) {
-        process.stderr.write(`(fallback on — using saved API key for ${matches[0]})\n\n`);
+        process.stderr.write(`(fallback on — using saved API key for ${matched})\n\n`);
       }
-      await runTemporarySwitch(claudeBin, matches[0], cmd.args, cJson, aDir, extraEnv);
+      await runTemporarySwitch(claudeBin, matched, cmd.args, cJson, aDir, extraEnv);
       break;
     }
 

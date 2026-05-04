@@ -22,6 +22,9 @@ claude                        # then keep using claude as you always have
 - 🪶 **It's just a wrapper.** You keep typing `claude` like you always have. claude-switch is invisible.
 - 🎛️ **`claude switch` opens a menu.** No flags to memorize. Pick what you want.
 - 🔁 **Smart auto-revert.** Hit your Max/Pro rate limit? claude-switch can switch to your API key automatically — and switch back to your subscription the moment usage drops back below your threshold. Never burn API credits when you don't need to.
+- 🪞 **Per-terminal profiles** _(new in 2.7)_. Open two terminals on two different accounts at the same time, no interference. See [Profiles](#profiles--true-per-terminal-isolation-new-in-27).
+
+**Quick links:** [Install](#install) · [Daily use](#daily-use--just-type-claude-switch) · [Profiles](#profiles--true-per-terminal-isolation-new-in-27) · [Auto-revert](#auto-revert-to-oauth-the-killer-feature) · [Troubleshooting](#when-something-goes-wrong) · [Security](#security) · [What's new](#whats-new)
 
 ---
 
@@ -50,8 +53,14 @@ Yes. Requires Node.js **20.12 or newer**.
 **Does claude-switch send my data anywhere?**
 No. Everything stays on your computer. Switching accounts is a local file operation. The only network calls claude-switch makes are: (1) your subscription quota at `api.anthropic.com` when you ask for usage stats, and (2) the npm registry to check for updates. No telemetry, no analytics.
 
+**I want different terminals using different accounts at the same time.**
+Use **profiles** — `claude switch profile use <name>` pins a single terminal to one account without touching the others. Sign in once per profile (`claude switch profile login <name>`), then every terminal that runs `claude switch profile use <name>` gets its own isolated session with its own user ID, Keychain entry, and history. See the [Profiles section](#profiles--true-per-terminal-isolation-new-in-27) for the full UX. The classic `claude switch <account>` flip-the-active-account-everywhere flow is unchanged and still works alongside profiles.
+
 **I switched accounts in one terminal but my other open Claude Code sessions still show the old account. Bug?**
-Not a bug — it's how Claude Code itself works. The active account is stored globally per user (`~/.claude.json` + macOS Keychain), so all `claude` processes share the same state. Already-running sessions hold their tokens **in memory** and keep using them; they only see the new account after you exit and restart them. claude-switch warns you before a switch when it detects other sessions running so you aren't surprised. **Per-terminal isolation is on the roadmap** — track progress in [#per-terminal-isolation](https://github.com/SIRTHEO/claude-switch/issues?q=is%3Aissue+per-terminal+isolation). For now, if you want a single command to use a different account without affecting other terminals, use `claude --as <account> "task"` — that swaps for one command and restores afterwards.
+Not a bug — it's how Claude Code itself works *globally*. `claude switch <account>` rewrites the user-level state (`~/.claude.json` + macOS Keychain), so already-running `claude` processes hold their old tokens **in memory** and only flip on the next refresh. claude-switch warns you before a switch when it detects other sessions running so you aren't surprised. If you want true per-terminal isolation today, use **profiles** — see the question above and the [Profiles section](#profiles--true-per-terminal-isolation-new-in-27). One-shot swap for a single command without affecting other terminals: `claude --as <account> "task"`.
+
+**My subscription hit the rate limit *during* a claude session and the API key fallback didn't kick in. Why?**
+claude-switch's fallback works by injecting `ANTHROPIC_API_KEY` into the environment of the **claude process it spawns**. A claude REPL that's already running has already captured its OAuth tokens in memory — claude-switch can't hot-swap them mid-session without the upstream `claude` binary cooperating. Workaround: exit the running session (`Ctrl+D`), turn fallback on (`claude switch fallback on`), then re-run `claude` — the new process picks up the API key. **Auto-engage** (auto-toggle fallback ON when usage approaches the cap, so the *next* spawn already has the key) is a planned feature.
 
 ---
 
@@ -127,6 +136,42 @@ claude switch     # type this once, pick the account, claude opens automatically
 
 ---
 
+## Profiles — true per-terminal isolation _(new in 2.7)_
+
+`claude switch <account>` flips the active account globally — every terminal on the machine starts using the new account on its next run. That's the right behaviour 90% of the time, but it does NOT isolate by terminal: two open `claude` REPLs cannot use two different accounts at the same time on the same machine.
+
+**Profiles** fix that. Each profile is a fully isolated environment: own user ID, own macOS Keychain entry, own session history. You sign in once per profile, then run `claude switch profile use <name>` in the terminal you want pinned to that account. Other terminals are not affected.
+
+```bash
+# 1. Create + sign in (browser opens once per profile)
+claude switch profile create work
+claude switch profile login work
+
+# 2. Use it in THIS terminal
+claude switch profile use work       # spawns claude pinned to "work"
+                                     # other terminals stay on whatever they were
+
+# Have a saved account already? Skip the browser:
+claude switch profile import tech@gyver.work --as work
+
+# Inspect / clean up
+claude switch profile list
+claude switch profile status work
+claude switch profile remove work    # also prints the macOS Keychain
+                                     # cleanup command (one-liner you can copy)
+```
+
+Profiles **coexist** with the legacy `claude switch <account>` flow — using one does not affect the other. Pick whichever matches your need:
+
+| You want | Use |
+|---|---|
+| "swap the active account everywhere on this machine" | `claude switch <account>` |
+| "this terminal uses account X, others stay as they are" | `claude switch profile use <name>` |
+
+> **Platform notes:** macOS is verified end-to-end (each profile gets its own Keychain entry). Linux and Windows store tokens directly in the profile's `.claude.json` (no system credential store involved); the same UX works there but with simpler internals.
+
+---
+
 ## Smart features
 
 ### Auto-revert to OAuth (the killer feature)
@@ -174,6 +219,19 @@ The badge turns yellow at 75% usage and red at 90%, so you can see when you're a
 claude switch --completions bash >> ~/.bashrc       # or zsh / fish / powershell
 ```
 
+### Keyboard shortcuts in the menu
+
+The interactive menu uses [@clack/prompts](https://github.com/natemoo-re/clack) — same conventions as `create-vite`, `create-astro`, etc.
+
+| Key | Action |
+|---|---|
+| `↑` / `↓` | Move selection |
+| `Enter` | Confirm |
+| `Esc` or `Ctrl+C` | Cancel the current step (returns to previous menu, or exits if at root) |
+| `y` / `n` | Answer yes/no on confirms |
+
+Set `NO_COLOR=1` (env var) or pass `--no-color` to the `statusline` command to disable ANSI colour entirely.
+
 ---
 
 ## When something goes wrong
@@ -212,6 +270,10 @@ claude switch --completions bash >> ~/.bashrc       # or zsh / fish / powershell
 
 ## What's new
 
+**v2.7.x** — **Profiles**. True per-terminal isolation via `claude switch profile use`. Each profile is its own Keychain entry / userID / session — open two terminals on two different accounts at the same time, no interference. Coexists with the legacy global-switch flow. See the [Profiles section](#profiles--true-per-terminal-isolation-new-in-27).
+
+**v2.6.x** — `claude switch` warns you when other claude REPL sessions are still running before flipping the active account, so you don't get silent token drift. Cross-platform CI (Linux + macOS + Windows × Node 20/22/24).
+
 **v2.5.x** — `claude switch statusline install` patches Claude Code's status bar in one command. Auto-install offered during setup. Idempotent and safe with custom configs.
 
 **v2.4.x** — Auto-revert to OAuth (smart-switch), in-menu re-authenticate, manage any account without switching, auto-launch claude after switch, alt-screen menu (no scrollback noise).
@@ -224,7 +286,7 @@ Full changelog: [CHANGELOG.md](CHANGELOG.md) · [GitHub Releases](https://github
 
 ## Contributing
 
-Pull requests welcome. Releases are fully automated — see [CONTRIBUTING.md](CONTRIBUTING.md) for the commit-message conventions that drive version bumps.
+Pull requests welcome. Releases are fully automated — see [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the commit-message conventions that drive version bumps.
 
 ---
 

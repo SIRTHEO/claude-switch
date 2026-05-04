@@ -16,7 +16,7 @@ interface SpawnArgs {
 export function buildSpawnArgs(
   binaryPath: string,
   args: string[],
-  platform: string,
+  _platform: string,
   extraEnv?: NodeJS.ProcessEnv | null,
 ): SpawnArgs {
   const options: SpawnOptions = { stdio: 'inherit' };

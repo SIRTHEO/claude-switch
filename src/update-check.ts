@@ -72,7 +72,7 @@ function writeCache(cache: CheckCache): void {
  * — users running stable should not be auto-bumped to a pre-release.
  */
 export function isNewer(current: string, latest: string): boolean {
-  const stripped = (v: string): string => v.replace(/^v/, '').split('-')[0];
+  const stripped = (v: string): string => v.replace(/^v/, '').split('-')[0] ?? '';
   const isPreRelease = (v: string): boolean => v.replace(/^v/, '').includes('-');
   if (isPreRelease(latest)) return false;
   const parse = (v: string): number[] =>
@@ -200,6 +200,10 @@ export function detectInstallCommand(): string[] {
  */
 export function performUpdate(): boolean {
   const [cmd, ...args] = detectInstallCommand();
+  if (!cmd) {
+    console.error('Could not detect install command for self-update.');
+    return false;
+  }
   console.log(`Running: ${cmd} ${args.join(' ')}\n`);
   const result = spawnSync(cmd, args, { stdio: 'inherit' });
   return result.status === 0 && !result.error;
