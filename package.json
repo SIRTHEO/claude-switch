@@ -1,5 +1,5 @@
 {
-  "name": "claudeswitch",
+  "name": "@sirtheo/claude-switch",
   "version": "2.8.0",
   "description": "Multi-account manager for Claude Code. Sign in once per account, switch instantly. Bypass Max/Pro rate limits with API key fallback and auto-revert. macOS · Linux · Windows.",
   "type": "module",
@@ -59,12 +59,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SIRTHEO/claudeswitch.git"
+    "url": "git+https://github.com/SIRTHEO/claude-switch.git"
   },
   "bugs": {
-    "url": "https://github.com/SIRTHEO/claudeswitch/issues"
+    "url": "https://github.com/SIRTHEO/claude-switch/issues"
   },
-  "homepage": "https://github.com/SIRTHEO/claudeswitch#readme",
+  "homepage": "https://github.com/SIRTHEO/claude-switch#readme",
   "engines": {
     "node": ">=20.12.0"
   },

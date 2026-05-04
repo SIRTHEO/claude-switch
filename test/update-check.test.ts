@@ -62,6 +62,6 @@ describe('detectInstallCommand', () => {
     const cmd = detectInstallCommand();
     assert.ok(cmd.length >= 2, 'expected at least cmd + package name');
     assert.match(cmd[0]!, /^(npm|pnpm|yarn|volta)$/);
-    assert.strictEqual(cmd[cmd.length - 1], 'claudeswitch');
+    assert.strictEqual(cmd[cmd.length - 1], '@sirtheo/claude-switch');
   });
 });
