@@ -43,7 +43,7 @@ Last 2 main runs failed (Windows test + deprecation warnings). Must be green bef
 | 1.3 | Run profile E2E scripts (`scripts/setup-profiles-test.sh`, `scripts/verify-isolation.sh`) on macOS runner in CI | New job in `ci.yml`, only on macos-latest, only when relevant paths change (`src/profiles.ts`, `src/keychain.ts`, `bin/cli.ts`) | 1.1 | cc:TODO |
 | 1.4 | Add `tsc --noEmit` step to CI (typecheck without build) | CI fails on type errors before tests run | 1.1 | cc:完了 |
 | 1.5 | Add lint step (eslint or biome) | Lint config in repo; CI runs it; existing violations either fixed or grandfathered | 1.4 | cc:TODO |
-| 1.6 | Fail-fast strategy review on matrix | Either keep `fail-fast: true` (default) or document why we want full matrix to run | 1.1 | cc:TODO |
+| 1.6 | Fail-fast strategy review on matrix | Decision: `fail-fast: false`. Rationale documented inline in `ci.yml`: 9 jobs ~1min each, full matrix gives complete cross-platform picture, masking Windows regression behind Linux fail is the failure mode we hit on 2.6.0 | 1.1 | cc:完了 |
 | 1.7 | Coverage upload to PR comments (codecov or actions/summary) | Coverage diff visible on PRs touching `src/` | 0.5 | cc:TODO |
 
 ---

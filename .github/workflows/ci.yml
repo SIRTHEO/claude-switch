@@ -11,6 +11,11 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      # See every platform/node combination on a failure rather than
+      # cancelling siblings on the first red. Cost is small (9 jobs ~1min
+      # each) and we lost a Windows-only regression once because Linux
+      # failed first and masked it.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node-version: [20.x, 22.x, 24.x]
