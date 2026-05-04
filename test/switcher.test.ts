@@ -214,7 +214,14 @@ describe('checkPendingRestore + clearPendingRestore', () => {
   });
 });
 
-import { reAuthOutcome } from '../src/switcher.js';
+import {
+  reAuthOutcome,
+  switchInteractive,
+  runTemporarySwitch,
+  reAuthenticate,
+  addAccount,
+  type SwitcherDeps,
+} from '../src/switcher.js';
 
 describe('reAuthOutcome — re-auth decision logic', () => {
   it('success: token was broken, login fixed it (same account)', () => {
@@ -277,5 +284,249 @@ describe('reAuthOutcome — re-auth decision logic', () => {
     // since there's no "previous account" to compare against.
     const out = reAuthOutcome('', null, 'me@x.com', { status: 'valid' });
     assert.strictEqual(out, 'me@x.com');
+  });
+});
+
+// ─── DI-refactored function tests ────────────────────────────────────────────
+
+function makeExitFn(): { exitFn: (code: number) => never; codes: number[] } {
+  const codes: number[] = [];
+  const exitFn = (code: number): never => {
+    codes.push(code);
+    throw new Error(`exit:${code}`);
+  };
+  return { exitFn, codes };
+}
+
+function makeSpawnFn(exitCode = 0, error?: Error): SwitcherDeps['spawnSyncFn'] {
+  return (_cmd, _args, _opts) => ({
+    pid: 1,
+    output: [],
+    stdout: Buffer.from(''),
+    stderr: Buffer.from(''),
+    status: exitCode,
+    signal: null,
+    error,
+  });
+}
+
+describe('switchInteractive — with mocked ask', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-si-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('prints no-accounts message when list is empty', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({}));
+    const logged: string[] = [];
+    const origLog = console.log;
+    console.log = (...a: unknown[]) => { logged.push(a.join(' ')); };
+    try {
+      await switchInteractive(claudeJson, accDir);
+    } finally {
+      console.log = origLog;
+    }
+    assert.ok(logged.some(l => l.includes('No saved accounts')));
+  });
+
+  it('prints only-one-account message when exactly one account saved', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
+    fs.writeFileSync(path.join(accDir, 'a@x.com.json'), JSON.stringify({ emailAddress: 'a@x.com' }));
+    const logged: string[] = [];
+    const origLog = console.log;
+    console.log = (...a: unknown[]) => { logged.push(a.join(' ')); };
+    try {
+      await switchInteractive(claudeJson, accDir);
+    } finally {
+      console.log = origLog;
+    }
+    assert.ok(logged.some(l => l.includes('Only one account')));
+  });
+
+  it('switches to chosen account via injected askFn', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
+    fs.writeFileSync(path.join(accDir, 'a@x.com.json'), JSON.stringify({ emailAddress: 'a@x.com' }));
+    fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com' }));
+    const deps: SwitcherDeps = { askFn: async () => '2' };
+    await switchInteractive(claudeJson, accDir, deps);
+    const result = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
+    assert.equal(result.oauthAccount.emailAddress, 'b@x.com');
+  });
+
+  it('throws ExitError on invalid choice', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
+    fs.writeFileSync(path.join(accDir, 'a@x.com.json'), JSON.stringify({ emailAddress: 'a@x.com' }));
+    fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com' }));
+    const deps: SwitcherDeps = { askFn: async () => 'bad' };
+    await assert.rejects(() => switchInteractive(claudeJson, accDir, deps), /Invalid choice/);
+  });
+});
+
+describe('runTemporarySwitch — with mocked spawnSync + exitFn', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-rts-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('exits with child process status when targetEmail === current', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'me@x.com' } }));
+    const { exitFn, codes } = makeExitFn();
+    const deps: SwitcherDeps = { spawnSyncFn: makeSpawnFn(42), exitFn };
+    await assert.rejects(
+      () => runTemporarySwitch('claude', 'me@x.com', [], claudeJson, accDir, null, deps),
+      /exit:42/,
+    );
+    assert.deepEqual(codes, [42]);
+  });
+
+  it('exits code 1 on spawnSync error when targetEmail === current', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'me@x.com' } }));
+    const { exitFn, codes } = makeExitFn();
+    const deps: SwitcherDeps = { spawnSyncFn: makeSpawnFn(0, new Error('ENOENT')), exitFn };
+    await assert.rejects(
+      () => runTemporarySwitch('claude', 'me@x.com', [], claudeJson, accDir, null, deps),
+      /exit:1/,
+    );
+    assert.deepEqual(codes, [1]);
+  });
+
+  it('saves pending restore, swaps account, exits with child status', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
+    fs.writeFileSync(path.join(accDir, 'a@x.com.json'), JSON.stringify({ emailAddress: 'a@x.com' }));
+    fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com', _keychain: 'yes' }));
+    const { exitFn, codes } = makeExitFn();
+    const deps: SwitcherDeps = { spawnSyncFn: makeSpawnFn(7), exitFn };
+    await assert.rejects(
+      () => runTemporarySwitch('claude', 'b@x.com', [], claudeJson, accDir, null, deps),
+      /exit:7/,
+    );
+    assert.deepEqual(codes, [7]);
+    // claude.json should have been restored to original after restoreOriginal()
+    const after = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
+    assert.equal(after.oauthAccount.emailAddress, 'a@x.com');
+  });
+});
+
+describe('reAuthenticate — with mocked spawnSync', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-reauth-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns null when login leaves no active account', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({}));
+    const deps: SwitcherDeps = { spawnSyncFn: makeSpawnFn(0) };
+    const result = await reAuthenticate('claude', claudeJson, accDir, deps);
+    assert.strictEqual(result, null);
+  });
+
+  it('returns email and saves account when login succeeds', async () => {
+    // Simulate: before=expired, spawn writes new token to claudeJson
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'me@x.com', tokenInfo: { expiresAt: 1 } },
+    }));
+    const spawnFn: SwitcherDeps['spawnSyncFn'] = (cmd, args, opts) => {
+      // Simulate login: write fresh token
+      fs.writeFileSync(claudeJson, JSON.stringify({
+        oauthAccount: { emailAddress: 'me@x.com', tokenInfo: { expiresAt: Date.now() + 9_999_999 } },
+      }));
+      return makeSpawnFn(0)!(cmd, args, opts);
+    };
+    const deps: SwitcherDeps = { spawnSyncFn: spawnFn };
+    const result = await reAuthenticate('claude', claudeJson, accDir, deps);
+    assert.strictEqual(result, 'me@x.com');
+    assert.ok(fs.existsSync(path.join(accDir, 'me@x.com.json')));
+  });
+});
+
+describe('addAccount — with mocked ask + spawnSync', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-addacc-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('throws ExitError when spawnSync leaves no account', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({}));
+    const answers = ['new@x.com'];
+    const deps: SwitcherDeps = {
+      askFn: async () => answers.shift() ?? '',
+      spawnSyncFn: makeSpawnFn(0),
+    };
+    await assert.rejects(() => addAccount('claude', claudeJson, accDir, deps), /Login failed/);
+  });
+
+  it('detects login cancelled when email unchanged after spawn', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'curr@x.com' } }));
+    fs.writeFileSync(path.join(accDir, 'curr@x.com.json'), JSON.stringify({ emailAddress: 'curr@x.com' }));
+    const answers = [''];
+    const deps: SwitcherDeps = {
+      askFn: async () => answers.shift() ?? '',
+      spawnSyncFn: makeSpawnFn(0),
+    };
+    const logged: string[] = [];
+    const origLog = console.log;
+    console.log = (...a: unknown[]) => { logged.push(a.join(' ')); };
+    try {
+      await addAccount('claude', claudeJson, accDir, deps);
+    } finally {
+      console.log = origLog;
+    }
+    assert.ok(logged.some(l => l.includes('Login cancelled')));
+  });
+
+  it('saves new account and sets alias when login succeeds', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'curr@x.com' } }));
+    fs.writeFileSync(path.join(accDir, 'curr@x.com.json'), JSON.stringify({ emailAddress: 'curr@x.com' }));
+    const answers = ['new@x.com', 'myalias'];
+    const spawnFn: SwitcherDeps['spawnSyncFn'] = (cmd, args, opts) => {
+      fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'new@x.com' } }));
+      return makeSpawnFn(0)!(cmd, args, opts);
+    };
+    const deps: SwitcherDeps = {
+      askFn: async () => answers.shift() ?? '',
+      spawnSyncFn: spawnFn,
+    };
+    await addAccount('claude', claudeJson, accDir, deps);
+    assert.ok(fs.existsSync(path.join(accDir, 'new@x.com.json')));
   });
 });
