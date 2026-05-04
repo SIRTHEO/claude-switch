@@ -57,9 +57,9 @@ release-please works but the changelog format and the README story can be sharpe
 | 2.1 | Audit `release-please-config.json` sections | **No-op verified 2026-05-04**. Distribution of 6-month commits (top 11 types) all map to existing config sections; `ux`+`ui` already consolidated under "User Experience"; hidden types (chore/test/build/ci/release) all suppressed correctly. Config is correct as-is | - | cc:完了 |
 | 2.2 | CHANGELOG.md format review | Past 5 entries audited for clarity; conventions documented in `CONTRIBUTING.md` | 2.1 | cc:TODO |
 | 2.3 | README structure pass | TOC, Quickstart in <60s, "Profiles" section drafted (filled in Phase 4), FAQ pruned | - | cc:TODO |
-| 2.4 | Add npm install/version badges to README | Badges render correctly; version auto-updates | 2.3 | cc:TODO |
+| 2.4 | Add npm install/version badges to README | **No-op verified 2026-05-04**. README already has 4 badges: npm version, npm downloads, MIT license, Node.js CI status | 2.3 | cc:完了 |
 | 2.5 | `claude switch --help` text matches README claims | Top-level help + per-subcommand help reviewed for accuracy and brevity | 2.3 | cc:TODO |
-| 2.6 | `npm publish --provenance` already on; verify SLSA attestation visible on npmjs.com | Past releases checked; documented | - | cc:TODO |
+| 2.6 | `npm publish --provenance` already on; verify SLSA attestation visible on npmjs.com | **Verified 2026-05-04**: `npm view @sirtheo/claude-switch dist.attestations` returns `predicateType: https://slsa.dev/provenance/v1` for v2.6.1; signed with key `SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U`. Provenance live | - | cc:完了 |
 | 2.7 | Pre-release dry run: `release-please --dry-run` from current branch state | Output matches expected 2.7.0 shape | 0.3, 4.5 | cc:TODO |
 
 ---
