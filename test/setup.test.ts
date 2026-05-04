@@ -236,4 +236,56 @@ describe('runSetup', () => {
   it('does not throw when no claude binary found and no npm prefix', () => {
     assert.doesNotThrow(() => runSetup('/nonexistent/self'));
   });
+
+  describe('first-run on fresh HOME', () => {
+    let tmpHome: string;
+    let origHome: string | undefined;
+    // Capture stdout so the test output stays clean.
+    let stdoutBuffer: string[];
+    let originalWrite: typeof process.stdout.write;
+
+    beforeEach(() => {
+      tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-runsetup-'));
+      origHome = process.env.HOME;
+      process.env.HOME = tmpHome;
+      // Fake npm prefix points at a dir we can write into.
+      const fakeNpmPrefix = path.join(tmpHome, 'fake-npm-global');
+      fs.mkdirSync(path.join(fakeNpmPrefix, 'bin'), { recursive: true });
+      process.env.npm_config_prefix = fakeNpmPrefix;
+      // Pre-create an empty .zshrc so detectShellConfigs picks it up.
+      fs.writeFileSync(path.join(tmpHome, '.zshrc'), '# preserved\n');
+      stdoutBuffer = [];
+      originalWrite = process.stdout.write.bind(process.stdout);
+      process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+        stdoutBuffer.push(typeof chunk === 'string' ? chunk : chunk.toString());
+        return true;
+      }) as typeof process.stdout.write;
+    });
+
+    afterEach(() => {
+      process.stdout.write = originalWrite;
+      if (origHome !== undefined) process.env.HOME = origHome;
+      else delete process.env.HOME;
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    });
+
+    it('patches an empty .zshrc on first run', () => {
+      runSetup('/nonexistent/self');
+      const zshrc = fs.readFileSync(path.join(tmpHome, '.zshrc'), 'utf-8');
+      assert.match(zshrc, /# preserved/, 'preserves the existing .zshrc content');
+      assert.match(zshrc, /fake-npm-global/, 'adds the npm bin dir to PATH');
+      const out = stdoutBuffer.join('');
+      assert.match(out, /setup complete/i);
+    });
+
+    it('is idempotent — second run does not duplicate the PATH block', () => {
+      runSetup('/nonexistent/self');
+      const afterFirst = fs.readFileSync(path.join(tmpHome, '.zshrc'), 'utf-8');
+      runSetup('/nonexistent/self');
+      const afterSecond = fs.readFileSync(path.join(tmpHome, '.zshrc'), 'utf-8');
+      assert.equal(afterFirst, afterSecond, 'second runSetup must not change the file');
+      const out = stdoutBuffer.join('');
+      assert.match(out, /already configured|setup complete/i);
+    });
+  });
 });
