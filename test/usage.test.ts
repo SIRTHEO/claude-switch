@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readUsageCache, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter, readUsageCacheFor } from '../src/usage.js';
+import { readUsageCache, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
 
 describe('readUsageCache', () => {
   let dir: string;
@@ -184,5 +184,122 @@ describe('readUsageCacheFor — strict per-account safety', () => {
 
   it('returns null when no cache file exists', () => {
     assert.strictEqual(readUsageCacheFor(dir, 'me@x.com'), null);
+  });
+});
+
+describe('isUsageCacheStale', () => {
+  const fresh = Date.now();
+  const oldOver15min = Date.now() - 16 * 60 * 1000;
+
+  it('returns true when cache is null', () => {
+    assert.strictEqual(isUsageCacheStale(null), true);
+  });
+
+  it('returns true when cache has no payload', () => {
+    assert.strictEqual(
+      isUsageCacheStale({ fetchedAt: fresh, account: 'me@x.com' }),
+      true,
+    );
+  });
+
+  it('returns false while a rate-limit back-off is still in effect', () => {
+    // Even an old/missing-payload cache must not be flagged stale during
+    // a 429 window — refreshing into a 429 only extends the back-off.
+    assert.strictEqual(
+      isUsageCacheStale({
+        fetchedAt: oldOver15min,
+        account: 'me@x.com',
+        rateLimitedUntil: Date.now() + 60_000,
+      }),
+      false,
+    );
+  });
+
+  it('returns true when cache belongs to a different account', () => {
+    assert.strictEqual(
+      isUsageCacheStale({
+        fetchedAt: fresh,
+        account: 'someone-else@x.com',
+        payload: { five_hour: { utilization: 30 }, seven_day: { utilization: 10 } },
+      }, 'me@x.com'),
+      true,
+    );
+  });
+
+  it('returns false when cache is fresh and account matches', () => {
+    assert.strictEqual(
+      isUsageCacheStale({
+        fetchedAt: fresh,
+        account: 'me@x.com',
+        payload: { five_hour: { utilization: 30 }, seven_day: { utilization: 10 } },
+      }, 'me@x.com'),
+      false,
+    );
+  });
+
+  it('returns true when cache is older than the statusline refresh threshold', () => {
+    assert.strictEqual(
+      isUsageCacheStale({
+        fetchedAt: oldOver15min,
+        account: 'me@x.com',
+        payload: { five_hour: { utilization: 30 }, seven_day: { utilization: 10 } },
+      }, 'me@x.com'),
+      true,
+    );
+  });
+});
+
+describe('fetchUsageCached — additional edge cases', () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-usage-edge-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  it('rate-limit short-circuit beats a same-account cache mismatch with caller account', async () => {
+    // Cache has account=me@x.com, rate-limited; caller asks for me@x.com.
+    // The 199 branch (rateLimitedUntil + sameAccount) returns immediately.
+    const cache = {
+      fetchedAt: Date.now() - 60_000,
+      account: 'me@x.com',
+      payload: { five_hour: { utilization: 30 }, seven_day: { utilization: 5 } },
+      rateLimitedUntil: Date.now() + 60_000,
+    };
+    fs.writeFileSync(path.join(dir, '.usage-cache.json'), JSON.stringify(cache));
+    const result = await fetchUsageCached(dir, 'invalid-token', { account: 'me@x.com' });
+    assert.deepStrictEqual(result, cache);
+  });
+
+  it('does NOT short-circuit on rate-limit when account mismatches', async () => {
+    // Different account → must refetch with the new account context, even
+    // though the cache is rate-limited. We pass an obviously-invalid token,
+    // so the network attempt fails and we land in the !ok && !rateLimited
+    // branch which preserves fetchedAt only when sameAccount.
+    const cache = {
+      fetchedAt: Date.now() - 60_000,
+      account: 'other@x.com',
+      payload: { five_hour: { utilization: 99 }, seven_day: { utilization: 99 } },
+      rateLimitedUntil: Date.now() + 60_000,
+    };
+    fs.writeFileSync(path.join(dir, '.usage-cache.json'), JSON.stringify(cache));
+    const result = await fetchUsageCached(dir, 'invalid-token', { account: 'me@x.com' });
+    // Different account → cache.payload must be dropped on refetch.
+    assert.strictEqual(result.payload, undefined);
+    assert.strictEqual(result.account, 'me@x.com');
+  });
+});
+
+describe('triggerBackgroundUsageRefresh', () => {
+  it('does not throw and returns synchronously', () => {
+    // We can't easily verify the spawned process actually runs (it would
+    // call back into the CLI), but we can verify the wrapper doesn't crash
+    // and returns void without awaiting anything. The spawn is detached
+    // and unref'd, so the test process can exit normally.
+    let returned = false;
+    try {
+      triggerBackgroundUsageRefresh();
+      returned = true;
+    } catch {
+      // The function swallows errors internally — should never throw.
+    }
+    assert.strictEqual(returned, true);
   });
 });
