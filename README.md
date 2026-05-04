@@ -50,8 +50,11 @@ Yes. Requires Node.js **20.12 or newer**.
 **Does claude-switch send my data anywhere?**
 No. Everything stays on your computer. Switching accounts is a local file operation. The only network calls claude-switch makes are: (1) your subscription quota at `api.anthropic.com` when you ask for usage stats, and (2) the npm registry to check for updates. No telemetry, no analytics.
 
+**I want different terminals using different accounts at the same time.**
+Use **profiles** — `claude switch profile use <name>` pins a single terminal to one account without touching the others. Sign in once per profile (`claude switch profile login <name>`), then every terminal that runs `claude switch profile use <name>` gets its own isolated session with its own user ID, Keychain entry, and history. See the [Profiles section](#profiles--true-per-terminal-isolation-new-in-27) for the full UX. The classic `claude switch <account>` flip-the-active-account-everywhere flow is unchanged and still works alongside profiles.
+
 **I switched accounts in one terminal but my other open Claude Code sessions still show the old account. Bug?**
-Not a bug — it's how Claude Code itself works. The active account is stored globally per user (`~/.claude.json` + macOS Keychain), so all `claude` processes share the same state. Already-running sessions hold their tokens **in memory** and keep using them; they only see the new account after you exit and restart them. claude-switch warns you before a switch when it detects other sessions running so you aren't surprised. **Per-terminal isolation is on the roadmap** — track progress in [#per-terminal-isolation](https://github.com/SIRTHEO/claude-switch/issues?q=is%3Aissue+per-terminal+isolation). For now, if you want a single command to use a different account without affecting other terminals, use `claude --as <account> "task"` — that swaps for one command and restores afterwards.
+Not a bug — it's how Claude Code itself works *globally*. `claude switch <account>` rewrites the user-level state (`~/.claude.json` + macOS Keychain), so already-running `claude` processes hold their old tokens **in memory** and only flip on the next refresh. claude-switch warns you before a switch when it detects other sessions running so you aren't surprised. If you want true per-terminal isolation today, use **profiles** — see the question above and the [Profiles section](#profiles--true-per-terminal-isolation-new-in-27). One-shot swap for a single command without affecting other terminals: `claude --as <account> "task"`.
 
 ---
 
@@ -124,6 +127,42 @@ When you switch accounts from the menu, claude-switch automatically opens claude
 ```bash
 claude switch     # type this once, pick the account, claude opens automatically
 ```
+
+---
+
+## Profiles — true per-terminal isolation _(new in 2.7)_
+
+`claude switch <account>` flips the active account globally — every terminal on the machine starts using the new account on its next run. That's the right behaviour 90% of the time, but it does NOT isolate by terminal: two open `claude` REPLs cannot use two different accounts at the same time on the same machine.
+
+**Profiles** fix that. Each profile is a fully isolated environment: own user ID, own macOS Keychain entry, own session history. You sign in once per profile, then run `claude switch profile use <name>` in the terminal you want pinned to that account. Other terminals are not affected.
+
+```bash
+# 1. Create + sign in (browser opens once per profile)
+claude switch profile create work
+claude switch profile login work
+
+# 2. Use it in THIS terminal
+claude switch profile use work       # spawns claude pinned to "work"
+                                     # other terminals stay on whatever they were
+
+# Have a saved account already? Skip the browser:
+claude switch profile import tech@gyver.work --as work
+
+# Inspect / clean up
+claude switch profile list
+claude switch profile status work
+claude switch profile remove work    # also prints the macOS Keychain
+                                     # cleanup command (one-liner you can copy)
+```
+
+Profiles **coexist** with the legacy `claude switch <account>` flow — using one does not affect the other. Pick whichever matches your need:
+
+| You want | Use |
+|---|---|
+| "swap the active account everywhere on this machine" | `claude switch <account>` |
+| "this terminal uses account X, others stay as they are" | `claude switch profile use <name>` |
+
+> **Platform notes:** macOS is verified end-to-end (each profile gets its own Keychain entry). Linux and Windows store tokens directly in the profile's `.claude.json` (no system credential store involved); the same UX works there but with simpler internals.
 
 ---
 
