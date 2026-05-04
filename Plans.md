@@ -98,7 +98,7 @@ Primitives shipped (eef0f0c, 55c041a, 5b1514d, a0f2659). Remaining: real verific
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 4.1 | Map fallback decision tree | Diagram in `.claude/docs/design/fallback-state-machine.md` covering: manual on/off, auto-revert (cached usage drops below threshold), auto-engage (usage crosses engageThreshold), interaction with profiles | - | cc:TODO |
+| 4.1 | Map fallback decision tree | Diagram in `.claude/docs/design/fallback-state-machine.md` covering: manual on/off, auto-revert (cached usage drops below threshold), auto-engage (usage crosses engageThreshold), interaction with profiles | - | cc:完了 |
 | 4.2 | Coverage gap analysis on `src/auto-fallback.ts`, `src/fallback.ts`, `src/apikey.ts` | Per-function coverage report; missing edge cases listed | 0.5, 4.1 | cc:TODO |
 | 4.3 | Fill auto-engage tests | Tests for: triggers when 5h crosses 95%, triggers when 7d crosses 95%, no-op when no API key saved, no-op when already engaged, persists state | 4.2 | cc:TODO |
 | 4.4 | Hysteresis test: auto-engage at 95% → auto-revert at 80% → no flapping | Simulated usage trace; verified single transition each direction | 4.3 | cc:TODO |
