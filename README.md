@@ -59,6 +59,9 @@ Use **profiles** — `claude switch profile use <name>` pins a single terminal t
 **I switched accounts in one terminal but my other open Claude Code sessions still show the old account. Bug?**
 Not a bug — it's how Claude Code itself works *globally*. `claude switch <account>` rewrites the user-level state (`~/.claude.json` + macOS Keychain), so already-running `claude` processes hold their old tokens **in memory** and only flip on the next refresh. claude-switch warns you before a switch when it detects other sessions running so you aren't surprised. If you want true per-terminal isolation today, use **profiles** — see the question above and the [Profiles section](#profiles--true-per-terminal-isolation-new-in-27). One-shot swap for a single command without affecting other terminals: `claude --as <account> "task"`.
 
+**My subscription hit the rate limit *during* a claude session and the API key fallback didn't kick in. Why?**
+claude-switch's fallback works by injecting `ANTHROPIC_API_KEY` into the environment of the **claude process it spawns**. A claude REPL that's already running has already captured its OAuth tokens in memory — claude-switch can't hot-swap them mid-session without the upstream `claude` binary cooperating. Workaround: exit the running session (`Ctrl+D`), turn fallback on (`claude switch fallback on`), then re-run `claude` — the new process picks up the API key. **Auto-engage** (auto-toggle fallback ON when usage approaches the cap, so the *next* spawn already has the key) is a planned feature.
+
 ---
 
 ## Install
