@@ -23,6 +23,7 @@ import { spawnSync } from 'node:child_process';
 import { theme } from './theme.js';
 import { buildStatusLines, buildAccountInfo } from './menu/status.js';
 import { ALT_BUFFER_ENTER, ALT_BUFFER_EXIT, CLEAR_AND_HOME, altBufferSupported } from './menu/lifecycle.js';
+import { runProfilesMenu } from './profiles-menu.js';
 
 type MenuAction =
   | 'switch'
@@ -33,6 +34,7 @@ type MenuAction =
   | 'apikey'
   | 'fallback'
   | 'auto-fallback'
+  | 'profiles'
   | 'usage'
   | 'setup'
   | 'advanced'
@@ -100,6 +102,7 @@ async function pickAction(claudeJsonPath: string, accountsDirPath: string): Prom
       hint: 'edit API key / aliases for any saved account',
     });
   }
+  options.push({ value: 'profiles', label: 'Profiles…', hint: 'per-terminal isolated sessions' });
   options.push({ value: 'usage', label: 'Refresh usage', hint: 'force-fetch + per-model breakdown' });
   options.push({ value: 'advanced', label: 'Advanced…', hint: 'add / remove / setup' });
   options.push({ value: 'exit', label: 'Exit', hint: 'or press Ctrl+C / Esc' });
@@ -494,6 +497,15 @@ export async function runMainMenu(claudeJsonPath: string, accountsDirPath: strin
             `your API credits the moment your subscription has headroom again.`,
             'Done',
           );
+          break;
+        }
+        case 'profiles': {
+          const bin = findClaudeBinary(import.meta.url);
+          if (!bin) {
+            p.note('Could not find the real claude binary — run setup first.', 'Setup needed');
+            break;
+          }
+          await runProfilesMenu(accountsDirPath, bin, restoreBuffer);
           break;
         }
         case 'usage': {
