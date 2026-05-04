@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js CI](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml)
 
-**claude-switch** wraps the official `claude` command so you can keep multiple Claude Code accounts on the same machine and jump between them instantly — no browser, no logout, no friction.
+**claude-switch** lets you manage multiple Claude Code accounts on the same machine — switch accounts in one second, bypass Max/Pro rate limits with API key fallback and auto-revert, and run isolated per-terminal sessions where each terminal uses a different account simultaneously.
 
 > ⭐ **If this saves you time, [star the repo](https://github.com/SIRTHEO/claude-switch) — it helps others find it.**
 
