@@ -54,7 +54,7 @@ release-please works but the changelog format and the README story can be sharpe
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 2.1 | Audit `release-please-config.json` sections | Sections reflect actual commit types used; `ux`/`ui` consolidated; CHANGELOG sample reviewed | - | cc:TODO |
+| 2.1 | Audit `release-please-config.json` sections | **No-op verified 2026-05-04**. Distribution of 6-month commits (top 11 types) all map to existing config sections; `ux`+`ui` already consolidated under "User Experience"; hidden types (chore/test/build/ci/release) all suppressed correctly. Config is correct as-is | - | cc:完了 |
 | 2.2 | CHANGELOG.md format review | Past 5 entries audited for clarity; conventions documented in `CONTRIBUTING.md` | 2.1 | cc:TODO |
 | 2.3 | README structure pass | TOC, Quickstart in <60s, "Profiles" section drafted (filled in Phase 4), FAQ pruned | - | cc:TODO |
 | 2.4 | Add npm install/version badges to README | Badges render correctly; version auto-updates | 2.3 | cc:TODO |
