@@ -149,7 +149,7 @@ Primitives shipped (eef0f0c, 55c041a, 5b1514d, a0f2659). Remaining: real verific
 | 6.3 | CHANGELOG preview for 2.7.0 | Drafted from conventional commits; reviewed for user-facing language | 2.2 | cc:完了 |
 | 6.3-result | Draft in `.claude/docs/reports/changelog-preview-2.7.0.md`. release-please-style auto entry + user-facing addendum (suggested for the GH Release body, NOT CHANGELOG.md). 23 commits ahead of main, 2 feat → 2.7.0 minor | - | - |
 | 6.4 | Open PR `experiment/per-terminal-isolation` → `main` | All CI checks green; review checklist linked | 1.*, 2.*, 3a.*, 3b.*, 4.*, 5.*, 6.1, 6.2, 6.3 | cc:完了 [PR#7] |
-| 6.5 | Merge + verify release-please publishes 2.7.0 | npm package live, GitHub Release created, install command works on a clean machine | 6.4 | cc:TODO |
+| 6.5 | Merge + verify release-please publishes 2.7.0 | npm package live, GitHub Release created, install command works on a clean machine | 6.4 | cc:完了 [2.7.0] |
 
 ---
 
