@@ -240,6 +240,7 @@ describe('runSetup', () => {
   describe('first-run on fresh HOME', () => {
     let tmpHome: string;
     let origHome: string | undefined;
+    let origUserProfile: string | undefined;
     // Capture stdout so the test output stays clean.
     let stdoutBuffer: string[];
     let originalWrite: typeof process.stdout.write;
@@ -247,7 +248,10 @@ describe('runSetup', () => {
     beforeEach(() => {
       tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-runsetup-'));
       origHome = process.env.HOME;
+      origUserProfile = process.env.USERPROFILE;
       process.env.HOME = tmpHome;
+      // On Windows, os.homedir() uses USERPROFILE, not HOME.
+      if (process.platform === 'win32') process.env.USERPROFILE = tmpHome;
       // Fake npm prefix points at a dir we can write into.
       const fakeNpmPrefix = path.join(tmpHome, 'fake-npm-global');
       fs.mkdirSync(path.join(fakeNpmPrefix, 'bin'), { recursive: true });
@@ -266,6 +270,10 @@ describe('runSetup', () => {
       process.stdout.write = originalWrite;
       if (origHome !== undefined) process.env.HOME = origHome;
       else delete process.env.HOME;
+      if (process.platform === 'win32') {
+        if (origUserProfile !== undefined) process.env.USERPROFILE = origUserProfile;
+        else delete process.env.USERPROFILE;
+      }
       fs.rmSync(tmpHome, { recursive: true, force: true });
     });
 
