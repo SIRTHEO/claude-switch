@@ -21,8 +21,8 @@ Branch must be green and committable.
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
 | 0.1 | Fix `auto-fallback.test.ts` for new `engageEnabled` / `engageThreshold` fields | `npm test` green; defaults + invariant covered | - | cc:完了 |
-| 0.2 | Decide scope: ship `auto-engage` in 2.7.0 OR split into 2.7.1 | Decision recorded in EXPERIMENT.md or new `.claude/docs/design/` doc; Plans.md reflects choice | 0.1 | cc:TODO |
-| 0.3 | Commit pending edits (`bin/cli.ts`, `src/auto-fallback.ts`) into proper conventional commits | `git status` clean; one `feat:` per logical change | 0.2 | cc:TODO |
+| 0.2 | Decide scope: ship `auto-engage` in 2.7.0 OR split into separate release | **Decided 2026-05-04: SPLIT.** Auto-engage is incomplete WIP (function defined in `src/auto-fallback.ts` but never called from `bin/cli.ts`). Unrelated to per-terminal isolation. Patch parked at `.claude/docs/wip-patches/auto-engage-2026-05-04.patch`. Will land as a separate PR after wiring + tests, target 2.7.1 or later | 0.1 | cc:完了 |
+| 0.3 | Branch hygiene: split off-topic WIP into dedicated branches | Done: `fix/windows-ci-active-sessions` created from main with the Windows fix; auto-engage WIP parked as patch; `experiment/per-terminal-isolation` reverted to clean profile-only state + Harness scaffold commit | 0.2 | cc:完了 |
 | 0.4 | TypeScript strictness audit | `tsc --noEmit` green with `noUncheckedIndexedAccess` enabled (or documented opt-out per-file) | 0.3 | cc:TODO |
 | 0.5 | Coverage audit (`node --experimental-test-coverage` or `c8`) | Report committed under `.claude/docs/reports/coverage-2026-05.md`; modules <60% line coverage flagged | 0.3 | cc:TODO |
 
@@ -35,7 +35,7 @@ Last 2 main runs failed (Windows test + deprecation warnings). Must be green bef
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
 | 1.1 | Fix Windows CI failure in `active-sessions.test.ts` | `null` check precedes platform check in `src/active-sessions.ts`; test passes on Windows in CI | 0.3 | cc:完了 |
-| 1.2 | Bump `actions/checkout` and `actions/setup-node` to versions running on Node 24 | Deprecation warning gone from CI logs | - | cc:TODO |
+| 1.2 | Bump `actions/checkout` and `actions/setup-node` to versions running on Node 24 | Deprecation warning gone from CI logs | - | cc:完了 |
 | 1.3 | Run profile E2E scripts (`scripts/setup-profiles-test.sh`, `scripts/verify-isolation.sh`) on macOS runner in CI | New job in `ci.yml`, only on macos-latest, only when relevant paths change (`src/profiles.ts`, `src/keychain.ts`, `bin/cli.ts`) | 1.1 | cc:TODO |
 | 1.4 | Add `tsc --noEmit` step to CI (typecheck without build) | CI fails on type errors before tests run | 1.1 | cc:TODO |
 | 1.5 | Add lint step (eslint or biome) | Lint config in repo; CI runs it; existing violations either fixed or grandfathered | 1.4 | cc:TODO |
