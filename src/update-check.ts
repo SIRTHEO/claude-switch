@@ -17,7 +17,7 @@ import os from 'node:os';
 import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const PACKAGE_NAME = '@sirtheo/claude-switch';
+const PACKAGE_NAME = 'claudeswitch';
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once per day
 
