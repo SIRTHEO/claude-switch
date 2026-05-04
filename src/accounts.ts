@@ -50,7 +50,7 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
 
   fs.mkdirSync(accountsDirPath, { recursive: true, mode: 0o700 });
 
-  let data;
+  let data: Record<string, unknown>;
   try {
     data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
   } catch (e) {
@@ -150,7 +150,7 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   const { _keychain, _apiKey: _ignored, ...oauthAccount } = accountData;
   const keychainRestored = !!(_keychain && typeof _keychain === 'object');
 
-  let data;
+  let data: Record<string, unknown>;
   try {
     data = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
   } catch (e) {

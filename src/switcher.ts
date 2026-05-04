@@ -1,6 +1,6 @@
 // src/switcher.ts
 import readline from 'node:readline';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getCurrent, save, load, list } from './accounts.js';
@@ -9,7 +9,13 @@ import { buildSpawnArgs } from './proxy.js';
 import { ExitError } from './errors.js';
 import { withLock } from './lock.js';
 
-function ask(question: string): Promise<string> {
+export interface SwitcherDeps {
+  spawnSyncFn?: (command: string, args: string[], options: object) => SpawnSyncReturns<Buffer>;
+  askFn?: (question: string) => Promise<string>;
+  exitFn?: (code: number) => never;
+}
+
+function defaultAsk(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise(resolve => {
     rl.question(question, (answer: string) => {
@@ -50,7 +56,8 @@ export function fuzzyMatch(input: string, accounts: string[]): string[] {
   return accounts.filter(a => a.toLowerCase().includes(lower));
 }
 
-export async function switchInteractive(claudeJsonPath: string, accountsDirPath: string): Promise<void> {
+export async function switchInteractive(claudeJsonPath: string, accountsDirPath: string, deps?: SwitcherDeps): Promise<void> {
+  const ask = deps?.askFn ?? defaultAsk;
   const accounts = list(accountsDirPath);
   const currentEmail = getCurrent(claudeJsonPath);
 
@@ -73,11 +80,11 @@ export async function switchInteractive(claudeJsonPath: string, accountsDirPath:
   const choice = await ask(`\nSwitch to [1-${accounts.length}]: `);
   const index = parseInt(choice, 10);
 
-  if (isNaN(index) || index < 1 || index > accounts.length) {
+  if (Number.isNaN(index) || index < 1 || index > accounts.length) {
     throw new ExitError('Invalid choice.');
   }
 
-  console.log(switchTo(accounts[index - 1], claudeJsonPath, accountsDirPath));
+  console.log(switchTo(accounts[index - 1]!, claudeJsonPath, accountsDirPath));
 }
 
 export function savePendingRestore(email: string, accountsDirPath: string): void {
@@ -126,17 +133,20 @@ export async function runTemporarySwitch(
   claudeJsonPath: string,
   accountsDirPath: string,
   extraEnv?: NodeJS.ProcessEnv | null,
+  deps?: SwitcherDeps,
 ): Promise<never> {
+  const doSpawnSync = deps?.spawnSyncFn ?? spawnSync;
+  const doExit: (code: number) => never = deps?.exitFn ?? ((code: number) => process.exit(code));
   const currentEmail = getCurrent(claudeJsonPath);
 
   if (targetEmail === currentEmail) {
     const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, args, process.platform, extraEnv);
-    const result = spawnSync(command, spawnArgs, options);
+    const result = doSpawnSync(command, spawnArgs, options);
     if (result.error) {
       console.error(`Error: could not run claude: ${result.error.message}`);
-      process.exit(1);
+      doExit(1);
     }
-    process.exit(result.status ?? 1);
+    doExit(result.status ?? 1);
   }
 
   // Critical section: save current + load target must be atomic w.r.t. other
@@ -178,19 +188,19 @@ export async function runTemporarySwitch(
 
   process.once('SIGINT', () => {
     restoreOriginal();
-    process.exit(130);
+    doExit(130);
   });
 
   const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, args, process.platform, extraEnv);
-  const result = spawnSync(command, spawnArgs, options);
+  const result = doSpawnSync(command, spawnArgs, options);
 
   restoreOriginal();
 
   if (result.error) {
     console.error(`Error: could not run claude: ${result.error.message}`);
-    process.exit(1);
+    doExit(1);
   }
-  process.exit(result.status ?? 1);
+  doExit(result.status ?? 1);
 }
 
 /**
@@ -229,13 +239,15 @@ export async function reAuthenticate(
   claudeBin: string,
   claudeJsonPath: string,
   accountsDirPath: string,
+  deps?: SwitcherDeps,
 ): Promise<string | null> {
+  const doSpawnSync = deps?.spawnSyncFn ?? spawnSync;
   const { getTokenHealth } = await import('./token.js');
   const emailBefore = getCurrent(claudeJsonPath);
   const healthBefore = getTokenHealth(claudeJsonPath);
 
   const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform);
-  spawnSync(command, args, options);
+  doSpawnSync(command, args, options);
 
   const emailAfter = getCurrent(claudeJsonPath);
   const healthAfter = getTokenHealth(claudeJsonPath);
@@ -247,7 +259,9 @@ export async function reAuthenticate(
   return outcome;
 }
 
-export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string): Promise<void> {
+export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string, deps?: SwitcherDeps): Promise<void> {
+  const ask = deps?.askFn ?? defaultAsk;
+  const doSpawnSync = deps?.spawnSyncFn ?? spawnSync;
   const currentEmail = getCurrent(claudeJsonPath);
   const expectedEmail = await ask('Email to add (press Enter to skip): ');
 
@@ -259,7 +273,7 @@ export async function addAccount(claudeBin: string, claudeJsonPath: string, acco
 
   while (true) {
     const { command: loginCmd, args: loginArgs, options: loginOpts } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform);
-    spawnSync(loginCmd, loginArgs, loginOpts);
+    doSpawnSync(loginCmd, loginArgs, loginOpts);
 
     const newEmail = getCurrent(claudeJsonPath);
     if (!newEmail) {

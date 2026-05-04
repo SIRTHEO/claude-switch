@@ -51,9 +51,20 @@ export function readKeychain(): KeychainData | null {
 }
 
 export function writeKeychain(data: KeychainData): void {
-  if (process.platform !== 'darwin') return;
+  writeKeychainAt(candidateAccounts()[0]!, data);
+}
 
-  const account = candidateAccounts()[0]; // always write to the primary (username) account
+/**
+ * Write to a specific Keychain entry (account field). Used for profiles:
+ * each profile has its own userID which becomes the account field, so we
+ * can import a saved account's tokens into the profile's distinct entry.
+ *
+ * On non-darwin platforms this is a no-op (tokens live in the JSON file
+ * there, no Keychain involved).
+ */
+export function writeKeychainAt(account: string, data: KeychainData): void {
+  if (process.platform !== 'darwin') return;
+  if (!account) throw new Error('writeKeychainAt requires a non-empty account name');
   try {
     execFileSync(
       'security',

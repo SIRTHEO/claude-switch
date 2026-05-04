@@ -2,18 +2,6 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseCommand } from '../bin/cli.js';
 
-interface SwitchInteractiveCmd { action: 'switch-interactive' }
-interface SwitchToCmd { action: 'switch-to'; target: string }
-interface AddCmd { action: 'add' }
-interface ListCmd { action: 'list' }
-interface RemoveCmd { action: 'remove'; email: string | undefined }
-interface StatusCmd { action: 'status' }
-interface HelpCmd { action: 'help' }
-interface CompletionsCmd { action: 'completions'; shell: string | undefined }
-interface PassthroughCmd { action: 'passthrough'; args: string[] }
-
-type Command = SwitchInteractiveCmd | SwitchToCmd | AddCmd | ListCmd | RemoveCmd | StatusCmd | HelpCmd | CompletionsCmd | PassthroughCmd;
-
 describe('parseCommand', () => {
   it('parses "switch" as interactive switch', () => {
     assert.deepEqual(parseCommand(['switch']), { action: 'switch-interactive' });

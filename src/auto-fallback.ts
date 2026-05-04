@@ -226,7 +226,7 @@ export function maybeAutoEngageFallback(
     return result;
   }
 
-  setFallbackEnabled(accountsDirPath, true);
+  setFallbackEnabled(accountsDirPath, true, { byAutoEngage: true });
   result.engaged = true;
   result.reason = reason;
   return result;
