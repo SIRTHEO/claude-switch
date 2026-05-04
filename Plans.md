@@ -115,7 +115,7 @@ Primitives shipped (eef0f0c, 55c041a, 5b1514d, a0f2659). Remaining: real verific
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 5.1 | UX audit: walk through every menu path on macOS, log friction | Notes in `.claude/docs/reports/tui-audit-2026-05.md` per menu screen | - | cc:TODO |
+| 5.1 | UX audit: walk through every menu path on macOS, log friction | Notes in `.claude/docs/reports/tui-audit-2026-05.md` per menu screen | - | cc:完了 |
 | 5.2 | Split `main-menu.ts` into per-screen modules | Each menu screen <200 lines; shared helpers extracted | 5.1 | cc:TODO |
 | 5.3 | Loading states: long ops show a spinner (e.g. `keychain` writes, `usage` fetches) | All ops >200ms have feedback | 5.2 | cc:TODO |
 | 5.4 | Error rendering consistency | All errors go through one helper; format: title, cause, next step | 5.2 | cc:TODO |
