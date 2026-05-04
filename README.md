@@ -1,11 +1,11 @@
-# claude-switch — switch Claude Code accounts in one second
+# claude-switch — manage multiple Claude Code accounts, bypass rate limits, run parallel sessions
 
 [![npm version](https://img.shields.io/npm/v/@sirtheo/claude-switch)](https://www.npmjs.com/package/@sirtheo/claude-switch)
 [![npm downloads](https://img.shields.io/npm/dm/@sirtheo/claude-switch)](https://www.npmjs.com/package/@sirtheo/claude-switch)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js CI](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml)
 
-**claude-switch** lets you manage multiple Claude Code accounts on the same machine — switch accounts in one second, bypass Max/Pro rate limits with API key fallback and auto-revert, and run isolated per-terminal sessions where each terminal uses a different account simultaneously.
+**claude-switch** lets you manage multiple Claude Code accounts on the same machine — switch between Claude accounts in one second, bypass Claude Max/Pro rate limits with API key fallback and auto-revert, and run isolated per-terminal sessions where each terminal uses a different Claude account simultaneously.
 
 > ⭐ **If this saves you time, [star the repo](https://github.com/SIRTHEO/claude-switch) — it helps others find it.**
 
@@ -82,7 +82,7 @@ You never need to remember any command — the menu shows your current state and
 
 ---
 
-## Two accounts open at the same time — Profiles
+## Run two Claude accounts in parallel — per-terminal isolation
 
 `claude switch work` makes *every* terminal use the work account. That's what you want 90% of the time.
 
@@ -132,7 +132,7 @@ claude switch profile remove work
 
 ---
 
-## Auto-revert to OAuth (the rate-limit killer)
+## Bypass Claude rate limits with API key fallback
 
 Hit your Max/Pro limit, turn on API key fallback, then **forget about it**. claude-switch watches your usage and switches back to your subscription automatically when the limit resets.
 
@@ -230,7 +230,7 @@ Full changelog: [CHANGELOG.md](CHANGELOG.md) · [GitHub Releases](https://github
 
 ---
 
-## How it works
+## How claude-switch manages multiple Claude Code accounts
 
 - Claude Code stores your active account in `~/.claude.json` and OAuth tokens in the macOS Keychain (or in `~/.claude.json` on Linux/Windows).
 - claude-switch saves both for each account in `~/.claude/accounts/<email>.json`.

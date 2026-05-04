@@ -50,7 +50,15 @@
     "cli",
     "tui",
     "developer-tools",
-    "productivity"
+    "productivity",
+    "rate-limit-bypass",
+    "bypass-rate-limit",
+    "claude-code-accounts",
+    "claude-account-manager",
+    "parallel-accounts",
+    "session-isolation",
+    "terminal-isolation",
+    "wrapper"
   ],
   "author": {
     "name": "SIRTHEO",
