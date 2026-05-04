@@ -20,7 +20,7 @@ import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectI
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
 import { fallbackEnvFor } from '../src/fallback-env.js';
-import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback } from '../src/auto-fallback.js';
+import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback, maybeAutoEngageFallback } from '../src/auto-fallback.js';
 import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
 import { selectAccountInteractive } from '../src/ui/select-account.js';
 import { runMainMenu } from '../src/ui/main-menu.js';
@@ -51,6 +51,7 @@ export type Command =
   | { action: 'apikey-show'; target: string | undefined }
   | { action: 'fallback'; mode: 'on' | 'off' | 'status' }
   | { action: 'fallback-auto'; mode: 'on' | 'off' | 'status'; threshold?: number }
+  | { action: 'fallback-auto-engage'; mode: 'on' | 'off' | 'status'; threshold?: number }
   | { action: 'usage'; force: boolean; refreshOnly: boolean }
   | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean }
   | { action: 'statusline-install'; variant: 'plain' | 'ccstatusline' }
@@ -96,10 +97,11 @@ export function parseCommand(args: string[]): Command {
       if (!sub2 || sub2 === 'status') return { action: 'fallback', mode: 'status' };
       if (sub2 === 'on') return { action: 'fallback', mode: 'on' };
       if (sub2 === 'off') return { action: 'fallback', mode: 'off' };
-      if (sub2 === 'auto') {
+      if (sub2 === 'auto' || sub2 === 'auto-engage') {
+        const action = sub2 === 'auto' ? 'fallback-auto' : 'fallback-auto-engage';
         const sub3 = args[3];
-        if (!sub3 || sub3 === 'status') return { action: 'fallback-auto', mode: 'status' };
-        if (sub3 === 'off') return { action: 'fallback-auto', mode: 'off' };
+        if (!sub3 || sub3 === 'status') return { action, mode: 'status' };
+        if (sub3 === 'off') return { action, mode: 'off' };
         if (sub3 === 'on') {
           const tIdx = args.indexOf('--threshold');
           if (tIdx >= 4 && args[tIdx + 1] !== undefined) {
@@ -107,13 +109,13 @@ export function parseCommand(args: string[]): Command {
             if (!Number.isFinite(t) || t < 1 || t > 100) {
               throw new ExitError('--threshold must be an integer between 1 and 100');
             }
-            return { action: 'fallback-auto', mode: 'on', threshold: t };
+            return { action, mode: 'on', threshold: t };
           }
-          return { action: 'fallback-auto', mode: 'on' };
+          return { action, mode: 'on' };
         }
-        throw new ExitError('Usage: claude switch fallback auto <on|off|status> [--threshold <1-100>]');
+        throw new ExitError(`Usage: claude switch fallback ${sub2} <on|off|status> [--threshold <1-100>]`);
       }
-      throw new ExitError('Usage: claude switch fallback <on|off|status|auto>');
+      throw new ExitError('Usage: claude switch fallback <on|off|status|auto|auto-engage>');
     }
     case 'usage': {
       const flags = args.slice(2);
@@ -759,6 +761,44 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'fallback-auto-engage': {
+      const config = getAutoFallbackConfig(aDir);
+      if (cmd.mode === 'status') {
+        console.log(`Auto-engage:  ${config.engageEnabled ? 'on' : 'off'}`);
+        console.log(`Threshold:    ${config.engageThreshold}% (either 5h or 7d at/above flips fallback ON)`);
+        if (config.engageEnabled) {
+          const current = getCurrent(cJson);
+          const hasKey = current ? !!getApiKey(current, aDir) : false;
+          if (!current) {
+            console.log('No active account — auto-engage only acts on the active one.');
+          } else if (!hasKey) {
+            console.log(`Note: ${current} has no saved API key, so auto-engage would be blocked.`);
+          }
+        }
+        break;
+      }
+      const engageEnabled = cmd.mode === 'on';
+      try {
+        const next = setAutoFallbackConfig(aDir, {
+          engageEnabled,
+          ...(cmd.threshold !== undefined ? { engageThreshold: cmd.threshold } : {}),
+        });
+        console.log(`Auto-engage:  ${next.engageEnabled ? 'on' : 'off'}`);
+        if (engageEnabled) {
+          console.log(`Threshold:    ${next.engageThreshold}%`);
+          console.log(
+            `\nWhen fallback is off and either 5h or 7d utilisation reaches ` +
+            `${next.engageThreshold}%, claude-switch will turn fallback ON on ` +
+            `the next \`claude\` run (provided the active account has a saved ` +
+            `API key) — so you don't stare at a rate-limit error mid-session.`,
+          );
+        }
+      } catch (e) {
+        throw new ExitError((e as Error).message);
+      }
+      break;
+    }
+
     case 'usage': {
       // Snapshot (token, account) atomically. A concurrent `claude switch B`
       // between these two reads would otherwise pair token-of-A with
@@ -949,12 +989,18 @@ async function main(): Promise<void> {
         const wasUnsaved = !accounts.includes(e);
         if (wasUnsaved) save(e, cJson, aDir);
         const auto = maybeAutoDisableFallback(aDir, cJson);
-        return { email: e, wasUnsaved, auto, extraEnv: fallbackEnvFor(e, aDir) };
+        // Auto-engage runs after auto-disable in the same lock so the
+        // fallbackEnvFor() read below sees the final flag state. The config
+        // invariant `engageThreshold > threshold` guarantees a single call
+        // cannot both disable and engage (windows can't be < threshold AND
+        // >= engageThreshold simultaneously).
+        const engage = maybeAutoEngageFallback(aDir, cJson);
+        return { email: e, wasUnsaved, auto, engage, extraEnv: fallbackEnvFor(e, aDir) };
       });
       if (!snapshot) {
         throw new ExitError('No account connected. Run: claude switch add');
       }
-      const { email, wasUnsaved, auto, extraEnv } = snapshot;
+      const { email, wasUnsaved, auto, engage, extraEnv } = snapshot;
 
       if (wasUnsaved) {
         process.stderr.write(`Detected account: ${email} (saved automatically)\n\n`);
@@ -965,6 +1011,17 @@ async function main(): Promise<void> {
           `📈 Subscription back online (5h:${auto.fivePct!.toFixed(0)}%${sevenStr}, ` +
           `threshold ${auto.threshold}%) — switched back to OAuth\n\n`,
         );
+      }
+      if (engage.engaged) {
+        const win = engage.reason === '5h'
+          ? `5h:${engage.fivePct!.toFixed(0)}%`
+          : `7d:${engage.sevenPct!.toFixed(0)}%`;
+        process.stderr.write(
+          `📉 Subscription near cap (${win}, threshold ${engage.threshold}%) — ` +
+          `switched to API key fallback\n\n`,
+        );
+      } else if (engage.blocked) {
+        process.stderr.write(`⚠ auto-engage wanted to switch to API key but ${engage.blocked}\n\n`);
       }
       // Banner on stderr so we don't pollute structured stdout (e.g. when
       // claude is piped into jq with --output-format json).
