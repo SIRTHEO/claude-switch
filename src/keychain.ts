@@ -51,7 +51,7 @@ export function readKeychain(): KeychainData | null {
 }
 
 export function writeKeychain(data: KeychainData): void {
-  writeKeychainAt(candidateAccounts()[0], data);
+  writeKeychainAt(candidateAccounts()[0]!, data);
 }
 
 /**

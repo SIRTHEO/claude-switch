@@ -230,7 +230,7 @@ export function importProfileFromAccount(
   profileName?: string,
 ): ImportResult {
   const account = readLegacyAccount(email, accountsDirPath);
-  const finalName = profileName ?? email.split('@')[0].replace(/[^A-Za-z0-9_-]/g, '_');
+  const finalName = profileName ?? (email.split('@')[0] ?? email).replace(/[^A-Za-z0-9_-]/g, '_');
   if (!isValidProfileName(finalName)) {
     throw new Error(
       `Computed profile name "${finalName}" is not valid. Pass an explicit name with --as <name>.`,

@@ -77,7 +77,7 @@ export async function switchInteractive(claudeJsonPath: string, accountsDirPath:
     throw new ExitError('Invalid choice.');
   }
 
-  console.log(switchTo(accounts[index - 1], claudeJsonPath, accountsDirPath));
+  console.log(switchTo(accounts[index - 1]!, claudeJsonPath, accountsDirPath));
 }
 
 export function savePendingRestore(email: string, accountsDirPath: string): void {

@@ -66,7 +66,7 @@ export function countActiveClaudeSessions(
   let count = 0;
   for (const line of raw.split('\n')) {
     const m = line.match(/^\s*(\d+)\s+(.+?)\s*$/);
-    if (!m) continue;
+    if (!m || m[1] === undefined || m[2] === undefined) continue;
     const pid = parseInt(m[1], 10);
     const cmd = m[2];
     if (!Number.isFinite(pid) || pid === selfPid) continue;

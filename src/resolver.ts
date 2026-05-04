@@ -24,7 +24,7 @@ function getKnownPaths(): string[] {
       path.join(progFiles, 'nodejs', 'claude.cmd'),
     ];
   }
-  return KNOWN_PATHS[platform] || KNOWN_PATHS.linux;
+  return KNOWN_PATHS[platform] ?? KNOWN_PATHS.linux ?? [];
 }
 
 function isClaudeSwitchWrapper(filePath: string): boolean {
