@@ -23,6 +23,7 @@ import { fallbackEnvFor } from '../src/fallback-env.js';
 import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback, maybeAutoEngageFallback } from '../src/auto-fallback.js';
 import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
 import { runMainMenu } from '../src/ui/main-menu.js';
+import { profilesDir } from '../src/profiles.js';
 import { setApiKeyInteractive } from '../src/ui/set-apikey.js';
 import { runSetupWizard } from '../src/ui/setup-wizard.js';
 import { addAccountInteractive } from '../src/ui/add-account.js';
@@ -368,25 +369,18 @@ function renderStatusline(
   const aliases = getAliasesForEmail(email, accountsDirPath);
   const shortName = aliases[0] ?? email.split('@')[0] ?? email;
 
-  if (format === 'json') {
-    const json = {
-      email,
-      shortName,
-      mode: usingApiKey ? 'api' : 'oauth',
-      fallback: fallbackOn,
-      fallbackAutoEngaged: isFallbackAutoEngaged(accountsDirPath),
-      hasApiKey: !!apiKey,
-      fiveHour: fivePct ?? null,
-      sevenDay: sevenPct ?? null,
-    };
-    process.stdout.write(JSON.stringify(json) + '\n');
-    return;
-  }
+  // Profile badge: shown when this process was launched inside a profile
+  // session (CLAUDE_CONFIG_DIR points into ~/.claude/profiles/<name>/).
+  const activeProfile = (() => {
+    const ccd = process.env.CLAUDE_CONFIG_DIR;
+    if (!ccd) return null;
+    const base = profilesDir() + path.sep;
+    if (!ccd.startsWith(base)) return null;
+    const rest = ccd.slice(base.length);
+    const name = rest.split(path.sep)[0];
+    return name || null;
+  })();
 
-  // Distinguish "user manually toggled fallback" from "auto-engage flipped
-  // it because we hit the threshold" — the user wants to know that their
-  // session is paying for API credits because of the rate-limit guard,
-  // not because they asked for it.
   const autoEngaged = isFallbackAutoEngaged(accountsDirPath);
   const modeLabel = usingApiKey
     ? yellow(autoEngaged ? 'API auto' : 'API')
@@ -398,12 +392,29 @@ function renderStatusline(
     if (fivePct >= 75) return ` ${yellow(`5h:${pctStr}`)}`;
     return ` ${dim(`5h:${pctStr}`)}`;
   })();
+  const profileBadge = activeProfile ? ` ${cyan(`[${activeProfile}]`)}` : '';
+
+  if (format === 'json') {
+    const json = {
+      email,
+      shortName,
+      mode: usingApiKey ? 'api' : 'oauth',
+      fallback: fallbackOn,
+      fallbackAutoEngaged: isFallbackAutoEngaged(accountsDirPath),
+      hasApiKey: !!apiKey,
+      fiveHour: fivePct ?? null,
+      sevenDay: sevenPct ?? null,
+      profile: activeProfile,
+    };
+    process.stdout.write(JSON.stringify(json) + '\n');
+    return;
+  }
 
   if (format === 'full') {
-    process.stdout.write(`🔑 ${cyan(email)} · ${modeLabel}${usageBadge}\n`);
+    process.stdout.write(`🔑 ${cyan(email)} · ${modeLabel}${usageBadge}${profileBadge}\n`);
   } else {
-    // compact (default) — short alias + mode badge + optional usage
-    process.stdout.write(`🔑 ${cyan(shortName)} ${modeLabel}${usageBadge}\n`);
+    // compact (default) — short alias + mode badge + optional usage + profile
+    process.stdout.write(`🔑 ${cyan(shortName)} ${modeLabel}${usageBadge}${profileBadge}\n`);
   }
 }
 
@@ -498,9 +509,42 @@ async function main(): Promise<void> {
       let info: ReturnType<typeof readProfile>;
       try { info = readProfile(cmd.name); }
       catch (e) { throw new ExitError((e as Error).message); }
+
+      const profileClaudeJson = path.join(info.path, '.claude.json');
+      const tokenHealth = info.hasLogin ? getTokenHealth(profileClaudeJson) : null;
+      const tokenLine = (() => {
+        if (!tokenHealth) return '(not logged in yet)';
+        switch (tokenHealth.status) {
+          case 'valid': return `valid (expires ${tokenHealth.expiresIn})`;
+          case 'expired': return `EXPIRED (${tokenHealth.expiresIn}) — run: claude switch profile login ${info.name}`;
+          case 'present': return 'present (expiry unknown)';
+          case 'missing': return 'missing — run: claude switch profile login ' + info.name;
+        }
+      })();
+
+      let keychainLine = '(not applicable on this platform)';
+      if (process.platform === 'darwin' && info.userID) {
+        const { spawnSync: ss } = await import('node:child_process');
+        const r = ss('security', [
+          'find-generic-password', '-a', info.userID, '-s', 'Claude Code-credentials',
+        ], { stdio: 'pipe' });
+        keychainLine = r.status === 0 ? `present (account=${info.userID.slice(0, 16)}…)` : 'absent';
+      } else if (!info.userID) {
+        keychainLine = '(no userID yet — run claude once in this profile)';
+      }
+
+      let lastUsed = '(never)';
+      try {
+        const mtime = fs.statSync(profileClaudeJson).mtime;
+        lastUsed = mtime.toLocaleString();
+      } catch { /* fresh profile */ }
+
       console.log(`Profile: ${info.name}`);
       console.log(`Path:    ${info.path}`);
       console.log(`Email:   ${info.emailAddress ?? '(not logged in yet)'}`);
+      console.log(`Token:   ${tokenLine}`);
+      console.log(`Keychain:${' '.repeat(1)}${keychainLine}`);
+      console.log(`Last run:${' '.repeat(1)}${lastUsed}`);
       console.log(`User ID: ${info.userID ?? '(not yet assigned — run claude once in this profile)'}`);
       return;
     }
@@ -512,7 +556,8 @@ async function main(): Promise<void> {
     }
     for (const n of profiles) {
       const info = readProfile(n);
-      console.log(`${n}: ${info.emailAddress ?? '(not logged in)'} [${info.userID?.slice(0, 12) ?? '-'}…]`);
+      const status = info.hasLogin ? (info.emailAddress ?? '(email unknown)') : '(not logged in)';
+      console.log(`${n}: ${status} [${info.userID?.slice(0, 12) ?? '-'}…]`);
     }
     return;
   }
