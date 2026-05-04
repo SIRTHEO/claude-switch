@@ -21,10 +21,10 @@ jobs:
         node-version: [20.x, 22.x, 24.x]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -48,3 +48,22 @@ jobs:
         run: |
           $files = Get-ChildItem -Path dist/test -Filter "*.test.js" | ForEach-Object { $_.FullName }
           node --test @files
+
+      # Coverage report posted to the job summary on a single canonical runner
+      # (ubuntu + LTS node). Avoids 9 racing reports across the matrix.
+      - name: Coverage report (job summary)
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
+        run: |
+          set -o pipefail
+          REPORT=$(node --test \
+            --experimental-test-coverage \
+            --test-coverage-include='dist/src/**/*.js' \
+            dist/test/*.test.js 2>&1 \
+            | sed -n '/start of coverage report/,/end of coverage report/p')
+          {
+            echo "## Coverage report"
+            echo ""
+            echo '```'
+            echo "$REPORT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
