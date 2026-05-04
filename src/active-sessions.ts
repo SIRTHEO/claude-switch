@@ -35,11 +35,11 @@ export function countActiveClaudeSessions(
   realClaudePath: string | null,
   selfPid: number = process.pid,
 ): ActiveSessionsResult {
-  if (process.platform === 'win32') {
-    return { count: 0, unsupportedReason: 'windows' };
-  }
   if (!realClaudePath) {
     return { count: 0, unsupportedReason: 'no-real-claude' };
+  }
+  if (process.platform === 'win32') {
+    return { count: 0, unsupportedReason: 'windows' };
   }
 
   let raw: string;
