@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.1](https://github.com/SIRTHEO/claude-switch/compare/v2.6.0...v2.6.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* **active-sessions:** null check before platform check ([#3](https://github.com/SIRTHEO/claude-switch/issues/3)) ([6fb6cb1](https://github.com/SIRTHEO/claude-switch/commit/6fb6cb1bc4c0e139fe8b89f85cc7a3833f460e05))
+
 ## [2.6.0](https://github.com/SIRTHEO/claude-switch/compare/v2.5.2...v2.6.0) (2026-04-30)
 
 
