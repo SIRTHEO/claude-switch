@@ -1,0 +1,34 @@
+name: Deprecate old versions
+
+on:
+  workflow_dispatch:
+    inputs:
+      up_to_version:
+        description: 'Deprecate all versions strictly older than this (e.g. 2.8.0)'
+        required: true
+        default: '2.8.0'
+
+jobs:
+  deprecate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.x'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Deprecate older versions
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TARGET: ${{ github.event.inputs.up_to_version }}
+        run: |
+          VERSIONS=$(npm view @sirtheo/claude-switch versions --json | node -e "
+            const semver = require('semver');
+            const target = process.env.TARGET;
+            const all = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+            console.log(all.filter(v => semver.lt(v, target)).join(' '));
+          ")
+          MSG="Please upgrade: npm install -g @sirtheo/claude-switch — ${TARGET} is the latest stable release."
+          for v in $VERSIONS; do
+            echo "Deprecating $v..."
+            npm deprecate "@sirtheo/claude-switch@${v}" "$MSG"
+          done
