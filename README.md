@@ -276,7 +276,7 @@ Full changelog: [CHANGELOG.md](CHANGELOG.md) · [GitHub Releases](https://github
 
 ## Contributing
 
-Pull requests welcome. Releases are fully automated — see [CONTRIBUTING.md](CONTRIBUTING.md) for the commit-message conventions that drive version bumps.
+Pull requests welcome. Releases are fully automated — see [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the commit-message conventions that drive version bumps.
 
 ---
 
