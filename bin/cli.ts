@@ -679,7 +679,7 @@ async function main(): Promise<void> {
       if (answer) {
         const ok = performUpdate();
         if (ok) {
-          console.log('\nUpdated. Restart claude to use the new version.');
+          console.log(`\nUpdated to v${updateInfo.latestVersion}. Open a new terminal to use the new version.`);
           process.exit(0);
         } else {
           console.error('\nUpdate failed. Run manually:');
