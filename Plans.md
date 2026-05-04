@@ -162,7 +162,7 @@ Primitives shipped (eef0f0c, 55c041a, 5b1514d, a0f2659). Remaining: real verific
 | 7.3 | Menu: "Open account isolated" as first Profiles option | Shown when saved accounts exist; picks account → ensure → launch with `CLAUDE_CONFIG_DIR`; spinner feedback; needsLogin guard | 7.2 | cc:完了 [0458801] |
 | 7.4 | README rewrite for average user | Focus on `claude switch` first; auto-update banner; GitHub star CTA ×2; global vs isolated table; simpler troubleshooting | 7.1, 7.3 | cc:完了 [0a30793] |
 | 7.5 | E2E test: auto-update fires on passthrough with newer cached version | Manually verify on machine with 2.7.0 after 2.8.0 published: seed cache with newer version → run `claude` → confirm background npm update starts | 7.1 | cc:TODO |
-| 7.6 | Push + merge release-please PR → 2.8.0 on npm | npm package live; 2 feat commits → minor bump | 7.1–7.4 | cc:TODO |
+| 7.6 | Push + merge release-please PR → 2.8.0 on npm | npm package live; 2 feat commits → minor bump | 7.1–7.4 | cc:完了 [2.8.0] |
 
 ---
 
