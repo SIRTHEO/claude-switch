@@ -451,14 +451,16 @@ describe('reAuthenticate — with mocked spawnSync', () => {
   });
 
   it('returns email and saves account when login succeeds', async () => {
-    // Simulate: before=expired, spawn writes new token to claudeJson
+    // Simulate: before=expired, spawn writes new token to claudeJson.
+    // getTokenHealth reads account.accessToken and account.expiresAt at the
+    // oauthAccount level (not inside tokenInfo).
     fs.writeFileSync(claudeJson, JSON.stringify({
-      oauthAccount: { emailAddress: 'me@x.com', tokenInfo: { expiresAt: 1 } },
+      oauthAccount: { emailAddress: 'me@x.com', accessToken: 'tok-old', expiresAt: 1 },
     }));
     const spawnFn: SwitcherDeps['spawnSyncFn'] = (cmd, args, opts) => {
       // Simulate login: write fresh token
       fs.writeFileSync(claudeJson, JSON.stringify({
-        oauthAccount: { emailAddress: 'me@x.com', tokenInfo: { expiresAt: Date.now() + 9_999_999 } },
+        oauthAccount: { emailAddress: 'me@x.com', accessToken: 'tok-fresh', expiresAt: Date.now() + 9_999_999 },
       }));
       return makeSpawnFn(0)!(cmd, args, opts);
     };

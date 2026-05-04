@@ -15,17 +15,25 @@ import {
 } from '../src/profiles.js';
 
 // All tests redirect HOME so the profiles dir is sandboxed in /tmp.
+// On Windows, os.homedir() uses USERPROFILE (not HOME), so both are set.
 let tmpHome: string;
 let origHome: string | undefined;
+let origUserProfile: string | undefined;
 
 beforeEach(() => {
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-profiles-'));
   origHome = process.env.HOME;
+  origUserProfile = process.env.USERPROFILE;
   process.env.HOME = tmpHome;
+  if (process.platform === 'win32') process.env.USERPROFILE = tmpHome;
 });
 afterEach(() => {
   if (origHome === undefined) delete process.env.HOME;
   else process.env.HOME = origHome;
+  if (process.platform === 'win32') {
+    if (origUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = origUserProfile;
+  }
   fs.rmSync(tmpHome, { recursive: true, force: true });
 });
 
