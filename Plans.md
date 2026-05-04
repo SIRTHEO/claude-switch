@@ -24,7 +24,10 @@ Branch must be green and committable.
 | 0.2 | Decide scope: ship `auto-engage` in 2.7.0 OR split into separate release | **Decided 2026-05-04: SPLIT.** Auto-engage is incomplete WIP (function defined in `src/auto-fallback.ts` but never called from `bin/cli.ts`). Unrelated to per-terminal isolation. Patch parked at `.claude/docs/wip-patches/auto-engage-2026-05-04.patch`. Will land as a separate PR after wiring + tests, target 2.7.1 or later | 0.1 | cc:完了 |
 | 0.3 | Branch hygiene: split off-topic WIP into dedicated branches | Done: `fix/windows-ci-active-sessions` created from main with the Windows fix; auto-engage WIP parked as patch; `experiment/per-terminal-isolation` reverted to clean profile-only state + Harness scaffold commit | 0.2 | cc:完了 |
 | 0.4 | TypeScript strictness audit | `tsc --noEmit` green with `noUncheckedIndexedAccess` enabled (or documented opt-out per-file) | 0.3 | cc:TODO |
-| 0.5 | Coverage audit (`node --experimental-test-coverage` or `c8`) | Report committed under `.claude/docs/reports/coverage-2026-05.md`; modules <60% line coverage flagged | 0.3 | cc:TODO |
+| 0.5 | Coverage audit (`node --experimental-test-coverage` or `c8`) | Report committed under `.claude/docs/reports/coverage-2026-05.md`; modules <60% line coverage flagged | 0.3 | cc:完了 |
+| 0.6 | Cover `switcher.ts` (legacy account switching) — currently **42.58%** line / 66.67% func | New `test/switcher.test.ts` covering: rollback path on Keychain write failure after JSON mutation, alias-loop / dangling-alias cases, `--as <account>` temporary-switch + auto-restore. Target: ≥ 75% line | 0.5 | cc:TODO |
+| 0.7 | Cover `find-claude.ts` (currently 50% line / 0% funcs) | Tests for missing-binary fallback + PATH search; target ≥ 75% line | 0.5 | cc:TODO |
+| 0.8 | Cover `usage.ts` rate-limit + background-refresh paths (currently 69.92% line) | Tests for `rateLimitedUntil` honouring + `triggerBackgroundUsageRefresh` non-blocking semantics; target ≥ 80% line. Required before unparking auto-engage WIP | 0.5 | cc:TODO |
 
 ---
 
