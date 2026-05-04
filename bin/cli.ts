@@ -22,7 +22,6 @@ import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
 import { fallbackEnvFor } from '../src/fallback-env.js';
 import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback } from '../src/auto-fallback.js';
 import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
-import { selectAccountInteractive } from '../src/ui/select-account.js';
 import { runMainMenu } from '../src/ui/main-menu.js';
 import { setApiKeyInteractive } from '../src/ui/set-apikey.js';
 import { runSetupWizard } from '../src/ui/setup-wizard.js';
@@ -486,7 +485,7 @@ async function main(): Promise<void> {
   if (cmd.action === 'profile-status') {
     const { readProfile, listProfiles } = await import('../src/profiles.js');
     if (cmd.name) {
-      let info;
+      let info: ReturnType<typeof readProfile>;
       try { info = readProfile(cmd.name); }
       catch (e) { throw new ExitError((e as Error).message); }
       console.log(`Profile: ${info.name}`);
@@ -542,7 +541,7 @@ async function main(): Promise<void> {
         `Profile "${cmd.name}" does not exist. Create it with: claude switch profile create ${cmd.name}`,
       );
     }
-    let info;
+    let info: ReturnType<typeof readProfile>;
     try { info = readProfile(cmd.name); }
     catch (e) { throw new ExitError((e as Error).message); }
     if (!info.hasLogin) {
@@ -567,7 +566,7 @@ async function main(): Promise<void> {
   }
   if (cmd.action === 'profile-import') {
     const { importProfileFromAccount } = await import('../src/profiles.js');
-    let result;
+    let result: ReturnType<typeof importProfileFromAccount>;
     try {
       result = importProfileFromAccount(cmd.email, aDir, cmd.profileName);
     } catch (e) {
@@ -594,7 +593,7 @@ async function main(): Promise<void> {
   }
   if (cmd.action === 'profile-remove') {
     const { removeProfile } = await import('../src/profiles.js');
-    let result;
+    let result: ReturnType<typeof removeProfile>;
     try { result = removeProfile(cmd.name); }
     catch (e) { throw new ExitError((e as Error).message); }
     console.log(`Removed profile dir: ${result.dir}`);
@@ -679,7 +678,7 @@ async function main(): Promise<void> {
         console.log(switchTo(matches[0]!, cJson, aDir));
       } else if (matches.length > 1) {
         console.log('Multiple matches:');
-        matches.forEach(m => console.log(`  ${m}`));
+        for (const m of matches) console.log(`  ${m}`);
         console.log('Be more specific.');
       } else {
         console.log(`No account matching "${cmd.target}". Run: claude switch list`);
@@ -1011,7 +1010,7 @@ async function main(): Promise<void> {
         const fmtReset = (iso?: string): string => {
           if (!iso) return '';
           const d = new Date(iso);
-          if (isNaN(d.getTime())) return '';
+          if (Number.isNaN(d.getTime())) return '';
           const min = Math.round((d.getTime() - Date.now()) / 60_000);
           if (min < 60) return ` (resets in ${min}m)`;
           if (min < 60 * 24) return ` (resets in ${Math.round(min / 60)}h)`;

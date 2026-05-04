@@ -9,7 +9,7 @@ import { getAutoFallbackConfig, setAutoFallbackConfig } from '../auto-fallback.j
 import { getApiKey, removeApiKey, maskApiKey } from '../apikey.js';
 import { getAliasesForEmail, setAlias, removeAlias } from '../aliases.js';
 import { withLock } from '../lock.js';
-import { readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh, fetchUsageCached, getAccessTokenFromKeychain } from '../usage.js';
+import { readUsageCache, readUsageCacheFor, isUsageCacheStale, fetchUsageCached, getAccessTokenFromKeychain } from '../usage.js';
 import { selectAccountInteractive } from './select-account.js';
 import { setApiKeyInteractive } from './set-apikey.js';
 import { addAccountInteractive } from './add-account.js';

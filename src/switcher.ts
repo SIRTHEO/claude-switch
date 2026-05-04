@@ -73,7 +73,7 @@ export async function switchInteractive(claudeJsonPath: string, accountsDirPath:
   const choice = await ask(`\nSwitch to [1-${accounts.length}]: `);
   const index = parseInt(choice, 10);
 
-  if (isNaN(index) || index < 1 || index > accounts.length) {
+  if (Number.isNaN(index) || index < 1 || index > accounts.length) {
     throw new ExitError('Invalid choice.');
   }
 
