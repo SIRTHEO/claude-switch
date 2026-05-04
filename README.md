@@ -213,6 +213,19 @@ The badge turns yellow at 75% usage and red at 90%, so you can see when you're a
 claude switch --completions bash >> ~/.bashrc       # or zsh / fish / powershell
 ```
 
+### Keyboard shortcuts in the menu
+
+The interactive menu uses [@clack/prompts](https://github.com/natemoo-re/clack) — same conventions as `create-vite`, `create-astro`, etc.
+
+| Key | Action |
+|---|---|
+| `↑` / `↓` | Move selection |
+| `Enter` | Confirm |
+| `Esc` or `Ctrl+C` | Cancel the current step (returns to previous menu, or exits if at root) |
+| `y` / `n` | Answer yes/no on confirms |
+
+Set `NO_COLOR=1` (env var) or pass `--no-color` to the `statusline` command to disable ANSI colour entirely.
+
 ---
 
 ## When something goes wrong
