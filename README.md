@@ -22,6 +22,9 @@ claude                        # then keep using claude as you always have
 - 🪶 **It's just a wrapper.** You keep typing `claude` like you always have. claude-switch is invisible.
 - 🎛️ **`claude switch` opens a menu.** No flags to memorize. Pick what you want.
 - 🔁 **Smart auto-revert.** Hit your Max/Pro rate limit? claude-switch can switch to your API key automatically — and switch back to your subscription the moment usage drops back below your threshold. Never burn API credits when you don't need to.
+- 🪞 **Per-terminal profiles** _(new in 2.7)_. Open two terminals on two different accounts at the same time, no interference. See [Profiles](#profiles--true-per-terminal-isolation-new-in-27).
+
+**Quick links:** [Install](#install) · [Daily use](#daily-use--just-type-claude-switch) · [Profiles](#profiles--true-per-terminal-isolation-new-in-27) · [Auto-revert](#auto-revert-to-oauth-the-killer-feature) · [Troubleshooting](#when-something-goes-wrong) · [Security](#security) · [What's new](#whats-new)
 
 ---
 
@@ -263,6 +266,10 @@ Set `NO_COLOR=1` (env var) or pass `--no-color` to the `statusline` command to d
 ---
 
 ## What's new
+
+**v2.7.x** — **Profiles**. True per-terminal isolation via `claude switch profile use`. Each profile is its own Keychain entry / userID / session — open two terminals on two different accounts at the same time, no interference. Coexists with the legacy global-switch flow. See the [Profiles section](#profiles--true-per-terminal-isolation-new-in-27).
+
+**v2.6.x** — `claude switch` warns you when other claude REPL sessions are still running before flipping the active account, so you don't get silent token drift. Cross-platform CI (Linux + macOS + Windows × Node 20/22/24).
 
 **v2.5.x** — `claude switch statusline install` patches Claude Code's status bar in one command. Auto-install offered during setup. Idempotent and safe with custom configs.
 
