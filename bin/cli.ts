@@ -16,7 +16,7 @@ import { ExitError } from '../src/errors.js';
 import { setAlias, listAliases, removeAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
 import { getTokenHealth } from '../src/token.js';
 import { getSavedClaudeBin, runSetup } from '../src/setup.js';
-import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
+import { checkForUpdate, fetchLatestVersionSync, performUpdate, performUpdateBackground, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
 import { isFallbackEnabled, isFallbackAutoEngaged, setFallbackEnabled } from '../src/fallback.js';
 import { fallbackEnvFor } from '../src/fallback-env.js';
@@ -662,12 +662,13 @@ async function main(): Promise<void> {
   }
 
   // Check for update (reads cache synchronously — never blocks).
-  // Skip for passthrough/temporary-switch to avoid polluting claude's output.
-  const updateInfo = (cmd.action !== 'passthrough' && cmd.action !== 'temporary-switch')
+  // Passthrough is now included: a background auto-update fires before exec.
+  // temporary-switch is still skipped (short-lived, not worth the noise).
+  const updateInfo = cmd.action !== 'temporary-switch'
     ? checkForUpdate(VERSION)
     : null;
 
-  if (updateInfo && cmd.action !== 'update') {
+  if (updateInfo && cmd.action !== 'update' && cmd.action !== 'passthrough') {
     const isTTY = process.stdin.isTTY && process.stderr.isTTY;
     if (isTTY) {
       // Interactive terminal: offer to update now.
@@ -1284,6 +1285,14 @@ async function main(): Promise<void> {
         );
       } else if (engage.blocked) {
         process.stderr.write(`⚠ auto-engage wanted to switch to API key but ${engage.blocked}\n\n`);
+      }
+      // Auto-update in background: fires before exec so the new binary is
+      // ready on the next invocation without any startup delay.
+      if (updateInfo) {
+        process.stderr.write(
+          `🔄 claude-switch ${VERSION} → ${updateInfo.latestVersion} — updating in background\n\n`,
+        );
+        performUpdateBackground();
       }
       // Banner on stderr so we don't pollute structured stdout (e.g. when
       // claude is piped into jq with --output-format json).
