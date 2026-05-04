@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.8.0](https://github.com/SIRTHEO/claude-switch/compare/v2.7.0...v2.8.0) (2026-05-04)
+
+
+### Features
+
+* **profiles:** one-step 'open account isolated' from menu ([0458801](https://github.com/SIRTHEO/claude-switch/commit/045880194518a2f56bdf353bd2339d740f152857))
+* **update:** auto-update in background on passthrough ([52cf892](https://github.com/SIRTHEO/claude-switch/commit/52cf89263240141443158854190e20f17dc6651f))
+
+
+### Documentation
+
+* focus README on claude switch first + auto-update banner ([0a30793](https://github.com/SIRTHEO/claude-switch/commit/0a307938a72b1041a07e75b71877724df18f3509))
+* **plans:** add Phase 7 tasks for 2.8.0 (auto-update + one-step isolation) ([d1dd8c9](https://github.com/SIRTHEO/claude-switch/commit/d1dd8c9ee7a7662283b8570a5ff03715837ee123))
+* **plans:** mark 6.5 complete — 2.7.0 published to npm ([7325c63](https://github.com/SIRTHEO/claude-switch/commit/7325c63625472f8b58fcd6fcfe44b146103444e8))
+
 ## [2.7.0](https://github.com/SIRTHEO/claude-switch/compare/v2.6.1...v2.7.0) (2026-05-04)
 
 
