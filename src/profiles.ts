@@ -295,3 +295,69 @@ export function importProfileFromAccount(
     needsLogin,
   };
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Idempotent "open account isolated" helper
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface EnsureProfileResult {
+  profileName: string;
+  profilePath: string;
+  emailAddress: string;
+  /** True when the profile exists but has no credentials — user must authenticate. */
+  needsLogin: boolean;
+  /** True when we created a new profile (as opposed to reusing an existing one). */
+  created: boolean;
+}
+
+/**
+ * Find or create an isolated profile for the given account email.
+ *
+ * If a profile already linked to `email` exists, it is returned as-is.
+ * Otherwise the legacy saved account is imported into a fresh profile —
+ * no browser re-login required when a Keychain snapshot is present.
+ */
+export function ensureProfileForAccount(
+  email: string,
+  accountsDirPath: string,
+): EnsureProfileResult {
+  // Check all profiles for an email match (covers logged-in profiles).
+  for (const name of listProfiles()) {
+    try {
+      const info = readProfile(name);
+      if (info.emailAddress === email) {
+        return {
+          profileName: name,
+          profilePath: info.path,
+          emailAddress: email,
+          needsLogin: !info.hasLogin,
+          created: false,
+        };
+      }
+    } catch { /* skip unreadable profiles */ }
+  }
+
+  // Profiles imported without credentials don't have oauthAccount (and so
+  // emailAddress is null). Fall back to the name that importProfileFromAccount
+  // would derive — if that profile already exists, treat it as ours.
+  const derivedName = (email.split('@')[0] ?? email).replace(/[^A-Za-z0-9_-]/g, '_');
+  if (isValidProfileName(derivedName) && profileExists(derivedName)) {
+    const info = readProfile(derivedName);
+    return {
+      profileName: derivedName,
+      profilePath: info.path,
+      emailAddress: email,
+      needsLogin: !info.hasLogin,
+      created: false,
+    };
+  }
+
+  const result = importProfileFromAccount(email, accountsDirPath);
+  return {
+    profileName: result.profileName,
+    profilePath: result.profilePath,
+    emailAddress: email,
+    needsLogin: result.needsLogin,
+    created: true,
+  };
+}

@@ -9,6 +9,7 @@ import {
   createProfile,
   removeProfile,
   importProfileFromAccount,
+  ensureProfileForAccount,
   profilePath,
   isValidProfileName,
   profileExists,
@@ -17,6 +18,7 @@ import { list as listAccounts } from '../accounts.js';
 import { buildSpawnArgs } from '../proxy.js';
 
 type ProfileAction =
+  | 'isolated'
   | 'list'
   | 'use'
   | 'login'
@@ -31,10 +33,18 @@ async function pickProfileAction(accountsDirPath: string): Promise<ProfileAction
 
   const options: Array<{ value: ProfileAction; label: string; hint?: string }> = [];
 
+  if (accounts.length > 0) {
+    options.push({
+      value: 'isolated',
+      label: 'Open account isolated',
+      hint: 'pick an account → launch it in its own isolated session',
+    });
+  }
+
   if (profiles.length > 0) {
     options.push({
       value: 'use',
-      label: 'Use profile',
+      label: 'Use saved profile',
       hint: 'launch claude with per-terminal isolation',
     });
     options.push({
@@ -94,6 +104,53 @@ export async function runProfilesMenu(
 
     try {
       switch (action) {
+        case 'isolated': {
+          const accounts = listAccounts(accountsDirPath);
+          if (accounts.length === 0) {
+            p.note('No saved accounts. Add one with "claude switch add".', 'Empty');
+            break;
+          }
+          const emailPick = await p.select<string>({
+            message: 'Open which account isolated?',
+            options: accounts.map(a => ({ value: a, label: a })),
+          });
+          if (p.isCancel(emailPick)) break;
+
+          const spinner = p.spinner();
+          spinner.start('Setting up isolated session…');
+          let ensured: ReturnType<typeof ensureProfileForAccount>;
+          try {
+            ensured = ensureProfileForAccount(emailPick, accountsDirPath);
+          } catch (e) {
+            spinner.stop('Failed');
+            p.note((e as Error).message, 'Error');
+            break;
+          }
+          spinner.stop(ensured.created ? `Profile "${ensured.profileName}" created` : `Using profile "${ensured.profileName}"`);
+
+          if (ensured.needsLogin) {
+            p.note(
+              `Profile "${ensured.profileName}" needs a one-time browser login.\n` +
+              `Run: claude switch profile login ${ensured.profileName}`,
+              'Authentication required',
+            );
+            break;
+          }
+
+          restoreBuffer();
+          process.stderr.write(`🔑 ${emailPick} (isolated) — profile: ${ensured.profileName}\n\n`);
+          const { command, args: spawnArgs, options: spawnOpts } = buildSpawnArgs(
+            claudeBin, [], process.platform, { CLAUDE_CONFIG_DIR: ensured.profilePath },
+          );
+          const result = spawnSync(command, spawnArgs, spawnOpts);
+          if (result.error) {
+            process.stderr.write(`Error: could not run claude: ${result.error.message}\n`);
+            process.exit(1);
+          }
+          process.exit(result.status ?? 0);
+          break;
+        }
+
         case 'list': {
           const profiles = listProfiles();
           if (profiles.length === 0) {

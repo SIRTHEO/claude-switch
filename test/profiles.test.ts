@@ -12,6 +12,7 @@ import {
   readProfile,
   removeProfile,
   importProfileFromAccount,
+  ensureProfileForAccount,
 } from '../src/profiles.js';
 
 // All tests redirect HOME so the profiles dir is sandboxed in /tmp.
@@ -269,5 +270,51 @@ describe('importProfileFromAccount', () => {
     // Our impl does .replace(/[^A-Za-z0-9_-]/g, '_') so it becomes "foo_bar". Verify.
     const result = importProfileFromAccount('foo+bar@x.com', accountsDir);
     assert.strictEqual(result.profileName, 'foo_bar');
+  });
+});
+
+describe('ensureProfileForAccount', () => {
+  let accountsDir: string;
+  beforeEach(() => {
+    accountsDir = path.join(tmpHome, '.claude', 'accounts');
+    fs.mkdirSync(accountsDir, { recursive: true });
+  });
+
+  it('creates a new profile when none exists for the email', () => {
+    fs.writeFileSync(path.join(accountsDir, 'new@x.com.json'), JSON.stringify({ emailAddress: 'new@x.com' }));
+    const result = ensureProfileForAccount('new@x.com', accountsDir);
+    assert.strictEqual(result.emailAddress, 'new@x.com');
+    assert.strictEqual(result.created, true);
+    assert.ok(profileExists(result.profileName));
+  });
+
+  it('reuses an existing profile already linked to the email', () => {
+    fs.writeFileSync(path.join(accountsDir, 'mine@x.com.json'), JSON.stringify({ emailAddress: 'mine@x.com' }));
+    const first = ensureProfileForAccount('mine@x.com', accountsDir);
+    assert.strictEqual(first.created, true);
+
+    // Second call must reuse, not create.
+    const second = ensureProfileForAccount('mine@x.com', accountsDir);
+    assert.strictEqual(second.profileName, first.profileName);
+    assert.strictEqual(second.created, false);
+  });
+
+  it('needsLogin=true when no credential snapshot in account', () => {
+    fs.writeFileSync(path.join(accountsDir, 'pre@x.com.json'), JSON.stringify({ emailAddress: 'pre@x.com' }));
+    const result = ensureProfileForAccount('pre@x.com', accountsDir);
+    assert.strictEqual(result.needsLogin, true);
+  });
+
+  it('needsLogin=false when reusing a profile that already has a login', () => {
+    const dir = createProfile('ready');
+    fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({
+      userID: 'a'.repeat(64),
+      oauthAccount: { emailAddress: 'ready@x.com' },
+    }));
+    // Profile already exists and has login — no account file needed.
+    const result = ensureProfileForAccount('ready@x.com', accountsDir);
+    assert.strictEqual(result.needsLogin, false);
+    assert.strictEqual(result.created, false);
+    assert.strictEqual(result.profileName, 'ready');
   });
 });
