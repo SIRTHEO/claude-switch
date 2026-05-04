@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getCurrent, save, load, list, remove } from '../src/accounts.js';
+import { getCurrent, save, list, remove } from '../src/accounts.js';
 import { switchTo, fuzzyMatch, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switcher.js';
 import { setAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
 

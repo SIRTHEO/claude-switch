@@ -12,6 +12,8 @@
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc && node -e \"require('fs').chmodSync('dist/bin/cli.js', 0o755)\"",
+    "lint": "biome lint src bin test",
+    "lint:fix": "biome lint --write --unsafe src bin test",
     "test": "npm run build && node --test dist/test/*.test.js",
     "prepublishOnly": "npm test"
   },
@@ -64,6 +66,7 @@
     "README.md"
   ],
   "devDependencies": {
+    "@biomejs/biome": "^2.4.14",
     "@types/node": "^25.5.0",
     "typescript": "^6.0.2"
   },

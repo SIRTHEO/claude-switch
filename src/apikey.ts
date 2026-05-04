@@ -62,7 +62,7 @@ export function setApiKey(email: string, key: string, accountsDirPath: string): 
 export function removeApiKey(email: string, accountsDirPath: string): boolean {
   const file = accountFilePath(email, accountsDirPath);
   const data = readAccountFile(file);
-  if (!data || !data._apiKey) return false;
+  if (!data?._apiKey) return false;
   delete data._apiKey;
   writeAccountFile(file, data);
   return true;

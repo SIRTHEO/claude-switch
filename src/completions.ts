@@ -59,7 +59,7 @@ compdef _claude_switch claude`;
 
 export function generateFish(): string {
   return `complete -c claude -n '__fish_seen_subcommand_from switch' -a '${SUBCOMMANDS.join(' ')}' -d 'switch subcommand'
-complete -c claude -n '__fish_seen_subcommand_from switch' -a '(for f in ~/.claude/accounts/*.json; set name (basename "$f" .json); string match -rq \'^[A-Za-z0-9._+@-]+$\' -- $name; and echo $name; end)' -d 'account'`;
+complete -c claude -n '__fish_seen_subcommand_from switch' -a '(for f in ~/.claude/accounts/*.json; set name (basename "$f" .json); string match -rq '^[A-Za-z0-9._+@-]+$' -- $name; and echo $name; end)' -d 'account'`;
 }
 
 export function generatePowerShell(): string {

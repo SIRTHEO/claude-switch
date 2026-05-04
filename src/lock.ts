@@ -51,7 +51,7 @@ function tryClaim(file: string): boolean {
 }
 
 function reclaimIfStale(file: string): boolean {
-  let stat;
+  let stat: fs.Stats;
   try {
     stat = fs.statSync(file);
   } catch {

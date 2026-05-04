@@ -37,7 +37,7 @@ function healthFromExpiry(accessToken: string | undefined, rawExpiry: unknown): 
     return { status: 'present' };
   }
 
-  if (isNaN(expiresAt.getTime())) return { status: 'present' };
+  if (Number.isNaN(expiresAt.getTime())) return { status: 'present' };
 
   const diffMs = expiresAt.getTime() - Date.now();
   const expiresIn = formatRelativeTime(diffMs);
