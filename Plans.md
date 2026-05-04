@@ -60,7 +60,8 @@ release-please works but the changelog format and the README story can be sharpe
 | 2.4 | Add npm install/version badges to README | **No-op verified 2026-05-04**. README already has 4 badges: npm version, npm downloads, MIT license, Node.js CI status | 2.3 | cc:完了 |
 | 2.5 | `claude switch --help` text matches README claims | **Verified 2026-05-04**. Help text covers all surfaces: account switch (alias/email/fuzzy), add/list/remove, alias mgmt, apikey set/show/remove, fallback on/off/auto + threshold, usage, statusline (4 sub-cmds), profile (7 sub-cmds incl. import), update, setup, --as flag, --completions. Claims in current README all map to documented commands. Profile section in README will land via 6.2 | 2.3 | cc:完了 |
 | 2.6 | `npm publish --provenance` already on; verify SLSA attestation visible on npmjs.com | **Verified 2026-05-04**: `npm view @sirtheo/claude-switch dist.attestations` returns `predicateType: https://slsa.dev/provenance/v1` for v2.6.1; signed with key `SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U`. Provenance live | - | cc:完了 |
-| 2.7 | Pre-release dry run: `release-please --dry-run` from current branch state | Output matches expected 2.7.0 shape | 0.3, 4.5 | cc:TODO |
+| 2.7 | Pre-release dry run: `release-please --dry-run` from current branch state | Output matches expected 2.7.0 shape | 0.3, 4.5 | cc:完了 |
+| 2.7-result | Predicted release on merge: **2.7.0** (minor — 2 feat commits). Sections: 2 Features (profiles isolation + import), 1 Refactor (TS strict), 9 Documentation. Hidden: 5 test/3 chore/2 ci. Verified by `git log main..HEAD --pretty=format:'%s'` analysis 2026-05-04 | (informational row) | - | - |
 
 ---
 
