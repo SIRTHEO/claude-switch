@@ -55,7 +55,8 @@ release-please works but the changelog format and the README story can be sharpe
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
 | 2.1 | Audit `release-please-config.json` sections | **No-op verified 2026-05-04**. Distribution of 6-month commits (top 11 types) all map to existing config sections; `ux`+`ui` already consolidated under "User Experience"; hidden types (chore/test/build/ci/release) all suppressed correctly. Config is correct as-is | - | cc:完了 |
-| 2.2 | CHANGELOG.md format review | Past 5 entries audited for clarity; conventions documented in `CONTRIBUTING.md` | 2.1 | cc:TODO |
+| 2.2 | CHANGELOG.md format review | Past 5 entries audited for clarity; conventions documented in `CONTRIBUTING.md` | 2.1 | cc:完了 |
+| 2.2-result | **Audit 2026-05-04**: CHANGELOG entries (v2.5.2/2.6.0) follow release-please standard (h2 release link, h3 sections, commit hash links). CONTRIBUTING.md already has full Conventional Commits docs incl. release-trigger table. Minor cosmetic: an orphan boilerplate `## Changelog ... description` block sits at bottom of CHANGELOG.md (release-please prepends new entries above original header — harmless but ugly). Leaving as-is to avoid bleed with release-please's prepend logic | - | - |
 | 2.3 | README structure pass | TOC, Quickstart in <60s, "Profiles" section drafted (filled in Phase 4), FAQ pruned | - | cc:TODO |
 | 2.4 | Add npm install/version badges to README | **No-op verified 2026-05-04**. README already has 4 badges: npm version, npm downloads, MIT license, Node.js CI status | 2.3 | cc:完了 |
 | 2.5 | `claude switch --help` text matches README claims | **Verified 2026-05-04**. Help text covers all surfaces: account switch (alias/email/fuzzy), add/list/remove, alias mgmt, apikey set/show/remove, fallback on/off/auto + threshold, usage, statusline (4 sub-cmds), profile (7 sub-cmds incl. import), update, setup, --as flag, --completions. Claims in current README all map to documented commands. Profile section in README will land via 6.2 | 2.3 | cc:完了 |
@@ -105,7 +106,7 @@ Primitives shipped (eef0f0c, 55c041a, 5b1514d, a0f2659). Remaining: real verific
 | 4.4 | Hysteresis test: auto-engage at 95% → auto-revert at 80% → no flapping | Simulated usage trace; verified single transition each direction | 4.3 | cc:TODO |
 | 4.5 | TUI exposure: settings menu for thresholds | New menu entry "Auto-fallback settings"; reads/writes `.auto-fallback.json` via `setAutoFallbackConfig`; validates invariant | 4.3, 3b.1 | cc:TODO |
 | 4.6 | Statusline: show when fallback is auto-engaged vs manual | Visual difference (icon/color) between manual and auto modes | 4.5 | cc:TODO |
-| 4.7 | Per-profile fallback config? Decide and document | Either: shared global config (current), or per-profile `.auto-fallback.json`. Decision in `.claude/docs/design/` | 4.1, 3a.1 | cc:TODO |
+| 4.7 | Per-profile fallback config? Decide and document | **Decided 2026-05-04: KEEP GLOBAL.** Reasoning in `.claude/docs/design/profile-fallback-scope.md`: API key is per-account-not-per-profile (so per-profile toggle is policy without enforcement); profile picker already pins identity, fallback is a billing-posture decision; mixing layers complicates reasoning. No code change needed | 4.1, 3a.1a | cc:完了 |
 
 ---
 
@@ -118,7 +119,8 @@ Primitives shipped (eef0f0c, 55c041a, 5b1514d, a0f2659). Remaining: real verific
 | 5.1 | UX audit: walk through every menu path on macOS, log friction | Notes in `.claude/docs/reports/tui-audit-2026-05.md` per menu screen | - | cc:完了 |
 | 5.2 | Split `main-menu.ts` into per-screen modules | Each menu screen <200 lines; shared helpers extracted | 5.1 | cc:TODO |
 | 5.3 | Loading states: long ops show a spinner (e.g. `keychain` writes, `usage` fetches) | All ops >200ms have feedback | 5.2 | cc:TODO |
-| 5.4 | Error rendering consistency | All errors go through one helper; format: title, cause, next step | 5.2 | cc:TODO |
+| 5.4 | Error rendering consistency | All errors go through one helper; format: title, cause, next step | 5.2 | cc:完了 |
+| 5.4-result | **Helper landed 2026-05-04**: `src/ui/notify.ts` with `notifyError`/`notifyOk`/`notifyInfo`/`notifyWarn` + 8 API tests. NOT yet retrofit into the 27 existing `p.note(...)` call sites — that migration belongs in 5.2 (split main-menu into per-screen modules) so the new modules adopt the helper from line 1 instead of churning through twice | - | - |
 | 5.5 | Color theme: review `src/ui/theme.ts` for accessibility (contrast, no-color env) | Theme respects `NO_COLOR=1`; verified in Linux ssh + Windows Terminal | 5.2 | cc:TODO |
 | 5.6 | Keyboard shortcuts: documented and consistent | All menus use same nav keys; cheatsheet added to README | 5.2 | cc:TODO |
 | 5.7 | Setup wizard polish (`src/ui/setup-wizard.ts` 195 lines) | First-run path tested on fresh `$HOME`; covered by E2E | 5.1 | cc:TODO |
@@ -129,9 +131,12 @@ Primitives shipped (eef0f0c, 55c041a, 5b1514d, a0f2659). Remaining: real verific
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 6.1 | Update FAQ entry on multi-terminal account drift | Replaces roadmap-issue link with concrete `claude switch profile use` instructions | 3b.1 | cc:TODO |
-| 6.2 | README "Profiles — true per-terminal isolation" section | Section explains UX + coexistence with legacy switch; example commands tested | 2.3, 3b.1 | cc:TODO |
-| 6.3 | CHANGELOG preview for 2.7.0 | Drafted from conventional commits; reviewed for user-facing language | 2.2 | cc:TODO |
+| 6.1 | Update FAQ entry on multi-terminal account drift | Replaces roadmap-issue link with concrete `claude switch profile use` instructions | 3b.1 | cc:完了 |
+| 6.1-result | Two FAQ touch-ups: (1) NEW entry "I want different terminals using different accounts at the same time" pointing at profiles; (2) existing "switched accounts but other sessions still show old" entry rewritten to remove the roadmap-issue link and direct users to profiles instead. Both link into the new Profiles section | - | - |
+| 6.2 | README "Profiles — true per-terminal isolation" section | Section explains UX + coexistence with legacy switch; example commands tested | 2.3, 3b.1 | cc:完了 |
+| 6.2-result | Section landed in README before the "Smart features" header. Covers: motivation (per-terminal isolation gap in legacy flow), 5-line quickstart, import flow for saved accounts, coexistence table (legacy vs profile), platform note (macOS verified, Linux/Windows simpler internals). Examples are exactly what 3a.1a smoke verified | - | - |
+| 6.3 | CHANGELOG preview for 2.7.0 | Drafted from conventional commits; reviewed for user-facing language | 2.2 | cc:完了 |
+| 6.3-result | Draft in `.claude/docs/reports/changelog-preview-2.7.0.md`. release-please-style auto entry + user-facing addendum (suggested for the GH Release body, NOT CHANGELOG.md). 23 commits ahead of main, 2 feat → 2.7.0 minor | - | - |
 | 6.4 | Open PR `experiment/per-terminal-isolation` → `main` | All CI checks green; review checklist linked | 1.*, 2.*, 3a.*, 3b.*, 4.*, 5.*, 6.1, 6.2, 6.3 | cc:TODO |
 | 6.5 | Merge + verify release-please publishes 2.7.0 | npm package live, GitHub Release created, install command works on a clean machine | 6.4 | cc:TODO |
 
