@@ -26,7 +26,7 @@ Branch must be green and committable.
 | 0.4 | TypeScript strictness audit | `tsc --noEmit` green with `noUncheckedIndexedAccess` enabled (or documented opt-out per-file) | 0.3 | cc:完了 |
 | 0.5 | Coverage audit (`node --experimental-test-coverage` or `c8`) | Report committed under `.claude/docs/reports/coverage-2026-05.md`; modules <60% line coverage flagged | 0.3 | cc:完了 |
 | 0.6 | Cover `switcher.ts` testable paths (best-effort within current architecture) | 10 new tests added: `switchTo` warning path + first-time-use, `savePendingRestore` overwrite + missing-dir, full `checkPendingRestore`/`clearPendingRestore` lifecycle. Branch coverage 88.89 → **97.50%**. Line stays at 43.36% because the uncovered remainder is `runTemporarySwitch` / `addAccount` / `reAuthenticate` which all spawn `claude` (impossible to unit-test without DI refactor — see 0.6b) | 0.5 | cc:完了 |
-| 0.6b | Refactor `switcher.ts` for testability: inject `spawnSync` + `readline` | Replace direct `spawnSync`/`readline` calls with injected helpers; existing call sites pass real impls; tests pass mocks. Target: ≥ 75% line on switcher.ts | 0.6 | cc:TODO |
+| 0.6b | Refactor `switcher.ts` for testability: inject `spawnSync` + `readline` | Replace direct `spawnSync`/`readline` calls with injected helpers; existing call sites pass real impls; tests pass mocks. Target: ≥ 75% line on switcher.ts | 0.6 | cc:完了 [a03ac74] |
 | 0.7 | Cover `find-claude.ts` (currently 50% line / 0% funcs) | Tests for missing-binary fallback + PATH search; target ≥ 75% line | 0.5 | cc:完了 |
 | 0.8 | Cover `usage.ts` rate-limit + background-refresh paths (currently 69.92% line) | Tests for `rateLimitedUntil` honouring + `triggerBackgroundUsageRefresh` non-blocking semantics; target ≥ 80% line. Required before unparking auto-engage WIP | 0.5 | cc:完了 |
 
@@ -83,18 +83,18 @@ Primitives shipped (eef0f0c, 55c041a, 5b1514d, a0f2659). Remaining: real verific
 | 3a.2 | Regression: legacy `claude switch <account>` still works after profile operations | Default Keychain entry intact; covered in same report | 3a.1a | cc:完了 |
 | 3a.3 | Audit `src/keychain.ts` profile codepaths for orphan-entry leaks | `security find-generic-password -s "Claude Code-credentials"` shows clean state after `profile remove`; documented | 3a.1a | cc:完了 |
 | 3a.4 | Linux behaviour spike (Docker container) | Findings in `.claude/docs/reports/profiles-linux.md`: tokens land in `<profile>/.claude.json`, no Keychain assumption; edge cases listed | 3a.1 | cc:TODO |
-| 3a.5 | Concurrency: two terminals on the same profile | Documented behaviour (lock contention, last-writer-wins, etc.) | 3a.1 | cc:TODO |
+| 3a.5 | Concurrency: two terminals on the same profile | Documented behaviour (lock contention, last-writer-wins, etc.) | 3a.1 | cc:完了 |
 | 3a.6 | Sub-process inheritance (MCP servers) | Verify spawned MCP processes inherit `CLAUDE_CONFIG_DIR`; documented | 3a.1a | cc:完了 |
 
 ### 3b — UX integration
 
 | Task | 内容 | DoD | Depends | Status |
 |------|------|-----|---------|--------|
-| 3b.1 | TUI Profiles submenu in `src/ui/main-menu.ts` | "Profiles" entry; create/use/list/remove/login reachable from menu | 3a.1, 3a.2 | cc:TODO |
+| 3b.1 | TUI Profiles submenu in `src/ui/main-menu.ts` | "Profiles" entry; create/use/list/remove/login reachable from menu | 3a.1, 3a.2 | cc:完了 [c6d9634] |
 | 3b.2 | `claude switch help` lists profile subcommands | Help text updated; tested via integration test | 3b.1 | cc:完了 |
-| 3b.3 | Statusline shows active profile | If `CLAUDE_CONFIG_DIR` ≠ default, statusline displays profile name | 3b.1 | cc:TODO |
-| 3b.4 | `claude switch profile status` UX review | Output shows: profile name, account email, token validity, Keychain entry, last used | 3b.1 | cc:TODO |
-| 3b.5 | Error messages: profile-already-exists, profile-not-found, login-required | Reviewed for clarity; tested | 3b.1 | cc:TODO |
+| 3b.3 | Statusline shows active profile | If `CLAUDE_CONFIG_DIR` ≠ default, statusline displays profile name | 3b.1 | cc:完了 [c6d9634] |
+| 3b.4 | `claude switch profile status` UX review | Output shows: profile name, account email, token validity, Keychain entry, last used | 3b.1 | cc:完了 [c6d9634] |
+| 3b.5 | Error messages: profile-already-exists, profile-not-found, login-required | Reviewed for clarity; tested | 3b.1 | cc:完了 [c6d9634] |
 
 ---
 
@@ -110,7 +110,7 @@ Primitives shipped (eef0f0c, 55c041a, 5b1514d, a0f2659). Remaining: real verific
 | 4.3 | Fill auto-engage tests | Tests for: triggers when 5h crosses 95%, triggers when 7d crosses 95%, no-op when no API key saved, no-op when already engaged, persists state | 4.2 | cc:完了 |
 | 4.4 | Hysteresis test: auto-engage at 95% → auto-revert at 80% → no flapping | Simulated usage trace; verified single transition each direction | 4.3 | cc:完了 |
 | 4.3-4-result | Both closed by the cherry-picked auto-engage commit. New `describe('maybeAutoEngageFallback', …)` block at `test/auto-fallback.test.ts:241` with 5h-crossing, 7d-crossing, no-API-key no-op, already-engaged no-op, threshold-invariant tests. Total `auto-fallback.test.ts` test count: 29 (was 11). Hysteresis verified via the engageThreshold > threshold invariant + the read-time clamp that protects pre-2.7.x configs | - | - |
-| 4.5 | TUI exposure: settings menu for thresholds | New menu entry "Auto-fallback settings"; reads/writes `.auto-fallback.json` via `setAutoFallbackConfig`; validates invariant | 4.3, 3b.1 | cc:TODO |
+| 4.5 | TUI exposure: settings menu for thresholds | New menu entry "Auto-fallback settings"; reads/writes `.auto-fallback.json` via `setAutoFallbackConfig`; validates invariant | 4.3, 3b.1 | cc:完了 [05f288b] |
 | 4.6 | Statusline: show when fallback is auto-engaged vs manual | Visual difference (icon/color) between manual and auto modes | 4.5 | cc:完了 |
 | 4.6-result | Sidecar marker `.fallback-auto-engaged` written when `maybeAutoEngageFallback` flips fallback ON; cleared on manual toggle (user intent overrides) and on disable. New `isFallbackAutoEngaged()` helper, exported. Statusline label: `API` (manual) vs `API auto` (auto-engaged), still in yellow. JSON output gains `fallbackAutoEngaged` field. 6 new tests covering on/off + manual-overrides-auto + perms | 4.5 | - |
 | 4.7 | Per-profile fallback config? Decide and document | **Decided 2026-05-04: KEEP GLOBAL.** Reasoning in `.claude/docs/design/profile-fallback-scope.md`: API key is per-account-not-per-profile (so per-profile toggle is policy without enforcement); profile picker already pins identity, fallback is a billing-posture decision; mixing layers complicates reasoning. No code change needed | 4.1, 3a.1a | cc:完了 |
