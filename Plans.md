@@ -45,7 +45,8 @@ Last 2 main runs failed (Windows test + deprecation warnings). Must be green bef
 | 1.4 | Add `tsc --noEmit` step to CI (typecheck without build) | CI fails on type errors before tests run | 1.1 | cc:完了 |
 | 1.5 | Add lint step (eslint or biome) | Lint config in repo; CI runs it; existing violations either fixed or grandfathered | 1.4 | cc:TODO |
 | 1.6 | Fail-fast strategy review on matrix | Decision: `fail-fast: false`. Rationale documented inline in `ci.yml`: 9 jobs ~1min each, full matrix gives complete cross-platform picture, masking Windows regression behind Linux fail is the failure mode we hit on 2.6.0 | 1.1 | cc:完了 |
-| 1.7 | Coverage upload to PR comments (codecov or actions/summary) | Coverage diff visible on PRs touching `src/` | 0.5 | cc:TODO |
+| 1.7 | Coverage upload to PR comments (codecov or actions/summary) | Coverage diff visible on PRs touching `src/` | 0.5 | cc:完了 |
+| 1.7-result | Used GitHub Actions Job Summary (no external service, no token). New step on ubuntu-latest + Node 22.x only (avoids 9 racing reports across the matrix). Report appears under "Summary" tab of each CI run. Also bumped `actions/checkout` and `actions/setup-node` to v5 on this branch (kept matching main after the 2.6.1 PR) | - | - |
 
 ---
 
