@@ -9,11 +9,17 @@
 
 > ⭐ **If this saves you time, [star the repo](https://github.com/SIRTHEO/claude-switch) — it helps others find it.**
 
+---
+
+## One command. That's all you need.
+
 ```bash
-claude switch          # open the menu — do everything from here
-claude switch work     # or jump straight to an account
-claude                 # then use claude as you always have
+claude switch
 ```
+
+That opens a menu. Everything happens from there — switching accounts, managing API keys, opening isolated sessions, checking usage. You don't need to memorize anything else.
+
+> **Already installed?** Starting from v2.8, claude-switch updates itself automatically in the background while you work. Run `npm install -g @sirtheo/claude-switch` once to get the latest version, then you'll never need to update manually again.
 
 ---
 
@@ -207,6 +213,8 @@ claude-switch's fallback works by injecting `ANTHROPIC_API_KEY` into the environ
 ---
 
 ## What's new
+
+**v2.8.x** — **Auto-update.** claude-switch now updates itself silently in the background while `claude` is running. No more `npm install -g` after every release — just install once and stay current automatically.
 
 **v2.7.x** — **Profiles** with one-step "Open account isolated" from the menu. Each profile is its own Keychain entry / userID / session — open two terminals on two different accounts simultaneously, no interference. Auto-creates the profile from a saved account — no browser re-login required.
 
