@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.0.0](https://github.com/SIRTHEO/claudeswitch/compare/v2.8.0...v3.0.0) (2026-05-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* rename package to claudeswitch
+
+### Features
+
+* rename package to claudeswitch ([fac0dc2](https://github.com/SIRTHEO/claudeswitch/commit/fac0dc2e7decf01c527c84e19e40172c30a83d49))
+
+
+### Documentation
+
+* improve SEO — keywords, topics, first-paragraph density ([20735ae](https://github.com/SIRTHEO/claudeswitch/commit/20735aeac8710c29a598e551ae28c72fb131837e))
+* **plans:** mark 7.6 complete — 2.8.0 published to npm ([9a430a2](https://github.com/SIRTHEO/claudeswitch/commit/9a430a27aeba28369220ad6c2f4135364c103551))
+
 ## [2.8.0](https://github.com/SIRTHEO/claude-switch/compare/v2.7.0...v2.8.0) (2026-05-04)
 
 
