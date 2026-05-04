@@ -22,10 +22,10 @@ jobs:
           TARGET: ${{ github.event.inputs.up_to_version }}
         run: |
           VERSIONS=$(npm view @sirtheo/claude-switch versions --json | node -e "
-            const semver = require('semver');
-            const target = process.env.TARGET;
+            const target = process.env.TARGET.split('.').map(Number);
+            const lt = v => { const p = v.split('.').map(Number); for (let i=0;i<3;i++) { if (p[i]<target[i]) return true; if (p[i]>target[i]) return false; } return false; };
             const all = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-            console.log(all.filter(v => semver.lt(v, target)).join(' '));
+            console.log(all.filter(lt).join(' '));
           ")
           MSG="Please upgrade: npm install -g @sirtheo/claude-switch — ${TARGET} is the latest stable release."
           for v in $VERSIONS; do
