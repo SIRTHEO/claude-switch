@@ -18,7 +18,7 @@ import { getTokenHealth } from '../src/token.js';
 import { getSavedClaudeBin, runSetup } from '../src/setup.js';
 import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
-import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
+import { isFallbackEnabled, isFallbackAutoEngaged, setFallbackEnabled } from '../src/fallback.js';
 import { fallbackEnvFor } from '../src/fallback-env.js';
 import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback, maybeAutoEngageFallback } from '../src/auto-fallback.js';
 import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
@@ -374,6 +374,7 @@ function renderStatusline(
       shortName,
       mode: usingApiKey ? 'api' : 'oauth',
       fallback: fallbackOn,
+      fallbackAutoEngaged: isFallbackAutoEngaged(accountsDirPath),
       hasApiKey: !!apiKey,
       fiveHour: fivePct ?? null,
       sevenDay: sevenPct ?? null,
@@ -382,7 +383,14 @@ function renderStatusline(
     return;
   }
 
-  const modeLabel = usingApiKey ? yellow('API') : green('OAuth');
+  // Distinguish "user manually toggled fallback" from "auto-engage flipped
+  // it because we hit the threshold" — the user wants to know that their
+  // session is paying for API credits because of the rate-limit guard,
+  // not because they asked for it.
+  const autoEngaged = isFallbackAutoEngaged(accountsDirPath);
+  const modeLabel = usingApiKey
+    ? yellow(autoEngaged ? 'API auto' : 'API')
+    : green('OAuth');
   const usageBadge = (() => {
     if (fivePct === undefined) return '';
     const pctStr = `${fivePct.toFixed(0)}%`;
