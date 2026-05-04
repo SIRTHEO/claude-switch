@@ -121,7 +121,8 @@ Primitives shipped (eef0f0c, 55c041a, 5b1514d, a0f2659). Remaining: real verific
 | 5.3 | Loading states: long ops show a spinner (e.g. `keychain` writes, `usage` fetches) | All ops >200ms have feedback | 5.2 | cc:TODO |
 | 5.4 | Error rendering consistency | All errors go through one helper; format: title, cause, next step | 5.2 | cc:完了 |
 | 5.4-result | **Helper landed 2026-05-04**: `src/ui/notify.ts` with `notifyError`/`notifyOk`/`notifyInfo`/`notifyWarn` + 8 API tests. NOT yet retrofit into the 27 existing `p.note(...)` call sites — that migration belongs in 5.2 (split main-menu into per-screen modules) so the new modules adopt the helper from line 1 instead of churning through twice | - | - |
-| 5.5 | Color theme: review `src/ui/theme.ts` for accessibility (contrast, no-color env) | Theme respects `NO_COLOR=1`; verified in Linux ssh + Windows Terminal | 5.2 | cc:TODO |
+| 5.5 | Color theme: review `src/ui/theme.ts` for accessibility (contrast, no-color env) | Theme respects `NO_COLOR=1`; verified in Linux ssh + Windows Terminal | 5.2 | cc:完了 |
+| 5.5-result | **theme.ts**: already respects `NO_COLOR` (3 helpers strip ANSI when env set). **bin/cli.ts statusline bug FIXED**: `useColor` now honours both `--no-color` flag AND `NO_COLOR` env (no-color.org standard). Verified empirically with `od -c`: `NO_COLOR=1 cli statusline` produces zero ANSI escapes; without it, full colour | - | - |
 | 5.6 | Keyboard shortcuts: documented and consistent | All menus use same nav keys; cheatsheet added to README | 5.2 | cc:TODO |
 | 5.7 | Setup wizard polish (`src/ui/setup-wizard.ts` 195 lines) | First-run path tested on fresh `$HOME`; covered by E2E | 5.1 | cc:TODO |
 

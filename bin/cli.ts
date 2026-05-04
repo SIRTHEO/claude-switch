@@ -143,7 +143,9 @@ export function parseCommand(args: string[]): Command {
       }
       const rest = args.slice(2);
       const fmt = rest.includes('--full') ? 'full' : rest.includes('--json') ? 'json' : 'compact';
-      const color = !rest.includes('--no-color');
+      // Honour both the CLI flag and the de-facto NO_COLOR env standard
+      // (https://no-color.org). Either turning colour off is enough.
+      const color = !rest.includes('--no-color') && !process.env.NO_COLOR;
       return { action: 'statusline', format: fmt as 'compact' | 'full' | 'json', color };
     }
     case 'alias': {
