@@ -1,21 +1,19 @@
 // src/api-proxy.ts
-// Local HTTP proxy that rotates among saved API keys on 429.
+// Local HTTP proxy for same-account OAuth → API key fallback within a session.
 //
-// The claude binary respects ANTHROPIC_BASE_URL, so we start a server on a
-// random loopback port, set that env var, and forward every request to
-// api.anthropic.com.
+// The claude binary respects ANTHROPIC_BASE_URL. We start a server on a
+// random loopback port and set that env var before spawning the binary.
 //
-// On each request the proxy:
-//   1. Replaces `Authorization` with the current account's API key.
-//   2. Strips `oauth-2025-04-20` from `anthropic-beta` — that token tells
-//      Anthropic's backend to treat the request as an OAuth session and bill
-//      it against the subscription, which is the opposite of what we want.
-//   3. On 429 rotates to the next account and retries with the same body.
+// Normal flow (no rate limit):
+//   claude → proxy → api.anthropic.com   (OAuth token forwarded unchanged)
 //
-// The full request body is buffered before forwarding so retries are possible.
-// Typical size is ~170 KB; this is fine for in-memory buffering.
+// On 429 (subscription exhausted):
+//   proxy retries the same request with the account's API key instead.
+//   The `oauth-2025-04-20` beta flag is stripped on the retry so Anthropic
+//   bills the request against API credits, not the subscription.
 //
-// Only started when 2+ accounts have saved API keys.
+// No cross-account rotation happens unless the user explicitly configures it.
+// Started when the active account has a saved API key.
 
 import http from 'node:http';
 import https from 'node:https';
@@ -23,11 +21,6 @@ import type { AddressInfo } from 'node:net';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
 
 export const DEFAULT_UPSTREAM = 'https://api.anthropic.com';
-
-export interface RotatingAccount {
-  email: string;
-  apiKey: string;
-}
 
 export interface ProxyHandle {
   port: number;
@@ -43,21 +36,28 @@ export function stripOauthBeta(value: string): string {
     .join(',');
 }
 
-/** Build the outgoing headers for a forwarded request under `account`. */
-export function buildForwardHeaders(
-  incoming: IncomingHttpHeaders,
-  apiKey: string,
-): IncomingHttpHeaders {
+/** Headers for the initial pass-through attempt (OAuth, unchanged). */
+export function buildPassthroughHeaders(incoming: IncomingHttpHeaders): IncomingHttpHeaders {
   const out: IncomingHttpHeaders = {};
   for (const [k, v] of Object.entries(incoming)) {
     if (k.toLowerCase() === 'host') continue;
     out[k] = v;
   }
+  return out;
+}
 
-  // Replace OAuth token (sk-ant-oat01-…) with the API key (sk-ant-api03-…).
+/**
+ * Headers for the API-key retry after a 429.
+ * Replaces Authorization with the API key and strips the OAuth billing marker.
+ */
+export function buildApiKeyHeaders(
+  incoming: IncomingHttpHeaders,
+  apiKey: string,
+): IncomingHttpHeaders {
+  const out = buildPassthroughHeaders(incoming);
+
   out['authorization'] = `Bearer ${apiKey}`;
 
-  // Remove the OAuth session marker so Anthropic bills API credits, not subscription.
   const beta = out['anthropic-beta'];
   if (typeof beta === 'string') {
     const cleaned = stripOauthBeta(beta);
@@ -71,8 +71,14 @@ export function buildForwardHeaders(
   return out;
 }
 
-export function startRotatingProxy(
-  accounts: RotatingAccount[],
+/**
+ * Start the fallback proxy for a single account.
+ *
+ * Requests are forwarded with the original OAuth token. If the upstream
+ * returns 429, the proxy retries once with the account's API key.
+ */
+export function startFallbackProxy(
+  apiKey: string,
   upstreamBase = DEFAULT_UPSTREAM,
 ): Promise<ProxyHandle> {
   const upstream = new URL(upstreamBase);
@@ -82,63 +88,76 @@ export function startRotatingProxy(
     : isHttps ? 443 : 80;
   const requester = isHttps ? https : http;
 
+  function forward(
+    headers: IncomingHttpHeaders,
+    method: string | undefined,
+    path: string | undefined,
+    body: Buffer,
+    onResponse: (res: http.IncomingMessage) => void,
+    onError: () => void,
+  ): void {
+    const req = (requester as typeof https).request(
+      {
+        hostname: upstream.hostname,
+        port: upstreamPort,
+        path: path ?? '/',
+        method: method ?? 'GET',
+        headers: headers as OutgoingHttpHeaders,
+      },
+      onResponse,
+    );
+    req.on('error', onError);
+    req.end(body);
+  }
+
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
       const chunks: Buffer[] = [];
       req.on('data', (chunk: Buffer) => chunks.push(chunk));
-      req.on('end', () => attempt(0, Buffer.concat(chunks)));
-      req.on('error', () => {
-        if (!res.headersSent) { res.writeHead(400); res.end(); }
-      });
+      req.on('error', () => { if (!res.headersSent) { res.writeHead(400); res.end(); } });
+      req.on('end', () => {
+        const body = Buffer.concat(chunks);
+        const oauthHeaders = buildPassthroughHeaders(req.headers);
 
-      function attempt(idx: number, body: Buffer): void {
-        if (idx >= accounts.length) {
-          res.writeHead(429, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({
-            type: 'error',
-            error: { type: 'rate_limit_error', message: 'All accounts exhausted' },
-          }));
-          return;
-        }
-
-        const account = accounts[idx]!;
-
-        if (idx > 0) {
-          process.stderr.write(
-            `\n⚡ claude-switch: rate limited on ${accounts[idx - 1]!.email} → rotating to ${account.email}\n\n`,
-          );
-        }
-
-        const forwardHeaders = buildForwardHeaders(req.headers, account.apiKey);
-
-        const proxyReq = (requester as typeof https).request(
-          {
-            hostname: upstream.hostname,
-            port: upstreamPort,
-            path: req.url,
-            method: req.method,
-            headers: forwardHeaders as OutgoingHttpHeaders,
-          },
+        // First attempt: OAuth (subscription)
+        forward(oauthHeaders, req.method, req.url, body,
           (proxyRes) => {
-            if (proxyRes.statusCode === 429) {
-              proxyRes.resume();
-              proxyRes.on('end', () => attempt(idx + 1, body));
+            if (proxyRes.statusCode !== 429) {
+              res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
+              proxyRes.pipe(res);
               return;
             }
-            res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
-            proxyRes.pipe(res);
+
+            // 429 on OAuth → retry with API key
+            proxyRes.resume();
+            proxyRes.on('end', () => {
+              process.stderr.write(
+                '\n⚡ claude-switch: subscription limit hit — retrying with API key\n\n',
+              );
+
+              const keyHeaders = buildApiKeyHeaders(req.headers, apiKey);
+              forward(keyHeaders, req.method, req.url, body,
+                (retryRes) => {
+                  res.writeHead(retryRes.statusCode!, retryRes.headers as OutgoingHttpHeaders);
+                  retryRes.pipe(res);
+                },
+                () => {
+                  if (!res.headersSent) {
+                    res.writeHead(502);
+                    res.end();
+                  }
+                },
+              );
+            });
+          },
+          () => {
+            if (!res.headersSent) {
+              res.writeHead(502, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'Proxy upstream error' } }));
+            }
           },
         );
-
-        proxyReq.on('error', () => {
-          if (!res.headersSent) {
-            res.writeHead(502, { 'content-type': 'application/json' });
-            res.end(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'Proxy upstream error' } }));
-          }
-        });
-
-        proxyReq.end(body);
-      }
+      });
     });
 
     server.on('error', reject);
