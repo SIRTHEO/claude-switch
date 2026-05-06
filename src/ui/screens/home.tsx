@@ -321,7 +321,7 @@ function MenuList<V extends string>({
 // Main screen
 // ---------------------------------------------------------------------------
 
-function HomeScreen({ claudeJsonPath, accountsDirPath, initialNotice, onExit }: Props) {
+export function HomeScreen({ claudeJsonPath, accountsDirPath, initialNotice, onExit }: Props) {
   const { exit } = useApp();
   const { snap, refresh } = useSnapshot(claudeJsonPath, accountsDirPath);
   const { busy, message, run, setMessage } = useAsyncAction();

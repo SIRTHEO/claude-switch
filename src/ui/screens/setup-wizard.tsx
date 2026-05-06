@@ -69,7 +69,7 @@ const VARIANT_OPTS = [
   { value: 'ccstatusline', label: 'Badge + ccstatusline', hint: 'fancy bar — needs npx + ccstatusline' },
 ] as const;
 
-function SetupScreen({ selfPath, onDone }: Props) {
+export function SetupScreen({ selfPath, onDone }: Props) {
   const { exit } = useApp();
   const [step, setStep] = useState<Step>({ kind: 'detect-bin' });
 

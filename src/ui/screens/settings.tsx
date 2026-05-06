@@ -48,7 +48,7 @@ interface ScreenProps {
   onDone: () => void;
 }
 
-function SettingsScreen({ accountsDirPath, initialAccount, onDone }: ScreenProps) {
+export function SettingsScreen({ accountsDirPath, initialAccount, onDone }: ScreenProps) {
   const { exit } = useApp();
   const [tab, setTab] = useState<Tab>('global');
   const [globalPrefs, setGlobalPrefs] = useState<GlobalPrefs>(() => readGlobalPrefs(accountsDirPath));
