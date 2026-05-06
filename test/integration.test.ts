@@ -6,6 +6,8 @@ import path from 'node:path';
 import { getCurrent, save, list, remove } from '../src/accounts.js';
 import { switchTo, fuzzyMatch, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switcher.js';
 import { setAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
+import { setApiKey, getApiKey } from '../src/apikey.js';
+import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
 
 describe('integration: full account lifecycle', () => {
   let tmpDir: string;
@@ -235,5 +237,55 @@ describe('integration: pending restore (--as crash recovery)', () => {
   it('checkPendingRestore returns null when no file', () => {
     const result = checkPendingRestore(claudeJson, accDir);
     assert.equal(result, null);
+  });
+});
+
+describe('integration: fallback auto-sync on switch', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+
+  // Simulate what cli.ts and select-account.ts do after switchTo:
+  // check if the new account has an API key and set fallback accordingly.
+  function switchAndSync(email: string): void {
+    switchTo(email, claudeJson, accDir);
+    setFallbackEnabled(accDir, !!getApiKey(email, accDir));
+  }
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-fb-sync-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+
+    // Account A (with API key), account B (no key)
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
+    save('a@x.com', claudeJson, accDir);
+    fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com' }));
+    setApiKey('a@x.com', 'sk-ant-test-key', accDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('enables fallback when switching to account with API key', () => {
+    switchAndSync('a@x.com');
+    assert.equal(isFallbackEnabled(accDir), true);
+  });
+
+  it('disables fallback when switching to account without API key', () => {
+    setFallbackEnabled(accDir, true); // start with fallback on
+    switchAndSync('b@x.com');
+    assert.equal(isFallbackEnabled(accDir), false);
+  });
+
+  it('fallback follows the active account as you switch between accounts', () => {
+    switchAndSync('a@x.com');
+    assert.equal(isFallbackEnabled(accDir), true, 'on after switch to account with key');
+    switchAndSync('b@x.com');
+    assert.equal(isFallbackEnabled(accDir), false, 'off after switch to account without key');
+    switchAndSync('a@x.com');
+    assert.equal(isFallbackEnabled(accDir), true, 'on again after switching back');
   });
 });
