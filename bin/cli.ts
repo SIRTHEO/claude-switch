@@ -18,6 +18,7 @@ import { handleList } from '../src/commands/list.js';
 import { handleStatus } from '../src/commands/status.js';
 import { handleAliasSet, handleAliasList, handleAliasRemove } from '../src/commands/alias.js';
 import { handleApikeySet, handleApikeyShow, handleApikeyRemove } from '../src/commands/apikey.js';
+import { migrateApiKeysToKeychain } from '../src/apikey.js';
 import { handleFallback, handleFallbackAuto, handleFallbackAutoEngage } from '../src/commands/fallback.js';
 import { handleUsage } from '../src/commands/usage.js';
 import { handleAdd, handleRemove } from '../src/commands/account.js';
@@ -287,6 +288,13 @@ async function main(): Promise<void> {
     await handleStatuslineStatus();
     return;
   }
+
+  // One-shot migration of legacy plaintext API keys into the macOS
+  // Keychain. Idempotent and silent — runs on every non-statusline
+  // invocation but is essentially free once everything is migrated
+  // (just reads each Keychain entry name to confirm it exists). Skipped
+  // on non-macOS automatically by `migrateApiKeysToKeychain`.
+  migrateApiKeysToKeychain(aDir);
 
   // Profile subcommands — isolated per-terminal claude sessions via
   // CLAUDE_CONFIG_DIR. Early-return so they skip the update-check / pending
