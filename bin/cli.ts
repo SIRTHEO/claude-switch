@@ -5,34 +5,38 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolve } from '../src/resolver.js';
-import { getCurrent, save, list as listAccounts, remove as removeAccount } from '../src/accounts.js';
+import { getCurrent, save, list as listAccounts, } from '../src/accounts.js';
 import { withLock } from '../src/lock.js';
-import { fuzzyMatch, switchToAndSyncFallback, switchInteractive, addAccount, runTemporarySwitch, checkPendingRestore } from '../src/switcher.js';
+import { fuzzyMatch, switchToAndSyncFallback, switchInteractive, checkPendingRestore } from '../src/switcher.js';
 import { run as proxyRun } from '../src/proxy.js';
 import { claudeJsonPath, accountsDir } from '../src/paths.js';
 import { VERSION } from '../src/version.js';
 import { ExitError } from '../src/errors.js';
-import { setAlias, listAliases, removeAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
+import { resolveAlias, getAliasesForEmail } from '../src/aliases.js';
 import { getTokenHealth } from '../src/token.js';
-import { getSavedClaudeBin, runSetup } from '../src/setup.js';
-import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
-import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
-import { isFallbackEnabled, isFallbackAutoEngaged, setFallbackEnabled } from '../src/fallback.js';
+import { getSavedClaudeBin, } from '../src/setup.js';
+import { checkForUpdate, performUpdate, } from '../src/update-check.js';
+import { getApiKey, } from '../src/apikey.js';
+import { isFallbackEnabled, isFallbackAutoEngaged, } from '../src/fallback.js';
 import { fallbackEnvFor } from '../src/fallback-env.js';
-import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback, maybeAutoEngageFallback, maybeInitSmartFallback } from '../src/auto-fallback.js';
-import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
+import { maybeAutoDisableFallback, maybeAutoEngageFallback, maybeInitSmartFallback } from '../src/auto-fallback.js';
+import { readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
 import { runApp } from '../src/ui/run-app.js';
 import { profilesDir } from '../src/profiles.js';
-import { runApikeyScreen } from '../src/ui/screens/set-apikey.js';
-import { runSetupWizardScreen } from '../src/ui/screens/setup-wizard.js';
-import { runAddAccountScreen } from '../src/ui/screens/add-account.js';
-import { runRemoveAccountScreen } from '../src/ui/screens/remove-account.js';
 import { startFallbackProxy } from '../src/api-proxy.js';
 import { handleHelp } from '../src/commands/help.js';
 import { handleVersion } from '../src/commands/version.js';
 import { handleCompletions } from '../src/commands/completions.js';
 import { handleList } from '../src/commands/list.js';
 import { handleStatus } from '../src/commands/status.js';
+import { handleAliasSet, handleAliasList, handleAliasRemove } from '../src/commands/alias.js';
+import { handleApikeySet, handleApikeyShow, handleApikeyRemove } from '../src/commands/apikey.js';
+import { handleFallback, handleFallbackAuto, handleFallbackAutoEngage } from '../src/commands/fallback.js';
+import { handleUsage } from '../src/commands/usage.js';
+import { handleAdd, handleRemove } from '../src/commands/account.js';
+import { handleSetup } from '../src/commands/setup.js';
+import { handleUpdate } from '../src/commands/update.js';
+import { handleTemporarySwitch } from '../src/commands/temporary-switch.js';
 import type { CommandContext } from '../src/commands/context.js';
 
 export type Command =
@@ -232,7 +236,7 @@ function findClaude(): string {
 }
 
 /** Read a line from stdin without echoing it (TTY) or from a pipe (non-TTY). */
-async function promptSecret(question: string): Promise<string> {
+async function _promptSecret(question: string): Promise<string> {
   const readline = await import('node:readline');
 
   if (!process.stdin.isTTY) {
@@ -262,7 +266,7 @@ async function promptSecret(question: string): Promise<string> {
  * Resolve a target alias/fuzzy string to a single saved email, or throw.
  * Used by apikey commands so they accept the same target syntax as switch.
  */
-function resolveTargetEmail(target: string, accountsDirPath: string): string {
+function _resolveTargetEmail(target: string, accountsDirPath: string): string {
   const resolved = resolveAlias(target, accountsDirPath);
   const accounts = listAccounts(accountsDirPath);
   const matches = accounts.filter(a => a === resolved);
@@ -731,322 +735,66 @@ async function main(): Promise<void> {
       break;
     }
 
-    case 'add': {
-      const claudeBin = findClaude();
-      if (process.stdin.isTTY && process.stderr.isTTY) {
-        await runAddAccountScreen(claudeBin, cJson, aDir);
-      } else {
-        await addAccount(claudeBin, cJson, aDir);
-      }
+    case 'add':
+      await handleAdd(ctx);
       break;
-    }
 
-    case 'dashboard': {
+    case 'dashboard':
       // Alias for the persistent menu — same screen.
       await runApp(cJson, aDir);
       break;
-    }
 
     case 'list':
       handleList(ctx);
       break;
 
-    case 'alias-set': {
-      if (!cmd.email) {
-        throw new ExitError('Usage: claude switch alias <name> <email>');
-      }
-      try {
-        setAlias(cmd.name, cmd.email, aDir);
-      } catch (e) {
-        if (e instanceof ExitError) throw e;
-        throw new ExitError((e as Error).message);
-      }
-      console.log(`Alias set: ${cmd.name} → ${cmd.email}`);
+    case 'alias-set':
+      handleAliasSet(ctx, cmd.name, cmd.email);
       break;
-    }
 
-    case 'alias-list': {
-      const aliases = listAliases(aDir);
-      const entries = Object.entries(aliases);
-      if (entries.length === 0) {
-        console.log('No aliases. Set one with: claude switch alias <name> <email>');
-      } else {
-        console.log('Aliases:\n');
-        for (const [name, email] of entries) {
-          console.log(`  ${name} → ${email}`);
-        }
-      }
+    case 'alias-list':
+      handleAliasList(ctx);
       break;
-    }
 
-    case 'alias-remove': {
-      if (!cmd.name) {
-        throw new ExitError('Usage: claude switch alias --remove <name>');
-      }
-      try {
-        removeAlias(cmd.name, aDir);
-        console.log(`Alias removed: ${cmd.name}`);
-      } catch (e) {
-        if (e instanceof ExitError) throw e;
-        throw new ExitError((e as Error).message);
-      }
+    case 'alias-remove':
+      handleAliasRemove(ctx, cmd.name);
       break;
-    }
 
     case 'remove':
-      if (!cmd.email) {
-        throw new ExitError('Usage: claude switch remove <email>');
-      }
-      if (process.stdin.isTTY && process.stderr.isTTY) {
-        await runRemoveAccountScreen(cmd.email, cJson, aDir);
-      } else {
-        try {
-          const current = getCurrent(cJson);
-          if (cmd.email === current) {
-            throw new ExitError('Cannot remove the active account. Switch to another account first.');
-          }
-          removeAccount(cmd.email, aDir);
-          console.log(`Removed: ${cmd.email}`);
-        } catch (e) {
-          if (e instanceof ExitError) throw e;
-          throw new ExitError((e as Error).message);
-        }
-      }
+      await handleRemove(ctx, cmd.email);
       break;
 
     case 'status':
       handleStatus(ctx);
       break;
 
-    case 'apikey-set': {
-      if (!cmd.target) {
-        throw new ExitError('Usage: claude switch apikey set <alias|email>');
-      }
-      const email = resolveTargetEmail(cmd.target, aDir);
-
-      // TUI when we have a real terminal; legacy text fallback for pipes/CI.
-      if (process.stdin.isTTY && process.stderr.isTTY) {
-        const result = await runApikeyScreen(email, aDir);
-        if (!result.saved && !result.cancelled) {
-          // setApiKey threw — let the next invocation try again.
-          process.exit(1);
-        }
-        break;
-      }
-
-      // Non-TTY fallback: read first line of stdin as the key, no prompts.
-      const existing = getApiKey(email, aDir);
-      if (existing) {
-        throw new ExitError(
-          `An API key is already saved for ${email} (${maskApiKey(existing)}). ` +
-          `Run interactively to overwrite.`,
-        );
-      }
-      const key = await promptSecret('');
-      if (!key) throw new ExitError('No key on stdin. Aborted.');
-      withLock(aDir, () => setApiKey(email, key, aDir));
-      maybeInitSmartFallback(aDir);
-      console.log(`Saved API key for ${email} (${maskApiKey(key)}).`);
+    case 'apikey-set':
+      await handleApikeySet(ctx, cmd.target);
       break;
-    }
 
-    case 'apikey-show': {
-      if (!cmd.target) {
-        throw new ExitError('Usage: claude switch apikey show <alias|email>');
-      }
-      const email = resolveTargetEmail(cmd.target, aDir);
-      const key = getApiKey(email, aDir);
-      if (!key) {
-        console.log(`No API key saved for ${email}.`);
-      } else {
-        console.log(`${email}: ${maskApiKey(key)}`);
-      }
+    case 'apikey-show':
+      handleApikeyShow(ctx, cmd.target);
       break;
-    }
 
-    case 'apikey-remove': {
-      if (!cmd.target) {
-        throw new ExitError('Usage: claude switch apikey remove <alias|email>');
-      }
-      const email = resolveTargetEmail(cmd.target, aDir);
-      const removed = withLock(aDir, () => removeApiKey(email, aDir));
-      console.log(removed
-        ? `Removed API key for ${email}.`
-        : `No API key was saved for ${email}.`);
+    case 'apikey-remove':
+      handleApikeyRemove(ctx, cmd.target);
       break;
-    }
 
-    case 'fallback': {
-      if (cmd.mode === 'status') {
-        const on = isFallbackEnabled(aDir);
-        const current = getCurrent(cJson);
-        const hasKey = current ? !!getApiKey(current, aDir) : false;
-        console.log(`Fallback: ${on ? 'on' : 'off'}`);
-        if (current) {
-          console.log(`Active account ${current}: ${hasKey ? 'has API key' : 'no API key (run: claude switch apikey set)'}`);
-        }
-        if (on && current && !hasKey) {
-          console.log('Warning: fallback is on but the active account has no saved API key — claude will use OAuth.');
-        }
-        break;
-      }
-      const on = cmd.mode === 'on';
-      setFallbackEnabled(aDir, on);
-      console.log(`Fallback: ${on ? 'on' : 'off'}`);
-      if (on) {
-        const current = getCurrent(cJson);
-        if (current && !getApiKey(current, aDir)) {
-          console.log(`Note: active account ${current} has no saved API key. Run: claude switch apikey set ${current}`);
-        } else if (current) {
-          console.log('Subsequent `claude` runs will inject the saved API key as ANTHROPIC_API_KEY.');
-          console.log('');
-          console.log('IMPORTANT: the first time, Claude Code will prompt:');
-          console.log('    "Use this API key? [y/N]"');
-          console.log('Press y to approve — your choice is remembered.');
-          console.log('If you miss it or press N, claude silently keeps using OAuth.');
-        }
-      }
+    case 'fallback':
+      handleFallback(ctx, cmd.mode);
       break;
-    }
 
-    case 'fallback-auto': {
-      const config = getAutoFallbackConfig(aDir);
-      if (cmd.mode === 'status') {
-        console.log(`Smart-switch: ${config.enabled ? 'on' : 'off'}`);
-        console.log(`Threshold:    ${config.threshold}% (5h and 7d must drop below this)`);
-        if (config.enabled) {
-          const current = getCurrent(cJson);
-          const hasKey = current ? !!getApiKey(current, aDir) : false;
-          if (!current) {
-            console.log('No active account — smart-switch only acts on the active one.');
-          } else if (!hasKey) {
-            console.log(`Note: ${current} has no saved API key, so fallback would do nothing anyway.`);
-          }
-        }
-        break;
-      }
-      const enabled = cmd.mode === 'on';
-      const next = setAutoFallbackConfig(aDir, {
-        enabled,
-        ...(cmd.threshold !== undefined ? { threshold: cmd.threshold } : {}),
-      });
-      console.log(`Smart-switch: ${next.enabled ? 'on' : 'off'}`);
-      if (enabled) {
-        console.log(`Threshold:    ${next.threshold}%`);
-        console.log(
-          `\nWhen fallback is on, claude-switch will turn it back off the next ` +
-          `time you run \`claude\` if both 5h and 7d utilisation drop below ` +
-          `${next.threshold}% — saving your API credits the moment your ` +
-          `subscription has headroom again.`,
-        );
-      }
+    case 'fallback-auto':
+      handleFallbackAuto(ctx, cmd.mode, cmd.threshold);
       break;
-    }
 
-    case 'fallback-auto-engage': {
-      const config = getAutoFallbackConfig(aDir);
-      if (cmd.mode === 'status') {
-        console.log(`Auto-engage:  ${config.engageEnabled ? 'on' : 'off'}`);
-        console.log(`Threshold:    ${config.engageThreshold}% (either 5h or 7d at/above flips fallback ON)`);
-        if (config.engageEnabled) {
-          const current = getCurrent(cJson);
-          const hasKey = current ? !!getApiKey(current, aDir) : false;
-          if (!current) {
-            console.log('No active account — auto-engage only acts on the active one.');
-          } else if (!hasKey) {
-            console.log(`Note: ${current} has no saved API key, so auto-engage would be blocked.`);
-          }
-        }
-        break;
-      }
-      const engageEnabled = cmd.mode === 'on';
-      try {
-        const next = setAutoFallbackConfig(aDir, {
-          engageEnabled,
-          ...(cmd.threshold !== undefined ? { engageThreshold: cmd.threshold } : {}),
-        });
-        console.log(`Auto-engage:  ${next.engageEnabled ? 'on' : 'off'}`);
-        if (engageEnabled) {
-          console.log(`Threshold:    ${next.engageThreshold}%`);
-          console.log(
-            `\nWhen fallback is off and either 5h or 7d utilisation reaches ` +
-            `${next.engageThreshold}%, claude-switch will turn fallback ON on ` +
-            `the next \`claude\` run (provided the active account has a saved ` +
-            `API key) — so you don't stare at a rate-limit error mid-session.`,
-          );
-        }
-      } catch (e) {
-        throw new ExitError((e as Error).message);
-      }
+    case 'fallback-auto-engage':
+      handleFallbackAutoEngage(ctx, cmd.mode, cmd.threshold);
       break;
-    }
 
-    case 'usage': {
-      // Snapshot (token, account) atomically. A concurrent `claude switch B`
-      // between these two reads would otherwise pair token-of-A with
-      // account-label-of-B, and we'd cache A's quota under B's name.
-      const { token, currentAccount } = withLock(aDir, () => ({
-        token: getAccessTokenFromKeychain(cJson),
-        currentAccount: getCurrent(cJson) || undefined,
-      }));
-      if (!token) {
-        if (cmd.refreshOnly) return; // background refresh: silently no-op
-        throw new ExitError(
-          'No OAuth access token available — only Max/Pro subscribers can use this. ' +
-          'Make sure you are logged in: claude switch status',
-        );
-      }
-      // refresh-only: just hit the endpoint and update the cache, no output.
-      // Used by the statusline to keep cache fresh asynchronously.
-      if (cmd.refreshOnly) {
-        await fetchUsageCached(aDir, token, { force: true, account: currentAccount });
-        return;
-      }
-      // When forcing, surface the raw fetch error so failures are diagnosable
-      // (the cached path silently swallows non-429 errors to keep noise low).
-      if (cmd.force) {
-        const { fetchUsage: rawFetch } = await import('../src/usage.js');
-        const raw = await rawFetch(token);
-        if (!raw.ok && !raw.rateLimited) {
-          console.log(`Fetch error: ${raw.error}`);
-        }
-      }
-      const cache = await fetchUsageCached(aDir, token, { force: cmd.force, account: currentAccount });
-      if (cache.rateLimitedUntil && cache.rateLimitedUntil > Date.now()) {
-        const waitSec = Math.ceil((cache.rateLimitedUntil - Date.now()) / 1000);
-        console.log(
-          `Anthropic's usage endpoint is rate-limiting us. ` +
-          `Retry in ~${waitSec}s${cache.payload ? ' (showing last cached values below)' : ''}.`,
-        );
-      }
-      if (cache.payload) {
-        const ageMin = Math.round((Date.now() - cache.fetchedAt) / 60_000);
-        const fmtReset = (iso?: string): string => {
-          if (!iso) return '';
-          const d = new Date(iso);
-          if (Number.isNaN(d.getTime())) return '';
-          const min = Math.round((d.getTime() - Date.now()) / 60_000);
-          if (min < 60) return ` (resets in ${min}m)`;
-          if (min < 60 * 24) return ` (resets in ${Math.round(min / 60)}h)`;
-          return ` (resets in ${Math.round(min / 60 / 24)}d)`;
-        };
-        const five = cache.payload.five_hour;
-        const seven = cache.payload.seven_day;
-        const opus = cache.payload.seven_day_opus;
-        const sonnet = cache.payload.seven_day_sonnet;
-        console.log(`Subscription usage (cached ${ageMin} min ago):`);
-        console.log(`  5-hour window:    ${five.utilization.toFixed(1)}%${fmtReset(five.resets_at)}`);
-        console.log(`  7-day window:     ${seven.utilization.toFixed(1)}%${fmtReset(seven.resets_at)}`);
-        if (opus) console.log(`    └ Opus 7d:      ${opus.utilization.toFixed(1)}%`);
-        if (sonnet) console.log(`    └ Sonnet 7d:    ${sonnet.utilization.toFixed(1)}%`);
-        if (five.utilization >= 85) {
-          console.log('\n⚠ 5-hour window near limit. Consider:  claude switch fallback on');
-        }
-      } else if (!cache.rateLimitedUntil) {
-        console.log('Could not fetch usage — endpoint unreachable. Try again later.');
-      }
+    case 'usage':
+      await handleUsage(ctx, { force: cmd.force, refreshOnly: cmd.refreshOnly });
       break;
-    }
 
     case 'completions':
       handleCompletions(cmd.shell);
@@ -1060,85 +808,17 @@ async function main(): Promise<void> {
       handleHelp();
       break;
 
-    case 'temporary-switch': {
-      if (!cmd.target) {
-        throw new ExitError('Usage: claude --as <account> [args...]');
-      }
-
-      const claudeBin = findClaude();
-      const resolved = resolveAlias(cmd.target, aDir);
-      const accounts = listAccounts(aDir);
-      const matches = fuzzyMatch(resolved, accounts);
-
-      if (matches.length === 0) {
-        throw new ExitError(`No account matching "${cmd.target}". Run: claude switch list`);
-      }
-      if (matches.length > 1) {
-        throw new ExitError(`Multiple matches for "${cmd.target}":\n${matches.map(m => `  ${m}`).join('\n')}\nBe more specific.`);
-      }
-
-      // runTemporarySwitch handles save/restore (incl. Keychain), SIGINT, and never returns.
-      const matched = matches[0]!;
-      const extraEnv = fallbackEnvFor(matched, aDir);
-      if (extraEnv) {
-        process.stderr.write(`(fallback on — using saved API key for ${matched})\n\n`);
-      }
-      await runTemporarySwitch(claudeBin, matched, cmd.args, cJson, aDir, extraEnv);
+    case 'temporary-switch':
+      await handleTemporarySwitch(ctx, cmd.target, cmd.args);
       break;
-    }
 
     case 'setup':
-      if (process.stdin.isTTY && process.stderr.isTTY) {
-        await runSetupWizardScreen(fileURLToPath(import.meta.url));
-      } else {
-        await runSetup(fileURLToPath(import.meta.url));
-      }
+      await handleSetup(ctx);
       break;
 
-    case 'update': {
-      console.log(`Current version: ${VERSION}`);
-      process.stdout.write('Checking for updates...');
-      const latest = await fetchLatestVersionSync();
-      process.stdout.write('\r' + ' '.repeat(30) + '\r'); // clear the line
-
-      if (!latest) {
-        console.log('Could not reach npm registry. Check your connection.');
-        break;
-      }
-
-      // Update cache so the background notifier reflects the result.
-      writeUpdateCache(latest);
-
-      if (!isNewer(VERSION, latest)) {
-        console.log(`Already up to date (${VERSION}).`);
-        break;
-      }
-
-      console.log(`New version available: ${VERSION} → ${latest}`);
-
-      const isTTY = process.stdin.isTTY && process.stdout.isTTY;
-      const shouldUpdate = isTTY ? await askYN('Update now? [y/N] ') : false;
-
-      if (!isTTY) {
-        console.log('Run in an interactive terminal to update, or run:');
-        console.log(`  ${[...detectInstallCommand()].join(' ')}`);
-        break;
-      }
-
-      if (!shouldUpdate) {
-        console.log(`Skipped. Run: ${[...detectInstallCommand()].join(' ')}`);
-        break;
-      }
-
-      const ok = performUpdate();
-      if (ok) {
-        console.log('\nUpdated successfully. Restart your terminal to use the new version.');
-      } else {
-        console.error('\nUpdate failed. Try running manually:');
-        console.error(`  ${[...detectInstallCommand()].join(' ')}`);
-      }
+    case 'update':
+      await handleUpdate();
       break;
-    }
 
     case 'passthrough': {
       const restored = checkPendingRestore(cJson, aDir);
