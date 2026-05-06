@@ -8,9 +8,8 @@ import { useState } from 'react';
 import { Box, Text, render, useApp } from 'ink';
 import { clearScreen } from '../screen-buffer.js';import { Badge, ConfirmInput, PasswordInput, StatusMessage } from '@inkjs/ui';
 
-import { getApiKey, maskApiKey, setApiKey } from '../../apikey.js';
-import { maybeInitSmartFallback } from '../../auto-fallback.js';
-import { withLock } from '../../lock.js';
+import { getApiKey, maskApiKey } from '../../apikey.js';
+import { saveApiKeyAndMaybeInit } from '../../auto-fallback.js';
 import { ORANGE } from '../theme.js';
 
 const KEY_PREFIX = 'sk-ant-';
@@ -51,8 +50,7 @@ function ApikeyScreen({ email, accountsDirPath, onDone }: Props) {
   const save = (key: string): void => {
     setStep({ kind: 'saving', key });
     try {
-      withLock(accountsDirPath, () => setApiKey(email, key, accountsDirPath));
-      const smartEnabled = maybeInitSmartFallback(accountsDirPath);
+      const { smartEnabled } = saveApiKeyAndMaybeInit(email, key, accountsDirPath);
       setStep({ kind: 'saved', key, smartEnabled });
       finish({ saved: true, cancelled: false, email });
     } catch (e) {

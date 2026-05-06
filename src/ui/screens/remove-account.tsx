@@ -10,8 +10,7 @@ import path from 'node:path';
 import { Box, Text, render, useApp } from 'ink';
 import { clearScreen } from '../screen-buffer.js';import { Badge, ConfirmInput, StatusMessage } from '@inkjs/ui';
 
-import { remove as removeAccount, getCurrent } from '../../accounts.js';
-import { withLock } from '../../lock.js';
+import { removeSafely as removeAccountSafely, getCurrent } from '../../accounts.js';
 import { getAliasesForEmail } from '../../aliases.js';
 import { getApiKey, maskApiKey } from '../../apikey.js';
 import { ORANGE } from '../theme.js';
@@ -75,13 +74,7 @@ function RemoveAccountScreen({ email, claudeJsonPath, accountsDirPath, initialSt
   const doRemove = (): void => {
     setStep({ kind: 'removing' });
     try {
-      withLock(accountsDirPath, () => {
-        const currentNow = getCurrent(claudeJsonPath);
-        if (currentNow === email) {
-          throw new Error('Cannot remove the active account. Switch to another one first.');
-        }
-        removeAccount(email, accountsDirPath);
-      });
+      removeAccountSafely(email, claudeJsonPath, accountsDirPath);
       const hadAliases = step.kind === 'confirm' ? step.preview.hadAliases : false;
       setStep({ kind: 'removed', hadAliases });
       finish({ removed: true, cancelled: false });

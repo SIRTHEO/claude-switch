@@ -9,8 +9,11 @@ import {
   maybeAutoDisableFallback,
   maybeAutoEngageFallback,
   maybeInitSmartFallback,
+  saveApiKeyAndMaybeInit,
 } from '../src/auto-fallback.js';
 import { setFallbackEnabled, isFallbackEnabled } from '../src/fallback.js';
+import { save as saveAccount } from '../src/accounts.js';
+import { getApiKey } from '../src/apikey.js';
 
 describe('auto-fallback config', () => {
   let dir: string;
@@ -382,5 +385,50 @@ describe('maybeInitSmartFallback', () => {
     const cfg = getAutoFallbackConfig(dir);
     assert.strictEqual(cfg.enabled, false);
     assert.strictEqual(cfg.engageEnabled, false);
+  });
+});
+
+describe('saveApiKeyAndMaybeInit', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+  const email = 'a@b.com';
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csw-savekey-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: email } }));
+    saveAccount(email, claudeJson, accDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('writes the API key and reports smartEnabled=true on first call', () => {
+    const { smartEnabled } = saveApiKeyAndMaybeInit(email, 'sk-ant-newkey', accDir);
+    assert.strictEqual(smartEnabled, true);
+    assert.strictEqual(getApiKey(email, accDir), 'sk-ant-newkey');
+    const cfg = getAutoFallbackConfig(accDir);
+    assert.strictEqual(cfg.enabled, true);
+    assert.strictEqual(cfg.engageEnabled, true);
+  });
+
+  it('reports smartEnabled=false when fallback config already exists', () => {
+    // Simulate a prior run that already configured smart fallback off.
+    setAutoFallbackConfig(accDir, { enabled: false, engageEnabled: false });
+    const { smartEnabled } = saveApiKeyAndMaybeInit(email, 'sk-ant-second', accDir);
+    assert.strictEqual(smartEnabled, false);
+    assert.strictEqual(getApiKey(email, accDir), 'sk-ant-second');
+    // User's prior choice respected — no flip back to enabled.
+    const cfg = getAutoFallbackConfig(accDir);
+    assert.strictEqual(cfg.enabled, false);
+  });
+
+  it('rejects empty keys and does not init fallback', () => {
+    assert.throws(() => saveApiKeyAndMaybeInit(email, '', accDir), /cannot be empty/);
+    // Config must NOT exist — failure path before init.
+    assert.strictEqual(fs.existsSync(path.join(accDir, '.auto-fallback.json')), false);
   });
 });

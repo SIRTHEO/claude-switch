@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getCurrent, save, load, list, remove } from '../src/accounts.js';
+import { getCurrent, save, load, list, remove, removeSafely } from '../src/accounts.js';
 
 describe('getCurrent', () => {
   let tmpDir: string;
@@ -391,5 +391,44 @@ describe('save/load — API-key acceptance leak prevention', () => {
     // into the live ~/.claude.json snapshot.
     assert.equal(after._customApiKeyResponses, undefined);
     assert.equal(after.oauthAccount._customApiKeyResponses, undefined);
+  });
+});
+
+describe('removeSafely', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-rm-safe-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+    fs.writeFileSync(path.join(accDir, 'a@b.com.json'), '{}');
+    fs.writeFileSync(path.join(accDir, 'c@d.com.json'), '{}');
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('removes a non-active account', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'c@d.com' } }));
+    removeSafely('a@b.com', claudeJson, accDir);
+    assert.ok(!fs.existsSync(path.join(accDir, 'a@b.com.json')));
+  });
+
+  it('refuses to remove the active account', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@b.com' } }));
+    assert.throws(
+      () => removeSafely('a@b.com', claudeJson, accDir),
+      /Cannot remove the active account/,
+    );
+    assert.ok(fs.existsSync(path.join(accDir, 'a@b.com.json')), 'file must remain on disk');
+  });
+
+  it('still throws ENOENT when the account file is missing', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'c@d.com' } }));
+    assert.throws(() => removeSafely('nope@x.com', claudeJson, accDir), /No saved account/i);
   });
 });
