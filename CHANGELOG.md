@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.4.0](https://github.com/SIRTHEO/claude-switch/compare/v3.3.0...v3.4.0) (2026-05-06)
+
+
+### Features
+
+* **security:** store API keys in macOS Keychain ([9116c00](https://github.com/SIRTHEO/claude-switch/commit/9116c00fb4f85882ab2c8eeff2da41fa161ea9b4))
+* **storage:** unify ephemeral state into state.json with on-read migration ([8362122](https://github.com/SIRTHEO/claude-switch/commit/83621227192185fba2be3dec4871e022f9a48b40))
+
+
+### Refactors
+
+* **cli:** drop unused helpers after handler extraction ([deb15e7](https://github.com/SIRTHEO/claude-switch/commit/deb15e73aaeba5e4ff6d60712212980c884016c1))
+* **cli:** extract per-command handlers, bin/cli.ts 1226→981 LOC ([e93e889](https://github.com/SIRTHEO/claude-switch/commit/e93e889281784bf33b655f542142909d3819cee3))
+* **cli:** extract profile + passthrough handlers, bin/cli.ts 789→487 LOC ([866f933](https://github.com/SIRTHEO/claude-switch/commit/866f933830342ec1a07c19b8602d1df28b10c9a4))
+* **cli:** extract switch + statusline handlers, bin/cli.ts 938→789 LOC ([8fb71fd](https://github.com/SIRTHEO/claude-switch/commit/8fb71fd674ac9a8d23ba6b69a9de53eba9568092))
+
 ## [3.3.0](https://github.com/SIRTHEO/claude-switch/compare/v3.2.0...v3.3.0) (2026-05-06)
 
 
