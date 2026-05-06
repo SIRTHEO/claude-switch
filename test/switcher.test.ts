@@ -127,25 +127,25 @@ describe('savePendingRestore', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('sets 0o600 permissions on .pending-restore (unix)', () => {
+  it('sets 0o600 permissions on the state file (unix)', () => {
     if (process.platform === 'win32') return;
     savePendingRestore('a@x.com', accDir);
-    const stat = fs.statSync(path.join(accDir, '.pending-restore'));
+    const stat = fs.statSync(path.join(accDir, '.claude-switch-state.json'));
     assert.equal(stat.mode & 0o777, 0o600);
   });
 
-  it('overwrites an existing .pending-restore', () => {
+  it('overwrites an existing pending-restore', () => {
     savePendingRestore('first@x.com', accDir);
     savePendingRestore('second@x.com', accDir);
-    const content = fs.readFileSync(path.join(accDir, '.pending-restore'), 'utf-8');
-    assert.equal(content, 'second@x.com');
+    const state = JSON.parse(fs.readFileSync(path.join(accDir, '.claude-switch-state.json'), 'utf-8'));
+    assert.equal(state.pendingRestore, 'second@x.com');
   });
 
   it('creates the accounts dir if missing', () => {
     const newAcc = path.join(tmpDir, 'fresh-accounts-dir');
     assert.equal(fs.existsSync(newAcc), false);
     savePendingRestore('a@x.com', newAcc);
-    assert.equal(fs.existsSync(path.join(newAcc, '.pending-restore')), true);
+    assert.equal(fs.existsSync(path.join(newAcc, '.claude-switch-state.json')), true);
   });
 });
 
@@ -165,23 +165,26 @@ describe('checkPendingRestore + clearPendingRestore', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('returns null when .pending-restore does not exist', () => {
+  it('returns null when no pending-restore is set', () => {
     assert.equal(checkPendingRestore(claudeJson, accDir), null);
   });
 
-  it('returns null when .pending-restore is empty', () => {
-    fs.writeFileSync(path.join(accDir, '.pending-restore'), '');
+  it('returns null when state.json has no pendingRestore field', () => {
+    fs.writeFileSync(path.join(accDir, '.claude-switch-state.json'), JSON.stringify({
+      version: 1,
+      fallback: { enabled: false, autoEngaged: false },
+    }));
     assert.equal(checkPendingRestore(claudeJson, accDir), null);
   });
 
   it('drops the marker even when restore fails (no infinite retry loop)', () => {
-    // Marker points to an account that has no saved file.
-    fs.writeFileSync(path.join(accDir, '.pending-restore'), 'ghost@x.com');
+    savePendingRestore('ghost@x.com', accDir);
     fs.writeFileSync(claudeJson, JSON.stringify({}));
     // load() will not find ghost@x.com.json — checkPendingRestore should
-    // still drop the marker so the next invocation doesn't loop on it.
+    // still drop the field so the next invocation doesn't loop on it.
     checkPendingRestore(claudeJson, accDir);
-    assert.equal(fs.existsSync(path.join(accDir, '.pending-restore')), false);
+    const state = JSON.parse(fs.readFileSync(path.join(accDir, '.claude-switch-state.json'), 'utf-8'));
+    assert.equal(state.pendingRestore, undefined);
   });
 
   it('restores the saved account and returns its email on success', () => {
@@ -191,26 +194,38 @@ describe('checkPendingRestore + clearPendingRestore', () => {
     fs.writeFileSync(path.join(accDir, 'original@x.com.json'), JSON.stringify({
       emailAddress: 'original@x.com', token: 'orig'
     }));
-    fs.writeFileSync(path.join(accDir, '.pending-restore'), 'original@x.com');
+    savePendingRestore('original@x.com', accDir);
 
     const restored = checkPendingRestore(claudeJson, accDir);
     assert.equal(restored, 'original@x.com');
 
     const result = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
     assert.equal(result.oauthAccount.emailAddress, 'original@x.com');
-    // Marker dropped after successful restore.
-    assert.equal(fs.existsSync(path.join(accDir, '.pending-restore')), false);
+    const state = JSON.parse(fs.readFileSync(path.join(accDir, '.claude-switch-state.json'), 'utf-8'));
+    assert.equal(state.pendingRestore, undefined, 'field cleared after successful restore');
   });
 
-  it('clearPendingRestore removes the marker if present', () => {
-    fs.writeFileSync(path.join(accDir, '.pending-restore'), 'a@x.com');
+  it('clearPendingRestore drops the field if present', () => {
+    savePendingRestore('a@x.com', accDir);
     clearPendingRestore(accDir);
-    assert.equal(fs.existsSync(path.join(accDir, '.pending-restore')), false);
+    const state = JSON.parse(fs.readFileSync(path.join(accDir, '.claude-switch-state.json'), 'utf-8'));
+    assert.equal(state.pendingRestore, undefined);
   });
 
-  it('clearPendingRestore is a no-op when the marker is absent', () => {
+  it('clearPendingRestore is a no-op when nothing is pending', () => {
     // Should not throw.
     clearPendingRestore(accDir);
+  });
+
+  it('migrates legacy .pending-restore marker to state.pendingRestore', () => {
+    fs.writeFileSync(path.join(accDir, '.pending-restore'), 'legacy@x.com');
+    // First read after upgrade must surface the migrated email.
+    const restored = checkPendingRestore(claudeJson, accDir);
+    // legacy@x.com has no account file, so restore fails and returns null,
+    // BUT the migration to state.json happened (and the field was cleared
+    // afterwards as part of the read+clear handshake).
+    assert.equal(restored, null);
+    assert.equal(fs.existsSync(path.join(accDir, '.pending-restore')), false, 'legacy marker removed');
   });
 });
 

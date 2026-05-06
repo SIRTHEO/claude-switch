@@ -225,13 +225,15 @@ describe('integration: pending restore (--as crash recovery)', () => {
     assert.equal(restored, 'work@co.com');
     assert.equal(getCurrent(claudeJson), 'work@co.com');
 
-    assert.ok(!fs.existsSync(path.join(accDir, '.pending-restore')));
+    const stateRaw = fs.readFileSync(path.join(accDir, '.claude-switch-state.json'), 'utf-8');
+    assert.equal(JSON.parse(stateRaw).pendingRestore, undefined);
   });
 
   it('clearPendingRestore removes file', () => {
     savePendingRestore('work@co.com', accDir);
     clearPendingRestore(accDir);
-    assert.ok(!fs.existsSync(path.join(accDir, '.pending-restore')));
+    const stateRaw = fs.readFileSync(path.join(accDir, '.claude-switch-state.json'), 'utf-8');
+    assert.equal(JSON.parse(stateRaw).pendingRestore, undefined);
   });
 
   it('checkPendingRestore returns null when no file', () => {

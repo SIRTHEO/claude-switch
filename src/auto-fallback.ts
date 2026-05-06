@@ -22,7 +22,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { isFallbackEnabled, setFallbackEnabled } from './fallback.js';
+import { isFallbackEnabled, setFallbackEnabledInLock } from './fallback.js';
 import { getCurrent } from './accounts.js';
 import { getApiKey } from './apikey.js';
 import { readUsageCacheFor } from './usage.js';
@@ -172,7 +172,7 @@ export function maybeAutoDisableFallback(
   const fiveOk = fivePct < config.threshold;
   const sevenOk = typeof sevenPct === 'number' && sevenPct < config.threshold;
   if (fiveOk && sevenOk) {
-    setFallbackEnabled(accountsDirPath, false);
+    setFallbackEnabledInLock(accountsDirPath, false);
     result.disabled = true;
   }
   return result;
@@ -239,7 +239,7 @@ export function maybeAutoEngageFallback(
     return result;
   }
 
-  setFallbackEnabled(accountsDirPath, true, { byAutoEngage: true });
+  setFallbackEnabledInLock(accountsDirPath, true, { byAutoEngage: true });
   result.engaged = true;
   result.reason = reason;
   return result;

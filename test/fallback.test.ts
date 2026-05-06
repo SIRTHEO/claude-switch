@@ -42,11 +42,26 @@ describe('fallback toggle', () => {
     assert.ok(fs.existsSync(accDir));
   });
 
-  it('marker file has 0o600 perms (unix)', () => {
+  it('state file has 0o600 perms (unix)', () => {
     if (process.platform === 'win32') return;
     setFallbackEnabled(accDir, true);
-    const stat = fs.statSync(path.join(accDir, '.fallback-enabled'));
+    const stat = fs.statSync(path.join(accDir, '.claude-switch-state.json'));
     assert.equal(stat.mode & 0o777, 0o600);
+  });
+
+  it('migrates legacy .fallback-enabled marker on first read', () => {
+    fs.mkdirSync(accDir, { recursive: true, mode: 0o700 });
+    // Simulate a v3.3 install with the old marker file present.
+    fs.writeFileSync(path.join(accDir, '.fallback-enabled'), '');
+    // Also place the auto-engage sidecar.
+    fs.writeFileSync(path.join(accDir, '.fallback-auto-engaged'), '');
+    // First read after upgrade should: see the markers, build state.json
+    // from them, delete the legacy files.
+    assert.equal(isFallbackEnabled(accDir), true);
+    assert.equal(isFallbackAutoEngaged(accDir), true);
+    assert.ok(fs.existsSync(path.join(accDir, '.claude-switch-state.json')));
+    assert.equal(fs.existsSync(path.join(accDir, '.fallback-enabled')), false, 'legacy marker removed');
+    assert.equal(fs.existsSync(path.join(accDir, '.fallback-auto-engaged')), false, 'legacy auto marker removed');
   });
 });
 
@@ -84,18 +99,10 @@ describe('isFallbackAutoEngaged', () => {
     assert.equal(isFallbackAutoEngaged(accDir), false);
   });
 
-  it('clears both markers when disabled', () => {
+  it('clears both flags when disabled', () => {
     setFallbackEnabled(accDir, true, { byAutoEngage: true });
     setFallbackEnabled(accDir, false);
     assert.equal(isFallbackEnabled(accDir), false);
     assert.equal(isFallbackAutoEngaged(accDir), false);
-    assert.equal(fs.existsSync(path.join(accDir, '.fallback-auto-engaged')), false);
-  });
-
-  it('auto marker file has 0o600 perms (unix)', () => {
-    if (process.platform === 'win32') return;
-    setFallbackEnabled(accDir, true, { byAutoEngage: true });
-    const stat = fs.statSync(path.join(accDir, '.fallback-auto-engaged'));
-    assert.equal(stat.mode & 0o777, 0o600);
   });
 });
