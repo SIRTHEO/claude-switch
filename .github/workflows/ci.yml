@@ -43,25 +43,39 @@ jobs:
 
       - name: Test (Unix)
         if: runner.os != 'Windows'
-        run: node --test dist/test/*.test.js
+        env:
+          # Tests share a tmp dir per case but the macOS Keychain is
+          # process-global. Disable the Keychain backend so suites that
+          # reuse common email fixtures (a@b.com, etc.) don't leak keys
+          # across files. Real-Keychain coverage lives in the dedicated
+          # apikey-keychain.test.ts which opts back in via this env var.
+          CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1'
+        # Two-segment glob lists root-level + one-deep test files. We
+        # don't enable globstar/`**` to keep behaviour identical across
+        # shells. Add another segment if the test tree grows deeper.
+        run: node --test dist/test/*.test.js dist/test/*/*.test.js
 
       - name: Test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1'
         run: |
-          $files = Get-ChildItem -Path dist/test -Filter "*.test.js" | ForEach-Object { $_.FullName }
+          $files = Get-ChildItem -Path dist/test -Recurse -Filter "*.test.js" | ForEach-Object { $_.FullName }
           node --test @files
 
       # Coverage report posted to the job summary on a single canonical runner
       # (ubuntu + LTS node). Avoids 9 racing reports across the matrix.
       - name: Coverage report (job summary)
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
+        env:
+          CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1'
         run: |
           set -o pipefail
           REPORT=$(node --test \
             --experimental-test-coverage \
             --test-coverage-include='dist/src/**/*.js' \
-            dist/test/*.test.js 2>&1 \
+            dist/test/*.test.js dist/test/*/*.test.js 2>&1 \
             | sed -n '/start of coverage report/,/end of coverage report/p')
           {
             echo "## Coverage report"
