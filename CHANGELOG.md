@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.1](https://github.com/SIRTHEO/claude-switch/compare/v3.0.0...v3.0.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* **proxy:** use async spawn so the local fallback proxy can serve requests ([f1dbcf5](https://github.com/SIRTHEO/claude-switch/commit/f1dbcf53bde71af826bc491ab143f4f773bc00ec))
+
 ## [3.0.0](https://github.com/SIRTHEO/claude-switch/compare/v2.8.1...v3.0.0) (2026-05-06)
 
 
