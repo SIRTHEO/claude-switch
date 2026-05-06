@@ -2,14 +2,14 @@
 import readline from 'node:readline';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import fs from 'node:fs';
-import path from 'node:path';
 import { getCurrent, save, load, list } from './accounts.js';
 import { setAlias } from './aliases.js';
 import { buildSpawnArgs } from './proxy.js';
 import { ExitError } from './errors.js';
 import { withLock } from './lock.js';
 import { getApiKey } from './apikey.js';
-import { isFallbackEnabled, setFallbackEnabled } from './fallback.js';
+import { isFallbackEnabled, setFallbackEnabledInLock } from './fallback.js';
+import { updateState, updateStateInLock } from './state-store.js';
 
 export interface SwitcherDeps {
   spawnSyncFn?: (command: string, args: string[], options: object) => SpawnSyncReturns<Buffer>;
@@ -96,7 +96,7 @@ export function switchToAndSyncFallback(
       // the desired state already matches — keeps the operation idempotent.
       const wasOn = isFallbackEnabled(accountsDirPath);
       if (wasOn !== hasApiKey) {
-        setFallbackEnabled(accountsDirPath, hasApiKey);
+        setFallbackEnabledInLock(accountsDirPath, hasApiKey);
         fallbackFlipped = true;
       }
     }
@@ -150,43 +150,54 @@ export async function switchInteractive(claudeJsonPath: string, accountsDirPath:
   console.log(switchTo(accounts[index - 1]!, claudeJsonPath, accountsDirPath));
 }
 
+/** Save a pending-restore marker. Acquires the lock itself.
+ *  Use from contexts with no surrounding `withLock`. */
 export function savePendingRestore(email: string, accountsDirPath: string): void {
-  const filePath = path.join(accountsDirPath, '.pending-restore');
   fs.mkdirSync(accountsDirPath, { recursive: true });
-  fs.writeFileSync(filePath, email);
-  if (process.platform !== 'win32') {
-    fs.chmodSync(filePath, 0o600);
-  }
+  updateState(accountsDirPath, (state) => ({ ...state, pendingRestore: email }));
+}
+
+/** Save a pending-restore marker INSIDE an existing `withLock`. */
+export function savePendingRestoreInLock(email: string, accountsDirPath: string): void {
+  fs.mkdirSync(accountsDirPath, { recursive: true });
+  updateStateInLock(accountsDirPath, (state) => ({ ...state, pendingRestore: email }));
 }
 
 export function checkPendingRestore(claudeJsonPath: string, accountsDirPath: string): string | null {
-  const filePath = path.join(accountsDirPath, '.pending-restore');
-  let email: string;
-  try {
-    email = fs.readFileSync(filePath, 'utf-8').trim();
-  } catch {
-    return null;
-  }
-  if (!email) return null;
+  // Atomically: read the pending email AND clear it in one locked pass.
+  // If we read first and clear later, two concurrent claude-switch
+  // processes could both consume the same restore. The lambda captures
+  // the prior value into a closure variable before returning the cleared
+  // state to the writer.
+  let extracted: string | undefined;
+  updateState(accountsDirPath, (state) => {
+    extracted = state.pendingRestore;
+    if (!extracted) return state;
+    const { pendingRestore: _drop, ...rest } = state;
+    return rest as typeof state;
+  });
+  if (!extracted) return null;
 
-  // Drop the pending marker first, then attempt the restore. If the restore
-  // throws, we don't want a stale marker to wedge subsequent invocations
-  // into an infinite retry loop.
-  try { fs.unlinkSync(filePath); } catch { /* already gone */ }
-
+  // The restore step takes its own lock — the marker has been cleared
+  // already so a failed restore won't loop on the next invocation.
   try {
     withLock(accountsDirPath, () => {
-      load(email, claudeJsonPath, accountsDirPath);
+      load(extracted!, claudeJsonPath, accountsDirPath);
     });
-    return email;
+    return extracted;
   } catch {
     return null;
   }
 }
 
 export function clearPendingRestore(accountsDirPath: string): void {
-  const filePath = path.join(accountsDirPath, '.pending-restore');
-  try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+  // No-op when the state file doesn't exist yet — readState returns
+  // EMPTY_STATE, the patch removes a field that wasn't there.
+  if (!fs.existsSync(accountsDirPath)) return;
+  updateState(accountsDirPath, (state) => {
+    const { pendingRestore: _drop, ...rest } = state;
+    return rest as typeof state;
+  });
 }
 
 export async function runTemporarySwitch(
@@ -220,7 +231,7 @@ export async function runTemporarySwitch(
   let keychainRestored = false;
   withLock(accountsDirPath, () => {
     if (currentEmail) {
-      savePendingRestore(currentEmail, accountsDirPath);
+      savePendingRestoreInLock(currentEmail, accountsDirPath);
       doSave(currentEmail, claudeJsonPath, accountsDirPath);
     }
     const result = doLoad(targetEmail, claudeJsonPath, accountsDirPath);
