@@ -20,7 +20,7 @@ import { checkForUpdate, fetchLatestVersionSync, performUpdate, performUpdateBac
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
 import { isFallbackEnabled, isFallbackAutoEngaged, setFallbackEnabled } from '../src/fallback.js';
 import { fallbackEnvFor } from '../src/fallback-env.js';
-import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback, maybeAutoEngageFallback } from '../src/auto-fallback.js';
+import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback, maybeAutoEngageFallback, maybeInitSmartFallback } from '../src/auto-fallback.js';
 import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
 import { runMainMenu } from '../src/ui/main-menu.js';
 import { profilesDir } from '../src/profiles.js';
@@ -28,6 +28,7 @@ import { setApiKeyInteractive } from '../src/ui/set-apikey.js';
 import { runSetupWizard } from '../src/ui/setup-wizard.js';
 import { addAccountInteractive } from '../src/ui/add-account.js';
 import { removeAccountInteractive } from '../src/ui/remove-account.js';
+import { startRotatingProxy } from '../src/api-proxy.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -929,6 +930,7 @@ async function main(): Promise<void> {
       const key = await promptSecret('');
       if (!key) throw new ExitError('No key on stdin. Aborted.');
       withLock(aDir, () => setApiKey(email, key, aDir));
+      maybeInitSmartFallback(aDir);
       console.log(`Saved API key for ${email} (${maskApiKey(key)}).`);
       break;
     }
@@ -1254,6 +1256,9 @@ async function main(): Promise<void> {
         const accounts = listAccounts(aDir);
         const wasUnsaved = !accounts.includes(e);
         if (wasUnsaved) save(e, cJson, aDir);
+        // Lazy-init smart fallback the first time a key-bearing account is
+        // seen with no config file (migrates existing users automatically).
+        if (getApiKey(e, aDir)) maybeInitSmartFallback(aDir);
         const auto = maybeAutoDisableFallback(aDir, cJson);
         // Auto-engage runs after auto-disable in the same lock so the
         // fallbackEnvFor() read below sees the final flag state. The config
@@ -1304,18 +1309,42 @@ async function main(): Promise<void> {
         process.stderr.write('(fallback on — using saved API key)\n\n');
       } else {
         // Read-only check: if a recent usage snapshot says we're near the
-        // limit and the user has a saved key, hint at the fallback toggle.
-        // Never fetches — only consults whatever the user already cached
-        // via `claude switch usage`. Skips entirely if no cache exists.
+        // limit and smart fallback isn't enabled (no config + key exists),
+        // remind the user to save an API key to unlock auto-switching.
+        // Never fetches — only consults whatever the user already cached.
         const cache = readUsageCache(aDir);
         if (cache?.payload && cache.payload.five_hour.utilization >= 85 && getApiKey(email, aDir)) {
           process.stderr.write(
             `⚠ subscription 5h window at ${cache.payload.five_hour.utilization.toFixed(0)}%. ` +
-            `Run "claude switch fallback on" to use your API key instead.\n\n`,
+            `Smart fallback will switch to your API key automatically.\n\n`,
           );
         }
       }
-      proxyRun(claudeBin, cmd.args, extraEnv);
+
+      // When 2+ accounts have API keys, run a local rotating proxy so that
+      // a 429 mid-session transparently retries under a different account's
+      // key — no REPL restart needed.
+      const allAccountEmails = listAccounts(aDir);
+      const keyAccounts = [
+        ...allAccountEmails.filter(e => e === email),
+        ...allAccountEmails.filter(e => e !== email),
+      ]
+        .map(e => ({ email: e, apiKey: getApiKey(e, aDir) }))
+        .filter((a): a is { email: string; apiKey: string } => a.apiKey !== null);
+
+      if (keyAccounts.length >= 2) {
+        const proxy = await startRotatingProxy(keyAccounts);
+        process.on('exit', () => proxy.close());
+        // Explicitly clear ANTHROPIC_API_KEY so the binary uses its OAuth
+        // flow (→ our proxy intercepts and swaps in the API key).  If an
+        // inherited key is present the SDK might bypass ANTHROPIC_BASE_URL.
+        proxyRun(claudeBin, cmd.args, {
+          ANTHROPIC_BASE_URL: `http://127.0.0.1:${proxy.port}`,
+          ANTHROPIC_API_KEY: '',
+        });
+      } else {
+        proxyRun(claudeBin, cmd.args, extraEnv);
+      }
       break;
     }
   }

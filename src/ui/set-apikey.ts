@@ -3,6 +3,7 @@
 
 import * as p from '@clack/prompts';
 import { getApiKey, maskApiKey, setApiKey } from '../apikey.js';
+import { maybeInitSmartFallback } from '../auto-fallback.js';
 import { withLock } from '../lock.js';
 
 const KEY_PREFIX = 'sk-ant-';
@@ -68,10 +69,12 @@ export async function setApiKeyInteractive(
     }
   }
 
+  let smartEnabled = false;
   const spin = p.spinner();
   spin.start('Saving key');
   try {
     withLock(accountsDirPath, () => setApiKey(email, key, accountsDirPath));
+    smartEnabled = maybeInitSmartFallback(accountsDirPath);
     spin.stop(`Saved (${maskApiKey(key)})`);
   } catch (e) {
     spin.stop('Save failed');
@@ -80,8 +83,9 @@ export async function setApiKeyInteractive(
   }
 
   p.note(
-    `Enable the fallback whenever you want to bill against API credits:\n` +
-    `  claude switch fallback on\n\n` +
+    `Smart fallback is ${smartEnabled ? 'now active' : 'already configured'}.\n` +
+    `It switches to your API key automatically above 95% usage\n` +
+    `and reverts to your subscription when usage drops below 80%.\n\n` +
     `IMPORTANT: the FIRST time you run claude with this key, you'll see:\n\n` +
     `    "Use this API key? [y/N]"\n\n` +
     `→ Press y to approve. Your choice is remembered.\n` +
