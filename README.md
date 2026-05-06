@@ -275,6 +275,16 @@ PRs welcome — see [`CONTRIBUTING.md`](.github/CONTRIBUTING.md). Licensed under
 
 ---
 
+## ⚖️ Trademark notice
+
+**claude-switch is an independent, community-built tool. It is not affiliated with, endorsed by, sponsored by, or in any way officially connected to Anthropic, PBC.**
+
+"Claude" and "Claude Code" are trademarks of Anthropic, PBC. The names are used here in a strictly nominative/descriptive sense to indicate compatibility with the Claude Code CLI — this project does not redistribute, modify, or proxy Anthropic software or services. All credentials and API traffic stay between the user and Anthropic.
+
+For Anthropic's official products visit [anthropic.com](https://www.anthropic.com) and [claude.com/claude-code](https://www.claude.com/claude-code).
+
+---
+
 <div align="center">
 
 ### If claude-switch saved you 5 hours of waiting for a rate limit to reset…
