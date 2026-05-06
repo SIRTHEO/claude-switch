@@ -1323,15 +1323,18 @@ async function main(): Promise<void> {
 
       // If the active account has an API key, start a local proxy so that a
       // 429 mid-session retries with the API key — no REPL restart needed.
-      // The proxy forwards requests with the original OAuth token first; only
-      // on 429 does it swap in the API key (same account, never cross-account).
+      //
+      // startWithOAuth mirrors the statusline display:
+      //   fallbackOn=false (extraEnv=null)  → OAuth first, API key on 429  → statusline "OAuth"
+      //   fallbackOn=true  (extraEnv≠null)  → API key from first request   → statusline "API"
       const activeApiKey = getApiKey(email, aDir);
 
       if (activeApiKey) {
-        const proxy = await startFallbackProxy(activeApiKey);
+        const startWithOAuth = !extraEnv;
+        const proxy = await startFallbackProxy(activeApiKey, startWithOAuth);
         process.on('exit', () => proxy.close());
-        // Clear any inherited ANTHROPIC_API_KEY so the binary uses OAuth and
-        // routes through ANTHROPIC_BASE_URL instead of bypassing the proxy.
+        // Clear any inherited ANTHROPIC_API_KEY so the binary uses the proxy
+        // and cannot bypass ANTHROPIC_BASE_URL.
         proxyRun(claudeBin, cmd.args, {
           ANTHROPIC_BASE_URL: `http://127.0.0.1:${proxy.port}`,
           ANTHROPIC_API_KEY: '',

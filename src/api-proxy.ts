@@ -4,16 +4,23 @@
 // The claude binary respects ANTHROPIC_BASE_URL. We start a server on a
 // random loopback port and set that env var before spawning the binary.
 //
-// Normal flow (no rate limit):
-//   claude → proxy → api.anthropic.com   (OAuth token forwarded unchanged)
+// Two modes, controlled by the `startWithOAuth` parameter:
 //
-// On 429 (subscription exhausted):
-//   proxy retries the same request with the account's API key instead.
-//   The `oauth-2025-04-20` beta flag is stripped on the retry so Anthropic
-//   bills the request against API credits, not the subscription.
+//   startWithOAuth = true  (fallback OFF, key saved):
+//     OAuth first → [429] → retry with API key.
+//     Statusline shows "OAuth". The subscription is used until it hits the
+//     rate limit, then API credits kick in transparently.
 //
-// No cross-account rotation happens unless the user explicitly configures it.
-// Started when the active account has a saved API key.
+//   startWithOAuth = false  (fallback ON, key saved):
+//     API key from the first request, no OAuth attempt.
+//     Statusline shows "API". Equivalent to the old ANTHROPIC_API_KEY inject
+//     but routed through the proxy so future rotation can be added.
+//
+// In both modes `oauth-2025-04-20` is stripped from `anthropic-beta` when
+// forwarding with an API key, so Anthropic bills API credits not subscription.
+//
+// No cross-account rotation happens. Started when the active account has a
+// saved API key.
 
 import http from 'node:http';
 import https from 'node:https';
@@ -36,7 +43,7 @@ export function stripOauthBeta(value: string): string {
     .join(',');
 }
 
-/** Headers for the initial pass-through attempt (OAuth, unchanged). */
+/** Headers for a pass-through attempt: forwarded as-is, only `host` dropped. */
 export function buildPassthroughHeaders(incoming: IncomingHttpHeaders): IncomingHttpHeaders {
   const out: IncomingHttpHeaders = {};
   for (const [k, v] of Object.entries(incoming)) {
@@ -47,8 +54,8 @@ export function buildPassthroughHeaders(incoming: IncomingHttpHeaders): Incoming
 }
 
 /**
- * Headers for the API-key retry after a 429.
- * Replaces Authorization with the API key and strips the OAuth billing marker.
+ * Headers for an API-key request: replaces `authorization` with the key and
+ * strips `oauth-2025-04-20` from `anthropic-beta` so Anthropic bills credits.
  */
 export function buildApiKeyHeaders(
   incoming: IncomingHttpHeaders,
@@ -72,13 +79,19 @@ export function buildApiKeyHeaders(
 }
 
 /**
- * Start the fallback proxy for a single account.
+ * Start the fallback proxy.
  *
- * Requests are forwarded with the original OAuth token. If the upstream
- * returns 429, the proxy retries once with the account's API key.
+ * @param apiKey       The account's saved API key.
+ * @param startWithOAuth
+ *   `true`  — forward with OAuth first; retry with API key only on 429.
+ *             Use when `fallback` is OFF. Statusline shows "OAuth".
+ *   `false` — use the API key from the very first request.
+ *             Use when `fallback` is ON. Statusline shows "API".
+ * @param upstreamBase Upstream base URL (override for testing).
  */
 export function startFallbackProxy(
   apiKey: string,
+  startWithOAuth = true,
   upstreamBase = DEFAULT_UPSTREAM,
 ): Promise<ProxyHandle> {
   const upstream = new URL(upstreamBase);
@@ -117,9 +130,26 @@ export function startFallbackProxy(
       req.on('error', () => { if (!res.headersSent) { res.writeHead(400); res.end(); } });
       req.on('end', () => {
         const body = Buffer.concat(chunks);
-        const oauthHeaders = buildPassthroughHeaders(req.headers);
 
-        // First attempt: OAuth (subscription)
+        if (!startWithOAuth) {
+          // API-key-first mode (fallback ON): no OAuth attempt, just forward
+          // with the API key. Pass 429 through if it occurs.
+          const headers = buildApiKeyHeaders(req.headers, apiKey);
+          forward(headers, req.method, req.url, body,
+            (proxyRes) => {
+              res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
+              proxyRes.pipe(res);
+            },
+            () => {
+              if (!res.headersSent) { res.writeHead(502); res.end(); }
+            },
+          );
+          return;
+        }
+
+        // OAuth-first mode (fallback OFF): try subscription, retry with API
+        // key on 429.
+        const oauthHeaders = buildPassthroughHeaders(req.headers);
         forward(oauthHeaders, req.method, req.url, body,
           (proxyRes) => {
             if (proxyRes.statusCode !== 429) {
@@ -128,25 +158,18 @@ export function startFallbackProxy(
               return;
             }
 
-            // 429 on OAuth → retry with API key
             proxyRes.resume();
             proxyRes.on('end', () => {
               process.stderr.write(
                 '\n⚡ claude-switch: subscription limit hit — retrying with API key\n\n',
               );
-
               const keyHeaders = buildApiKeyHeaders(req.headers, apiKey);
               forward(keyHeaders, req.method, req.url, body,
                 (retryRes) => {
                   res.writeHead(retryRes.statusCode!, retryRes.headers as OutgoingHttpHeaders);
                   retryRes.pipe(res);
                 },
-                () => {
-                  if (!res.headersSent) {
-                    res.writeHead(502);
-                    res.end();
-                  }
-                },
+                () => { if (!res.headersSent) { res.writeHead(502); res.end(); } },
               );
             });
           },
