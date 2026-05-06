@@ -2,25 +2,15 @@
 // claude-switch — Claude Code multi-account wrapper
 
 import fs from 'node:fs';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolve } from '../src/resolver.js';
-import { getCurrent, save, list as listAccounts, } from '../src/accounts.js';
-import { withLock } from '../src/lock.js';
 import { checkPendingRestore } from '../src/switcher.js';
-import { run as proxyRun } from '../src/proxy.js';
 import { claudeJsonPath, accountsDir } from '../src/paths.js';
 import { VERSION } from '../src/version.js';
 import { ExitError } from '../src/errors.js';
-import { getTokenHealth } from '../src/token.js';
 import { getSavedClaudeBin, } from '../src/setup.js';
 import { checkForUpdate, performUpdate, } from '../src/update-check.js';
-import { getApiKey, } from '../src/apikey.js';
-import { fallbackEnvFor } from '../src/fallback-env.js';
-import { maybeAutoDisableFallback, maybeAutoEngageFallback, maybeInitSmartFallback } from '../src/auto-fallback.js';
-import { readUsageCache, } from '../src/usage.js';
 import { runApp } from '../src/ui/run-app.js';
-import { startFallbackProxy } from '../src/api-proxy.js';
 import { handleHelp } from '../src/commands/help.js';
 import { handleVersion } from '../src/commands/version.js';
 import { handleCompletions } from '../src/commands/completions.js';
@@ -41,6 +31,16 @@ import {
   handleStatuslineUninstall,
   handleStatuslineStatus,
 } from '../src/commands/statusline.js';
+import {
+  handleProfileList,
+  handleProfileCreate,
+  handleProfileStatus,
+  handleProfileLogin,
+  handleProfileUse,
+  handleProfileImport,
+  handleProfileRemove,
+} from '../src/commands/profile.js';
+import { handlePassthrough } from '../src/commands/passthrough.js';
 import type { CommandContext } from '../src/commands/context.js';
 
 export type Command =
@@ -222,7 +222,7 @@ export function parseCommand(args: string[]): Command {
   }
 }
 
-function findClaude(): string {
+function _findClaude(): string {
   const saved = getSavedClaudeBin();
   if (saved) return saved;
 
@@ -289,194 +289,15 @@ async function main(): Promise<void> {
   }
 
   // Profile subcommands — isolated per-terminal claude sessions via
-  // CLAUDE_CONFIG_DIR. See ~/.claude/profiles/<name>/ for the per-profile
-  // state (each gets its own userID, Keychain entry, sessions, etc.).
-  if (cmd.action === 'profile-list') {
-    const { listProfiles, readProfile } = await import('../src/profiles.js');
-    const profiles = listProfiles();
-    if (profiles.length === 0) {
-      console.log('No profiles. Create one with: claude switch profile create <name>');
-      return;
-    }
-    console.log('Profiles:\n');
-    for (const name of profiles) {
-      const info = readProfile(name);
-      const right = info.hasLogin
-        ? `→  ${info.emailAddress ?? '<unknown>'}`
-        : '(not logged in — run: claude switch profile login ' + name + ')';
-      console.log(`  ${name.padEnd(20)} ${right}`);
-    }
-    return;
-  }
-  if (cmd.action === 'profile-create') {
-    const { createProfile } = await import('../src/profiles.js');
-    let dir: string;
-    try { dir = createProfile(cmd.name); }
-    catch (e) { throw new ExitError((e as Error).message); }
-    console.log(`Created profile "${cmd.name}" at ${dir}`);
-    console.log('');
-    console.log('Next steps:');
-    console.log(`  1. claude switch profile login ${cmd.name}    # browser opens, sign in`);
-    console.log(`  2. claude switch profile use ${cmd.name}      # start using the profile`);
-    return;
-  }
-  if (cmd.action === 'profile-status') {
-    const { readProfile, listProfiles } = await import('../src/profiles.js');
-    if (cmd.name) {
-      let info: ReturnType<typeof readProfile>;
-      try { info = readProfile(cmd.name); }
-      catch (e) { throw new ExitError((e as Error).message); }
-
-      const profileClaudeJson = path.join(info.path, '.claude.json');
-      const tokenHealth = info.hasLogin ? getTokenHealth(profileClaudeJson) : null;
-      const tokenLine = (() => {
-        if (!tokenHealth) return '(not logged in yet)';
-        switch (tokenHealth.status) {
-          case 'valid': return `valid (expires ${tokenHealth.expiresIn})`;
-          case 'expired': return `EXPIRED (${tokenHealth.expiresIn}) — run: claude switch profile login ${info.name}`;
-          case 'present': return 'present (expiry unknown)';
-          case 'missing': return 'missing — run: claude switch profile login ' + info.name;
-        }
-      })();
-
-      let keychainLine = '(not applicable on this platform)';
-      if (process.platform === 'darwin' && info.userID) {
-        const { spawnSync: ss } = await import('node:child_process');
-        const r = ss('security', [
-          'find-generic-password', '-a', info.userID, '-s', 'Claude Code-credentials',
-        ], { stdio: 'pipe' });
-        keychainLine = r.status === 0 ? `present (account=${info.userID.slice(0, 16)}…)` : 'absent';
-      } else if (!info.userID) {
-        keychainLine = '(no userID yet — run claude once in this profile)';
-      }
-
-      let lastUsed = '(never)';
-      try {
-        const mtime = fs.statSync(profileClaudeJson).mtime;
-        lastUsed = mtime.toLocaleString();
-      } catch { /* fresh profile */ }
-
-      console.log(`Profile: ${info.name}`);
-      console.log(`Path:    ${info.path}`);
-      console.log(`Email:   ${info.emailAddress ?? '(not logged in yet)'}`);
-      console.log(`Token:   ${tokenLine}`);
-      console.log(`Keychain:${' '.repeat(1)}${keychainLine}`);
-      console.log(`Last run:${' '.repeat(1)}${lastUsed}`);
-      console.log(`User ID: ${info.userID ?? '(not yet assigned — run claude once in this profile)'}`);
-      return;
-    }
-    // No name: show all
-    const profiles = listProfiles();
-    if (profiles.length === 0) {
-      console.log('No profiles configured.');
-      return;
-    }
-    for (const n of profiles) {
-      const info = readProfile(n);
-      const status = info.hasLogin ? (info.emailAddress ?? '(email unknown)') : '(not logged in)';
-      console.log(`${n}: ${status} [${info.userID?.slice(0, 12) ?? '-'}…]`);
-    }
-    return;
-  }
-  if (cmd.action === 'profile-login') {
-    const { profilePath, profileExists, createProfile, readProfile } = await import('../src/profiles.js');
-    let dir: string;
-    try {
-      if (!profileExists(cmd.name)) {
-        createProfile(cmd.name);
-        console.log(`Created profile "${cmd.name}".`);
-      }
-      dir = profilePath(cmd.name);
-    } catch (e) { throw new ExitError((e as Error).message); }
-    const claudeBin = findClaude();
-    process.stderr.write(`🔐 Opening browser to authenticate profile "${cmd.name}"...\n\n`);
-    const { buildSpawnArgs } = await import('../src/proxy.js');
-    const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform, {
-      CLAUDE_CONFIG_DIR: dir,
-    });
-    const { spawnSync } = await import('node:child_process');
-    spawnSync(command, args, options);
-    const info = readProfile(cmd.name);
-    if (info.emailAddress) {
-      console.log(`\n✔ Profile "${cmd.name}" logged in as ${info.emailAddress}`);
-      console.log(`Use it with:  claude switch profile use ${cmd.name}`);
-    } else {
-      console.log(`\nLogin did not complete for profile "${cmd.name}". Try again with:`);
-      console.log(`  claude switch profile login ${cmd.name}`);
-    }
-    return;
-  }
-  if (cmd.action === 'profile-use') {
-    const { profilePath, profileExists, readProfile } = await import('../src/profiles.js');
-    if (!profileExists(cmd.name)) {
-      throw new ExitError(
-        `Profile "${cmd.name}" does not exist. Create it with: claude switch profile create ${cmd.name}`,
-      );
-    }
-    let info: ReturnType<typeof readProfile>;
-    try { info = readProfile(cmd.name); }
-    catch (e) { throw new ExitError((e as Error).message); }
-    if (!info.hasLogin) {
-      throw new ExitError(
-        `Profile "${cmd.name}" has no login yet. Run: claude switch profile login ${cmd.name}`,
-      );
-    }
-    const dir = profilePath(cmd.name);
-    const claudeBin = findClaude();
-    process.stderr.write(`🔑 ${cmd.name} (profile, isolated) — ${info.emailAddress}\n\n`);
-    const { buildSpawnArgs } = await import('../src/proxy.js');
-    const { command, args, options } = buildSpawnArgs(claudeBin, cmd.args, process.platform, {
-      CLAUDE_CONFIG_DIR: dir,
-    });
-    const { spawnSync } = await import('node:child_process');
-    const result = spawnSync(command, args, options);
-    if (result.error) {
-      console.error(`Error: could not run claude: ${result.error.message}`);
-      process.exit(1);
-    }
-    process.exit(result.status ?? 0);
-  }
-  if (cmd.action === 'profile-import') {
-    const { importProfileFromAccount } = await import('../src/profiles.js');
-    let result: ReturnType<typeof importProfileFromAccount>;
-    try {
-      result = importProfileFromAccount(cmd.email, aDir, cmd.profileName);
-    } catch (e) {
-      throw new ExitError((e as Error).message);
-    }
-    console.log(`✔ Imported "${result.emailAddress}" into profile "${result.profileName}"`);
-    console.log(`  Path:    ${result.profilePath}`);
-    console.log(`  User ID: ${result.userID.slice(0, 16)}…`);
-    if (result.wroteToKeychain) {
-      console.log(`  Tokens:  written to macOS Keychain (account=${result.userID.slice(0, 16)}…)`);
-    } else if (result.needsLogin) {
-      console.log('');
-      console.log('⚠ This account predates v2.2 (no _keychain snapshot saved).');
-      console.log(`  Run:  claude switch profile login ${result.profileName}`);
-      console.log('  to authenticate the profile.');
-    } else {
-      console.log(`  Tokens:  written to ${result.profilePath}/.claude.json`);
-    }
-    if (!result.needsLogin) {
-      console.log('');
-      console.log(`Use it now with:  claude switch profile use ${result.profileName}`);
-    }
-    return;
-  }
-  if (cmd.action === 'profile-remove') {
-    const { removeProfile } = await import('../src/profiles.js');
-    let result: ReturnType<typeof removeProfile>;
-    try { result = removeProfile(cmd.name); }
-    catch (e) { throw new ExitError((e as Error).message); }
-    console.log(`Removed profile dir: ${result.dir}`);
-    if (result.userID && process.platform === 'darwin') {
-      console.log('');
-      console.log(`Note: macOS Keychain still has an entry created by claude for this profile.`);
-      console.log(`To remove it manually:`);
-      console.log(`  security delete-generic-password -a "${result.userID}" -s "Claude Code-credentials"`);
-    }
-    return;
-  }
+  // CLAUDE_CONFIG_DIR. Early-return so they skip the update-check / pending
+  // -restore preludes; profile flows manage their own spawn lifecycle.
+  if (cmd.action === 'profile-list')   { await handleProfileList(); return; }
+  if (cmd.action === 'profile-create') { await handleProfileCreate(cmd.name); return; }
+  if (cmd.action === 'profile-status') { await handleProfileStatus(cmd.name); return; }
+  if (cmd.action === 'profile-login')  { await handleProfileLogin(statuslineCtx, cmd.name); return; }
+  if (cmd.action === 'profile-use')    { await handleProfileUse(statuslineCtx, cmd.name, cmd.args); /* never returns */ }
+  if (cmd.action === 'profile-import') { await handleProfileImport(statuslineCtx, cmd.email, cmd.profileName); return; }
+  if (cmd.action === 'profile-remove') { await handleProfileRemove(cmd.name); return; }
 
   // Check for update (reads cache synchronously — never blocks). Passthrough
   // is included so long Claude sessions can show a hint, but updates are
@@ -628,132 +449,9 @@ async function main(): Promise<void> {
       await handleUpdate();
       break;
 
-    case 'passthrough': {
-      const restored = checkPendingRestore(cJson, aDir);
-      if (restored) {
-        console.log(`Restored account: ${restored} (from interrupted --as)\n`);
-      }
-
-      const claudeBin = findClaude();
-
-      // Snapshot the (active email, fallback env, auto-revert decision) as a
-      // single atomic block. Without the lock a concurrent `claude switch B`
-      // could swap the active email between getCurrent() and fallbackEnvFor(),
-      // pairing email-B's identity with email-A's API key — billing the wrong
-      // account. The auto-disable also runs inside this lock so its
-      // setFallbackEnabled(false) is reflected by the fallbackEnvFor() read.
-      const snapshot = withLock(aDir, () => {
-        const e = getCurrent(cJson);
-        if (!e) return null;
-        const accounts = listAccounts(aDir);
-        const wasUnsaved = !accounts.includes(e);
-        if (wasUnsaved) save(e, cJson, aDir);
-        // Lazy-init smart fallback the first time a key-bearing account is
-        // seen with no config file (migrates existing users automatically).
-        if (getApiKey(e, aDir)) maybeInitSmartFallback(aDir);
-        const auto = maybeAutoDisableFallback(aDir, cJson);
-        // Auto-engage runs after auto-disable in the same lock so the
-        // fallbackEnvFor() read below sees the final flag state. The config
-        // invariant `engageThreshold > threshold` guarantees a single call
-        // cannot both disable and engage (windows can't be < threshold AND
-        // >= engageThreshold simultaneously).
-        const engage = maybeAutoEngageFallback(aDir, cJson);
-        return { email: e, wasUnsaved, auto, engage, extraEnv: fallbackEnvFor(e, aDir) };
-      });
-      if (!snapshot) {
-        throw new ExitError('No account connected. Run: claude switch add');
-      }
-      const { email, wasUnsaved, auto, engage, extraEnv } = snapshot;
-
-      if (wasUnsaved) {
-        process.stderr.write(`Detected account: ${email} (saved automatically)\n\n`);
-      }
-      if (auto.disabled) {
-        const sevenStr = auto.sevenPct !== undefined ? `, 7d:${auto.sevenPct.toFixed(0)}%` : '';
-        process.stderr.write(
-          `📈 Subscription back online (5h:${auto.fivePct!.toFixed(0)}%${sevenStr}, ` +
-          `threshold ${auto.threshold}%) — switched back to OAuth\n\n`,
-        );
-      }
-      if (engage.engaged) {
-        const win = engage.reason === '5h'
-          ? `5h:${engage.fivePct!.toFixed(0)}%`
-          : `7d:${engage.sevenPct!.toFixed(0)}%`;
-        process.stderr.write(
-          `📉 Subscription near cap (${win}, threshold ${engage.threshold}%) — ` +
-          `switched to API key fallback\n\n`,
-        );
-      } else if (engage.blocked) {
-        process.stderr.write(`⚠ auto-engage wanted to switch to API key but ${engage.blocked}\n\n`);
-      }
-      if (updateInfo) {
-        process.stderr.write(
-          `↥ claude-switch ${VERSION} → ${updateInfo.latestVersion} available\n` +
-          `  Update manually: ${updateInfo.installCommand}\n\n`,
-        );
-      }
-      // Banner on stderr so we don't pollute structured stdout (e.g. when
-      // claude is piped into jq with --output-format json).
-      process.stderr.write(`🔑 ${email}\n\n`);
-      if (extraEnv) {
-        process.stderr.write('(fallback on — using saved API key)\n\n');
-      } else {
-        // Read-only check: if a recent usage snapshot says we're near the
-        // limit and smart fallback isn't enabled (no config + key exists),
-        // remind the user to save an API key to unlock auto-switching.
-        // Never fetches — only consults whatever the user already cached.
-        const cache = readUsageCache(aDir);
-        if (cache?.payload && cache.payload.five_hour.utilization >= 85 && getApiKey(email, aDir)) {
-          process.stderr.write(
-            `⚠ subscription 5h window at ${cache.payload.five_hour.utilization.toFixed(0)}%. ` +
-            `Smart fallback will switch to your API key automatically.\n\n`,
-          );
-        }
-      }
-
-      // If the active account has an API key, start the local proxy so the
-      // session can transition between OAuth and API live, in BOTH directions.
-      //
-      // Proxy mode resolution (per account `authMode` preference + token
-      // health, see `resolveEffectiveAuthMode`):
-      //   oauth-first  → OAuth first, retry API on 429/error per request,
-      //                  enter API-burst sub-state after N consecutive
-      //                  OAuth failures + periodic OAuth probe to recover.
-      //   api-first    → API key always.
-      //   oauth-only   → no proxy needed (no key) — fall through.
-      //   error        → no auth available — fall through (claude will fail).
-      const activeApiKey = getApiKey(email, aDir);
-
-      if (activeApiKey) {
-        const { resolveAccountPrefs, resolveEffectiveAuthMode } = await import('../src/preferences.js');
-        const prefs = resolveAccountPrefs(email, aDir);
-        const tokenHealth = getTokenHealth(cJson);
-        const oauthHealthy = tokenHealth.status === 'valid' || tokenHealth.status === 'present';
-        const effective = resolveEffectiveAuthMode({
-          authMode: prefs.authMode,
-          oauthHealthy,
-          hasApiKey: true,
-        });
-        // `oauth-only` and `error` mean "don't use the API key" — handled
-        // below by falling through to the no-key branch.
-        if (effective === 'oauth-first' || effective === 'api-first') {
-          const proxy = await startFallbackProxy({
-            apiKey: activeApiKey,
-            mode: effective,
-          });
-          process.on('exit', () => proxy.close());
-          // Clear any inherited ANTHROPIC_API_KEY so the binary uses the proxy
-          // and cannot bypass ANTHROPIC_BASE_URL.
-          proxyRun(claudeBin, cmd.args, {
-            ANTHROPIC_BASE_URL: `http://127.0.0.1:${proxy.port}`,
-            ANTHROPIC_API_KEY: '',
-          });
-          break;
-        }
-      }
-      proxyRun(claudeBin, cmd.args, extraEnv);
+    case 'passthrough':
+      await handlePassthrough(ctx, cmd.args);
       break;
-    }
   }
 }
 
