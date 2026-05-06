@@ -1,77 +1,288 @@
-# claude-switch — manage multiple Claude Code accounts, bypass rate limits, run parallel sessions
+<div align="center">
 
-[![npm version](https://img.shields.io/npm/v/@sirtheo/claude-switch)](https://www.npmjs.com/package/@sirtheo/claude-switch)
-[![npm downloads](https://img.shields.io/npm/dm/@sirtheo/claude-switch)](https://www.npmjs.com/package/@sirtheo/claude-switch)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Node.js CI](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml)
+<img src="docs/images/logo.svg" alt="claude-switch logo" width="540"/>
 
-**claude-switch** lets you manage multiple Claude Code accounts on the same machine — switch between Claude accounts in one second, bypass Claude Max/Pro rate limits with API key fallback and auto-revert, and run isolated per-terminal sessions where each terminal uses a different Claude account simultaneously.
+# `claude-switch`
 
-> ⭐ **If this saves you time, [star the repo](https://github.com/SIRTHEO/claude-switch) — it helps others find it.**
+### The fastest way to manage multiple Claude Code accounts, bypass Max & Pro rate limits, and run parallel Claude sessions on the same machine.
 
----
+**One CLI · zero browser logins after setup · macOS · Linux · Windows**
 
-## One command. That's all you need.
+<p>
+  <a href="https://www.npmjs.com/package/@sirtheo/claude-switch"><img alt="npm" src="https://img.shields.io/npm/v/@sirtheo/claude-switch?color=f0b429&label=npm&style=for-the-badge"></a>
+  <a href="https://www.npmjs.com/package/@sirtheo/claude-switch"><img alt="downloads" src="https://img.shields.io/npm/dm/@sirtheo/claude-switch?color=3fb950&style=for-the-badge"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-79c0ff?style=for-the-badge"></a>
+  <a href="https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml"><img alt="ci" src="https://img.shields.io/github/actions/workflow/status/SIRTHEO/claude-switch/ci.yml?style=for-the-badge&label=CI"></a>
+  <a href="https://github.com/SIRTHEO/claude-switch"><img alt="stars" src="https://img.shields.io/github/stars/SIRTHEO/claude-switch?style=for-the-badge&color=f0b429"></a>
+</p>
 
 ```bash
-claude switch
+npm install -g @sirtheo/claude-switch && claude switch setup
 ```
 
-That opens a menu. Everything happens from there — switching accounts, managing API keys, opening isolated sessions, checking usage. You don't need to memorize anything else.
+[**🚀 Install**](#-install) · [**✨ Features**](#-features) · [**🎯 Why**](#-why-claude-switch) · [**🪟 Profiles**](#-run-two-claude-accounts-in-parallel) · [**❓ FAQ**](#-faq) · [**⭐ Star it**](https://github.com/SIRTHEO/claude-switch)
 
-> **Already installed?** Starting from v2.8, claude-switch updates itself automatically in the background while you work. Run `npm install -g @sirtheo/claude-switch` once to get the latest version, then you'll never need to update manually again.
+</div>
 
 ---
 
-## What it does
+## 📜 Table of contents
 
-| Problem | claude-switch fix |
+<details>
+<summary><b>Click to expand</b></summary>
+
+- [⚡ TL;DR — the 30-second pitch](#-tldr--the-30-second-pitch)
+- [🎯 Why claude-switch](#-why-claude-switch)
+- [🚀 Install](#-install)
+- [✨ Features](#-features)
+  - [🔁 Sub-second account switching](#-1-sub-second-account-switching)
+  - [🔋 Rate-limit bypass with auto-revert](#-2-rate-limit-bypass-with-auto-revert)
+  - [🪟 Parallel sessions via isolated profiles](#-3-parallel-sessions-via-isolated-profiles)
+  - [📊 Live usage in the statusline](#-4-live-usage-in-the-claude-code-statusline)
+  - [⚙️ Configurable smart defaults](#-5-configurable-smart-defaults)
+  - [🔐 Security-first by design](#-6-security-first-by-design)
+  - [🎛 Built on Ink — a real TUI](#-7-built-on-ink--a-real-tui)
+  - [🧠 Bonus utilities](#-8-bonus-utilities)
+- [🪟 Run two Claude accounts in parallel](#-run-two-claude-accounts-in-parallel)
+- [🧭 The dashboard at a glance](#-the-dashboard-at-a-glance)
+- [⚖️ Comparison vs the alternatives](#-comparison-vs-the-alternatives)
+- [❓ FAQ](#-faq)
+- [🛠 Troubleshooting](#-troubleshooting)
+- [🧱 Under the hood](#-under-the-hood)
+- [📦 Changelog](#-changelog)
+- [🤝 Contributing & license](#-contributing--license)
+
+</details>
+
+---
+
+## ⚡ TL;DR — the 30-second pitch
+
+> [!TIP]
+> **You have a Claude Max account, a work Claude account, and an Anthropic API key.**
+> Claude Code only knows about one at a time. **claude-switch fixes that.**
+
+|  | What you get |
 |---|---|
-| You have a personal and a work Claude account | One command switches between them — no browser, no re-login |
-| Your Max/Pro subscription hit the rate limit | Auto-switch to your API key; auto-switch back when the limit resets |
-| You need two accounts open in two terminals at the same time | **Profiles** — each terminal gets its own fully isolated session |
+| ⚡ | **Switch accounts in < 1 second** — no browser, no re-login |
+| 🔋 | **Bypass Max & Pro rate limits** with auto-fallback to your API key, and **auto-revert** when your subscription resets |
+| 🪟 | **Run two accounts in two terminals at the same time** with isolated profiles |
+| 🔐 | **Zero telemetry. Zero analytics.** Credentials live in your OS keychain |
+| 🔄 | **Auto-updates in the background** — install once, stay current forever |
+
+```bash
+claude switch          # opens the interactive dashboard — that's the whole UX
+```
 
 ---
 
-## Install (3 steps, ~3 minutes)
+## 🎯 Why claude-switch
 
-**Requires:** Node.js 20.12+ and Claude Code already installed.
+If you use Claude Code seriously, you've hit one of these walls. claude-switch is the wall-removal tool.
+
+| 🧱 The wall | 🤕 What you used to do | ✅ What claude-switch does |
+|---|---|---|
+| Hit your Max/Pro 5h or 7d cap mid-task | Stop, wait 5 hours, lose flow | Auto-fallback to API key, auto-revert when limit resets |
+| Personal + work accounts on one machine | `claude logout` → browser → log in → repeat | One keystroke. Atomic token swap. |
+| Two accounts, two projects, **same time** | Impossible — Claude Code is single-account globally | **Profiles** — isolated session per terminal |
+| No idea how much quota is left | Open Anthropic dashboard, refresh, panic | Live 5h + 7d usage bars in menu and statusline |
+| Forgot which account is active | `claude` and pray | Active account, token health, fallback flag — visible at a glance |
+
+> [!NOTE]
+> **This is the tool you wished was built into Claude Code.** Until Anthropic ships it, install this.
+
+---
+
+## 🚀 Install
+
+> [!IMPORTANT]
+> **Requires Node.js 20.12+ and Claude Code already installed.**
+
+#### 1️⃣ Install globally
 
 ```bash
-# 1. Install
 npm install -g @sirtheo/claude-switch
-
-# 2. Run the setup wizard
-claude switch setup
-
-# 3. Open a NEW terminal window (important — old window has stale PATH)
 ```
 
-Verify:
+#### 2️⃣ Run the setup wizard
+
+```bash
+claude switch setup
+```
+
+> Auto-detects the `claude` binary, fixes your shell `PATH`, offers to install the statusline.
+
+#### 3️⃣ Open a **new** terminal window
+
+> [!WARNING]
+> The old terminal still has the stale `PATH`. Close it. Open a fresh one.
+
+#### ✅ Verify
 
 ```bash
 claude switch --version
 ```
 
+That's it. Run `claude switch` to see the dashboard.
+
+> [!TIP]
+> **Already installed?** Since v2.8 claude-switch updates itself silently in the background while you work. Install once, forget about it.
+
 ---
 
-## Daily use
+## ✨ Features
 
-Type `claude switch` and the dashboard opens — three stacked sections: **Accounts**, **Account** (contextual to the row you've highlighted), **General**. `Tab` cycles focus between sections, `↑↓` navigates inside a section, `enter` activates. Single-letter hotkeys work as accelerators from any section.
+### 🔁 1. Sub-second account switching
 
+Type `claude switch`. Highlight a row. Hit `Enter`. Done.
+
+- ⚡ **Atomic swap** of OAuth token + active account in `~/.claude.json`
+- 🌐 **No browser** — tokens are encrypted at rest in the macOS Keychain (or in a `0600`-permissioned file on Linux/Windows)
+- 🔄 **No logout/login loop** — Claude Code doesn't even notice; the next session starts as the new account
+
+---
+
+### 🔋 2. Rate-limit bypass with auto-revert
+
+Stop losing 5 hours of momentum to the Max cap.
+
+- 🎚 **Per-account fallback** — each account has its own Anthropic API key
+- 🚦 **Auto-engage thresholds** — e.g. "switch to API key at 95% usage"
+- ↩️ **Auto-revert** when both the **5h** *and* **7d** windows clear — no manual flip
+- 🗒 **Plain-text reasoning**:
+  ```text
+  📈 Subscription back online (5h:30%, 7d:15%) — switched back to OAuth
+  🔑 work@company.com
+  ```
+
+---
+
+### 🪟 3. Parallel sessions via isolated profiles
+
+Two accounts. Two terminals. Same machine. **Zero interference.**
+
+- 🗂 Each profile gets its own `CLAUDE_CONFIG_DIR`, Keychain entry, and session history
+- 🪟 Open in one terminal — the rest of your machine is unaffected
+- 🪄 **One-step launch** from the menu: `Profiles → Open account isolated`
+- 🤖 Or scriptable:
+  ```bash
+  claude switch profile use work
+  claude --as personal "summarize this PR"
+  ```
+
+---
+
+### 📊 4. Live usage in the Claude Code statusline
+
+```bash
+claude switch statusline install
 ```
+
+A discreet badge in Claude Code's status bar:
+
+| State | Color | Meaning |
+| :---: | :---: | --- |
+| `🟢 22%` | green  | plenty of headroom |
+| `🟡 78%` | yellow | approaching the cap |
+| `🔴 94%` | red    | about to hit the wall |
+
+You'll never be ambushed by a rate limit again.
+
+---
+
+### ⚙️ 5. Configurable smart defaults
+
+Open Settings (`g`) and tune:
+
+| Default | What it does | Where |
+|---|---|---|
+| **Auto-launch `claude` after switch** | drop straight into the REPL | Settings → Account |
+| **Auto-toggle fallback on switch** | prevents stale `ANTHROPIC_API_KEY` leaks across accounts | Settings → Account |
+| **Refresh usage on menu open** | foreground-fetch fresh subscription usage | Settings → Global |
+| **Hide manual profile ops** | profiles auto-create on demand | Settings → Global |
+| **Always launch isolated** *(per account)* | this account always starts in its own terminal-scoped profile | Settings → Account |
+
+> Settings live in `~/.claude/accounts/.user-prefs.json` (global) and inside each `accounts/<email>.json` under `_prefs` (per-account override).
+
+---
+
+### 🔐 6. Security-first by design
+
+> [!IMPORTANT]
+> **No telemetry. No analytics. No phone-home.**
+> Only network calls: Anthropic's usage endpoint and the npm registry for update checks.
+
+- 📁 Credentials in `~/.claude/accounts/` with `0600` permissions (owner-only)
+- 🔑 macOS: OAuth tokens in the login Keychain (same protection as Claude Code itself)
+- 💾 All credential writes are atomic (`tmp + rename`) — a crash mid-write **cannot** corrupt your tokens
+- 🚫 No `postinstall` scripts. The real `claude` binary is never modified.
+
+---
+
+### 🎛 7. Built on Ink — a real TUI
+
+The dashboard is a full **React-for-the-terminal** UI: focus rings, live updates, hotkeys, in-place re-renders.
+
+| Key | Action |
+| :---: | --- |
+| `Tab` / `Shift+Tab` | cycle between sections |
+| `↑` / `↓` | navigate within a section |
+| `Enter` | activate the highlighted row |
+| `a` `k` `m` `f` `c` `d` `g` `p` `u` `s` `F` | single-letter accelerators from anywhere |
+| `?` | inline help |
+| `q` / `Esc` / `Ctrl-C` | quit |
+
+---
+
+### 🧠 8. Bonus utilities
+
+- 🐚 **Tab completion** — `claude switch --completions zsh >> ~/.zshrc` (also `bash` · `fish` · `powershell`)
+- 🎯 **One-shot `--as`** — `claude --as personal "task"` runs a single command as another account, no global switch
+- 🧪 **Cross-platform CI** — Linux + macOS + Windows × Node 20 / 22 / 24
+- 🔄 **Auto-updates** — never run `npm install -g` again
+
+---
+
+## 🪟 Run two Claude accounts in parallel
+
+`claude switch work` flips the active account on the **whole machine**. That's what you want 90% of the time.
+
+The other 10% — when you need Terminal A on `@work` and Terminal B on `@personal` **at the same time** — that's what **profiles** are for.
+
+```bash
+# One terminal scoped to work
+claude switch profile use work
+
+# Another terminal, simultaneously, scoped to personal
+claude switch profile use personal
+```
+
+| You want | Use |
+|---|---|
+| Switch the active account globally | `claude switch <account>` (or the menu) |
+| One terminal on X, others on Y | **Profiles → Open account isolated** |
+| Run a single command as another account | `claude --as <alias> "<task>"` |
+
+> [!NOTE]
+> **Platform notes** — macOS verified end-to-end (each profile gets its own Keychain entry). Linux & Windows store tokens in the profile's `.claude.json` — same UX, simpler internals.
+
+---
+
+## 🧭 The dashboard at a glance
+
+<details>
+<summary><b>Click to see the rendered dashboard</b></summary>
+
+```text
 ⚡ claude-switch  multi-account dashboard  ·  tab cycles  ·  ? help  ·  q quit
 
 ╭─ Accounts (2) ────────────────────────────────────────────────────────╮
-│                                                                       │
 │ ▸ work@company.com  @work  ◀ active                                   │
 │       OAuth  ·  fallback OFF  ·  token ✓ valid · 3 days               │
 │       ● 5h ████▒░░░░░░░░░ 42%    ● 7d ▒░░░░░░░░░░░░░ 18%              │
 │                                                                       │
 │   personal@gmail.com                                                  │
 │       OAuth + key saved  ·  sk-ant-…2BBB  ·  isolated default         │
-│       no usage cached                                                 │
-│                                                                       │
 ╰───────────────────────────────────────────────────────────────────────╯
 
 ╭─ Account  for work@company.com ───────────────────────────────────────╮
@@ -84,207 +295,167 @@ Type `claude switch` and the dashboard opens — three stacked sections: **Accou
 ╰───────────────────────────────────────────────────────────────────────╯
 
 ╭─ General ─────────────────────────────────────────────────────────────╮
-│   [a] Add account            log in with a new email                  │
-│   [g] Settings               global + per-account preferences         │
-│   [p] Profiles               isolated per-terminal sessions           │
-│   [F] Auto-fallback          thresholds for auto-engage / auto-revert │
-│   [u] Refresh usage          force-fetch from Anthropic               │
-│   [s] Setup wizard           fix claude binary / shell PATH           │
-│   [q] Quit                   or press esc                             │
+│   [a] Add account     [g] Settings     [p] Profiles                   │
+│   [F] Auto-fallback   [u] Refresh usage [s] Setup wizard  [q] Quit    │
 ╰───────────────────────────────────────────────────────────────────────╯
 ```
 
-**Reading the dashboard at a glance**:
-- Each row in **Accounts** shows what's configured (`OAuth`, `OAuth + key saved`, `isolated default`) and the masked API key when one is set. The active row also includes the live runtime context — fallback flag, token health, expiry — and any cached usage bars (5h + 7d windows).
-- The **Account** section follows whichever row you've highlighted, so you always see what you're about to act on. Action labels reflect the row's state ("Launch claude (already active)" vs "Switch & launch claude", "Replace API key" vs "Set API key").
-- **General** stays the same regardless of cursor position — these are session-wide actions.
+</details>
 
-The orange border indicates the focused section. `Tab` (or shift-Tab to go back) flips the focus.
+Three sections, one screen:
 
-**Smart defaults you can disable from `g` Settings**:
+1. **Accounts** — the roster, with state + live usage
+2. **Account** — actions for the highlighted row (label changes with state)
+3. **General** — global, cross-cutting actions
 
-| Default | What it does | Where to override |
+The orange border tells you which section has focus.
+
+---
+
+## ⚖️ Comparison vs the alternatives
+
+|  | **claude-switch** | `claude logout` + browser | shell aliases / dotenv | manual `~/.claude.json` swap |
+|---|:---:|:---:|:---:|:---:|
+| ⏱ Switch time | **< 1 sec** | 30–60 sec | seconds (breaks OAuth) | seconds (risky) |
+| 👥 Multiple accounts | ✅ unlimited | 🚫 one at a time | 🚫 | ⚠️ manual |
+| 🔋 API-key fallback w/ auto-revert | ✅ | 🚫 | 🚫 | 🚫 |
+| 🪟 Parallel terminal sessions | ✅ profiles | 🚫 | 🚫 | 🚫 |
+| 📊 Usage tracking | ✅ live | 🚫 | 🚫 | 🚫 |
+| 🔄 Auto-update | ✅ | n/a | 🚫 | 🚫 |
+| 🛡 Telemetry | **none** | n/a | n/a | n/a |
+| 💥 Risk of corrupting `~/.claude.json` | atomic | n/a | low | **high** |
+
+---
+
+## ❓ FAQ
+
+<details>
+<summary><b>Does claude-switch send my data anywhere?</b></summary>
+
+**No.** Everything stays on your machine. Only network calls: Anthropic's usage endpoint (your subscription quota) and the npm registry (update checks). No telemetry. No analytics. The source is open — verify it.
+</details>
+
+<details>
+<summary><b>Is it safe to use with my real Claude account?</b></summary>
+
+Yes. Credentials live exactly where Claude Code already puts them (Keychain on macOS; permission-`600` JSON elsewhere). All writes are atomic. No `postinstall` scripts. MIT-licensed, ~40 KB of compiled JavaScript, the real `claude` binary is never modified.
+</details>
+
+<details>
+<summary><b>How do I add a second account?</b></summary>
+
+```bash
+claude switch     # → press a (Add account)
+```
+
+Browser opens once. Sign in. Done.
+</details>
+
+<details>
+<summary><b>Will my Max plan ban me for using claude-switch?</b></summary>
+
+claude-switch is just a wrapper that swaps tokens Anthropic already issued you. It doesn't bypass anything Anthropic doesn't already allow — multiple accounts are explicitly supported by Claude Code; this tool just makes managing them ergonomic.
+</details>
+
+<details>
+<summary><b>What's the difference between switching and a profile?</b></summary>
+
+| | Switching | Profile |
 |---|---|---|
-| Auto-launch claude after switch | Picking an account drops you straight into a `claude` REPL — no need to type it again | Settings → Account → "Auto-launch claude after switch" |
-| Auto-toggle fallback on switch | Switching to a key-bearing account turns fallback ON; switching to a key-less account turns it OFF (prevents stale ANTHROPIC_API_KEY leaks) | Settings → Account → "Auto-toggle fallback on switch" |
-| Refresh usage on menu open | Foreground-fetches fresh subscription usage when you open the menu | Settings → Global → "Refresh usage on menu open" |
-| Hide manual profile ops | Hides "Create profile" / "Import account as profile" — profiles are auto-created on demand when you launch isolated | Settings → Global → "Hide manual profile ops" |
-| Always launch isolated | Per-account opt-in: the account always starts in its own per-terminal profile (instead of swapping the global account) | Settings → Account → "Always launch isolated" |
+| Scope | Whole machine | One terminal |
+| Use for | Daily account toggling | Parallel sessions |
+| Affects other terminals | Yes | No |
+</details>
 
-Settings live in `~/.claude/accounts/.user-prefs.json` (global) and inside each `accounts/<email>.json` under `_prefs` (per-account overrides).
+<details>
+<summary><b>My API-key fallback didn't kick in mid-session.</b></summary>
 
----
+Fallback works by injecting `ANTHROPIC_API_KEY` into the env of the `claude` process it spawns. A REPL that's already running can't be hot-swapped. Exit it, turn fallback on (`claude switch fallback on`), re-run `claude`.
+</details>
 
-## Run two Claude accounts in parallel — per-terminal isolation
+<details>
+<summary><b>Does it work on Windows?</b></summary>
 
-`claude switch work` makes *every* terminal use the work account. That's what you want 90% of the time.
+Yes. macOS · Linux · Windows. Node.js 20.12+.
+</details>
 
-But sometimes you need Terminal A on account X and Terminal B on account Y simultaneously. That's what **profiles** are for.
-
-Each profile is a fully isolated environment: its own user ID, its own macOS Keychain entry, its own session history. You open it in one terminal and every other terminal is unaffected.
-
-### The one-step way (new in 2.7)
-
-From the menu: **Profiles → Open account isolated** → pick your account → done.
-
-claude-switch creates or reuses the profile automatically. No manual "create then import" needed.
+<details>
+<summary><b>How do I remove it?</b></summary>
 
 ```bash
-claude switch
-# → Profiles…
-# → Open account isolated
-# → pick work@company.com
-# → claude opens, isolated to that account in this terminal only
+npm uninstall -g @sirtheo/claude-switch
 ```
 
-### Command line
-
-```bash
-# Open an isolated session for a saved account (auto-creates the profile)
-claude switch profile use work
-
-# List all profiles
-claude switch profile list
-
-# Log in to a profile for the first time (browser opens once)
-claude switch profile login work
-
-# Remove a profile
-claude switch profile remove work
-```
-
-### Global switch vs isolated — which to use?
-
-| You want | Use |
-|---|---|
-| Switch the active account on this machine | `claude switch <account>` (or the menu) |
-| One terminal on account X, others on account Y | **Profiles → Open account isolated** |
-| Run one command as a different account | `claude --as personal "task"` |
-
-> **Platform notes:** macOS verified end-to-end (each profile gets its own Keychain entry). Linux and Windows store tokens in the profile's `.claude.json` — same UX, simpler internals.
+Account files in `~/.claude/accounts/` you can delete by hand if you want; Claude Code itself is untouched.
+</details>
 
 ---
 
-## Bypass Claude rate limits with API key fallback
-
-Hit your Max/Pro limit, turn on API key fallback, then **forget about it**. claude-switch watches your usage and switches back to your subscription automatically when the limit resets.
-
-From the menu: **Enable auto-revert to OAuth** → set a threshold (default 80%).
-
-The next time you run `claude` after your subscription frees up:
-
-```
-📈 Subscription back online (5h:30%, 7d:15%) — switched back to OAuth
-🔑 work@company.com
-```
-
-Both 5-hour AND 7-day usage are checked, so you don't bounce back only to hit the weekly cap moments later.
-
----
-
-## More features
-
-**Per-account API key** — each saved account has its own Anthropic API key; switching accounts switches which key is used for billing.
-
-**Live usage in Claude Code's status bar** — install a badge that turns yellow at 75% and red at 90%:
-
-```bash
-claude switch statusline install
-```
-
-**Tab completion:**
-
-```bash
-claude switch --completions bash >> ~/.bashrc   # or zsh / fish / powershell
-```
-
-**Keyboard shortcuts in the dashboard** — `Tab` cycles between sections, `↑`/`↓` move within a section, `Enter` activates, `Esc` or `Ctrl+C` cancel. Single-letter hotkeys (`a`, `k`, `m`, `f`, `c`, `d`, `g`, `p`, `u`, `s`, `F`) work as accelerators from any section. Press `?` for the full list inline.
-
----
-
-## Common questions
-
-**How do I add a second account?**
-`claude switch` → press `a` (or pick **Add account** from the General section). Browser opens once, you sign in, done.
-
-**How do I switch accounts without logging out?**
-`claude switch` → highlight the account in the **Accounts** section → press `Enter`. No browser. Under a second.
-
-**Does it work on macOS, Linux and Windows?**
-Yes. Requires Node.js 20.12 or newer.
-
-**Does claude-switch send my data anywhere?**
-No. Everything stays on your machine. The only network calls are: your subscription quota at `api.anthropic.com` (usage stats) and the npm registry (update checks). No telemetry, no analytics.
-
-**I switched accounts in one terminal but another open Claude Code session shows the old account.**
-Not a bug — it's how Claude Code works globally. Running sessions keep tokens in memory and only flip on the next refresh. For true per-terminal isolation, use **Profiles → Open account isolated**.
-
-**My API key fallback didn't kick in mid-session.**
-claude-switch's fallback works by injecting `ANTHROPIC_API_KEY` into the environment of the claude process it *spawns*. A REPL that's already running can't be hot-swapped mid-session. Exit it, turn fallback on (`claude switch fallback on`), and re-run `claude`.
-
----
-
-## Troubleshooting
+## 🛠 Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `claude` not found after install | Open a new terminal. If still broken, run `claude switch setup` again. |
-| "Token: ✗ expired" in the dashboard | Press `c` (Re-authenticate) on the active row, or pick it from the Account section. |
-| Fallback is on but claude still uses OAuth | The first time Claude Code sees a new API key it asks `Use this API key? [y/N]` — press **y**. |
-| Usage stats show nothing | Only works for Max/Pro subscribers. |
-| Anything else | [Open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) with your OS and `node --version`. |
+| `claude` not found after install | Open a new terminal. If still broken: `claude switch setup` |
+| `Token: ✗ expired` in the dashboard | Highlight the row → press `c` (Re-authenticate) |
+| Fallback is on but Claude still uses OAuth | The first time Claude Code sees a new key it asks `Use this API key? [y/N]` — press **y** |
+| Usage stats show nothing | Only available for Max/Pro subscribers |
+| Anything else | [Open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) — include OS + `node --version` |
 
 ---
 
-## Security
+## 🧱 Under the hood
 
-- Credentials in `~/.claude/accounts/` with file permissions `600` (owner-only)
-- On macOS, OAuth tokens also live in the login Keychain — same protection as Claude Code itself
-- All credential writes are atomic (tmp + rename) — a crash mid-write can never corrupt your files
-- No automatic install scripts. No telemetry. No analytics.
+<details>
+<summary><b>How the magic actually works</b></summary>
 
----
-
-## What's new
-
-**v3.1.x** — **Ink TUI rebuild.** The interactive menu is rebuilt on Ink (React for the terminal). Three-section dashboard: account roster with per-row auth/key/usage detail (active row also shows live fallback + token state), contextual **Account** menu that follows the highlighted row, **General** menu for cross-cutting actions. `Tab` cycles focus, `↑↓` navigates, single-letter hotkeys as accelerators. New **Settings** screen (`g`) for global + per-account preferences — every smart behaviour (auto-launch, auto-toggle fallback, default-isolated, refresh-on-open) is configurable. Cross-account API-key leak fixed (Claude's `customApiKeyResponses` now snapshotted per-account so a key approved under one account no longer carries over after a switch). `@clack/prompts` removed.
-
-**v2.8.x** — **Auto-update.** claude-switch now updates itself silently in the background while `claude` is running. No more `npm install -g` after every release — just install once and stay current automatically.
-
-**v2.7.x** — **Profiles** with one-step "Open account isolated" from the menu. Each profile is its own Keychain entry / userID / session — open two terminals on two different accounts simultaneously, no interference. Auto-creates the profile from a saved account — no browser re-login required.
-
-**v2.6.x** — Warns when other Claude Code sessions are running before flipping the active account. Cross-platform CI (Linux + macOS + Windows × Node 20/22/24).
-
-**v2.5.x** — `claude switch statusline install` patches Claude Code's status bar in one command. Auto-install offered during setup.
-
-**v2.4.x** — Auto-revert to OAuth, in-menu re-authenticate, auto-launch claude after switch.
-
-**v2.3.x** — Interactive menu, subscription usage monitoring, shell statusline, per-account API key + fallback toggle.
-
-Full changelog: [CHANGELOG.md](CHANGELOG.md) · [GitHub Releases](https://github.com/SIRTHEO/claude-switch/releases)
-
----
-
-## How claude-switch manages multiple Claude Code accounts
-
-- Claude Code stores your active account in `~/.claude.json` and OAuth tokens in the macOS Keychain (or in `~/.claude.json` on Linux/Windows).
+- Claude Code stores the active account in `~/.claude.json` (and OAuth tokens in the macOS Keychain, or in `~/.claude.json` on Linux/Windows).
 - claude-switch saves both for each account in `~/.claude/accounts/<email>.json`.
-- When you switch, claude-switch swaps both atomically. No network. Instant.
-- Profiles pass `CLAUDE_CONFIG_DIR` to the claude binary — Claude Code natively supports this and gives each distinct directory its own isolated state.
-- The wrapper itself is ~40KB of compiled JavaScript. The real `claude` binary is untouched.
+- Switching swaps both **atomically** (`tmp + rename`). No network round-trip. No race window.
+- Profiles set `CLAUDE_CONFIG_DIR` for the spawned `claude` — natively supported by Claude Code, which gives each directory its own isolated state.
+- The wrapper itself is **~40 KB** of compiled JavaScript. The real `claude` binary is never touched.
+
+</details>
 
 ---
 
-## Contributing
+## 📦 Changelog
 
-Pull requests welcome. Releases are fully automated — see [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the commit conventions that drive version bumps.
+| Version | Highlights |
+|---|---|
+| **v3.1.x** | 🎨 **Ink TUI rebuild.** Three-section dashboard, configurable smart defaults, cross-account API-key leak fixed. |
+| **v2.8.x** | 🔄 **Auto-update.** Silent background updates while you work. |
+| **v2.7.x** | 🪟 **Profiles.** One-step "Open account isolated" — parallel sessions on one machine. |
+| **v2.6.x** | ⚠️ Warns on running Claude sessions before flipping the active account. Cross-platform CI. |
+| **v2.5.x** | 📊 `claude switch statusline install`. |
+| **v2.4.x** | ↩️ Auto-revert to OAuth, in-menu re-authenticate, auto-launch claude after switch. |
+| **v2.3.x** | 🎛 Interactive menu, usage monitoring, statusline, per-account API key + fallback. |
+
+📄 Full changelog: [`CHANGELOG.md`](CHANGELOG.md) · [GitHub Releases](https://github.com/SIRTHEO/claude-switch/releases)
 
 ---
 
-## License
+## 🤝 Contributing & license
 
-MIT
+PRs welcome. Releases are fully automated — see [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the commit conventions that drive version bumps.
+
+Licensed under [**MIT**](LICENSE).
 
 ---
 
-> ⭐ **Found this useful? [Give it a star on GitHub](https://github.com/SIRTHEO/claude-switch)** — it helps others discover the project.
+<div align="center">
+
+### If claude-switch saved you 5 hours of waiting for a rate limit to reset…
+
+### ⭐ [**Star it on GitHub**](https://github.com/SIRTHEO/claude-switch)
+
+> It's the only metric that helps other devs find it.
+
+```bash
+npm install -g @sirtheo/claude-switch
+```
+
+[**npm**](https://www.npmjs.com/package/@sirtheo/claude-switch) · [**GitHub**](https://github.com/SIRTHEO/claude-switch) · [**Issues**](https://github.com/SIRTHEO/claude-switch/issues) · [**Changelog**](CHANGELOG.md)
+
+<sub><b>Keywords</b> — claude code multi account · claude account switcher · claude max rate limit bypass · claude pro rate limit · anthropic api key fallback · claude code parallel sessions · claude code profiles · claude cli multiple accounts · claude code account manager · switch claude accounts</sub>
+
+</div>
