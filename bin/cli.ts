@@ -7,22 +7,19 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from '../src/resolver.js';
 import { getCurrent, save, list as listAccounts, } from '../src/accounts.js';
 import { withLock } from '../src/lock.js';
-import { fuzzyMatch, switchToAndSyncFallback, switchInteractive, checkPendingRestore } from '../src/switcher.js';
+import { checkPendingRestore } from '../src/switcher.js';
 import { run as proxyRun } from '../src/proxy.js';
 import { claudeJsonPath, accountsDir } from '../src/paths.js';
 import { VERSION } from '../src/version.js';
 import { ExitError } from '../src/errors.js';
-import { resolveAlias, getAliasesForEmail } from '../src/aliases.js';
 import { getTokenHealth } from '../src/token.js';
 import { getSavedClaudeBin, } from '../src/setup.js';
 import { checkForUpdate, performUpdate, } from '../src/update-check.js';
 import { getApiKey, } from '../src/apikey.js';
-import { isFallbackEnabled, isFallbackAutoEngaged, } from '../src/fallback.js';
 import { fallbackEnvFor } from '../src/fallback-env.js';
 import { maybeAutoDisableFallback, maybeAutoEngageFallback, maybeInitSmartFallback } from '../src/auto-fallback.js';
-import { readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
+import { readUsageCache, } from '../src/usage.js';
 import { runApp } from '../src/ui/run-app.js';
-import { profilesDir } from '../src/profiles.js';
 import { startFallbackProxy } from '../src/api-proxy.js';
 import { handleHelp } from '../src/commands/help.js';
 import { handleVersion } from '../src/commands/version.js';
@@ -37,6 +34,13 @@ import { handleAdd, handleRemove } from '../src/commands/account.js';
 import { handleSetup } from '../src/commands/setup.js';
 import { handleUpdate } from '../src/commands/update.js';
 import { handleTemporarySwitch } from '../src/commands/temporary-switch.js';
+import { handleSwitchInteractive, handleSwitchTo } from '../src/commands/switch.js';
+import {
+  handleStatusline,
+  handleStatuslineInstall,
+  handleStatuslineUninstall,
+  handleStatuslineStatus,
+} from '../src/commands/statusline.js';
 import type { CommandContext } from '../src/commands/context.js';
 
 export type Command =
@@ -252,108 +256,6 @@ async function askYN(question: string): Promise<boolean> {
   });
 }
 
-/**
- * Print one line summarizing the active account + auth mode, intended for use
- * in shell prompts or Claude Code's statusLine.command.
- *
- * Reads only local state (no network). Skips the update-check / pending-
- * restore preludes so latency stays in the tens of milliseconds.
- */
-function renderStatusline(
-  format: 'compact' | 'full' | 'json',
-  useColor: boolean,
-  claudeJsonPathStr: string,
-  accountsDirPath: string,
-): void {
-  const c = (code: string, s: string): string => useColor ? `\x1b[${code}m${s}\x1b[0m` : s;
-  const dim = (s: string): string => c('2', s);
-  const yellow = (s: string): string => c('33', s);
-  const green = (s: string): string => c('32', s);
-  const red = (s: string): string => c('31', s);
-  const cyan = (s: string): string => c('36', s);
-
-  let email: string;
-  try {
-    email = getCurrent(claudeJsonPathStr);
-  } catch {
-    email = '';
-  }
-  if (!email) {
-    process.stdout.write(format === 'json' ? '{"email":null,"mode":null}' : dim('claude: no account'));
-    process.stdout.write('\n');
-    return;
-  }
-
-  const fallbackOn = isFallbackEnabled(accountsDirPath);
-  const apiKey = getApiKey(email, accountsDirPath);
-  const usingApiKey = fallbackOn && !!apiKey;
-  // Only show usage from the active account's quota — caches from a
-  // previous account would otherwise leak across switches.
-  const usageForActive = readUsageCacheFor(accountsDirPath, email);
-  const fivePct = usageForActive?.payload?.five_hour?.utilization;
-  const sevenPct = usageForActive?.payload?.seven_day?.utilization;
-
-  // Quasi-live: if the cache is stale or for a different account, kick off
-  // a detached background fetch. The current call returns immediately; the
-  // next statusline redraw will pick up the fresh value. Skipped while a
-  // recorded 429 backoff is still in effect.
-  if (isUsageCacheStale(readUsageCache(accountsDirPath), email)) {
-    triggerBackgroundUsageRefresh();
-  }
-
-  // Short-form display name: prefer the first alias if any, else the local part.
-  const aliases = getAliasesForEmail(email, accountsDirPath);
-  const shortName = aliases[0] ?? email.split('@')[0] ?? email;
-
-  // Profile badge: shown when this process was launched inside a profile
-  // session (CLAUDE_CONFIG_DIR points into ~/.claude/profiles/<name>/).
-  const activeProfile = (() => {
-    const ccd = process.env.CLAUDE_CONFIG_DIR;
-    if (!ccd) return null;
-    const base = profilesDir() + path.sep;
-    if (!ccd.startsWith(base)) return null;
-    const rest = ccd.slice(base.length);
-    const name = rest.split(path.sep)[0];
-    return name || null;
-  })();
-
-  const autoEngaged = isFallbackAutoEngaged(accountsDirPath);
-  const modeLabel = usingApiKey
-    ? yellow(autoEngaged ? 'API auto' : 'API')
-    : green('OAuth');
-  const usageBadge = (() => {
-    if (fivePct === undefined) return '';
-    const pctStr = `${fivePct.toFixed(0)}%`;
-    if (fivePct >= 90) return ` ${red(`5h:${pctStr}`)}`;
-    if (fivePct >= 75) return ` ${yellow(`5h:${pctStr}`)}`;
-    return ` ${dim(`5h:${pctStr}`)}`;
-  })();
-  const profileBadge = activeProfile ? ` ${cyan(`[${activeProfile}]`)}` : '';
-
-  if (format === 'json') {
-    const json = {
-      email,
-      shortName,
-      mode: usingApiKey ? 'api' : 'oauth',
-      fallback: fallbackOn,
-      fallbackAutoEngaged: isFallbackAutoEngaged(accountsDirPath),
-      hasApiKey: !!apiKey,
-      fiveHour: fivePct ?? null,
-      sevenDay: sevenPct ?? null,
-      profile: activeProfile,
-    };
-    process.stdout.write(JSON.stringify(json) + '\n');
-    return;
-  }
-
-  if (format === 'full') {
-    process.stdout.write(`🔑 ${cyan(email)} · ${modeLabel}${usageBadge}${profileBadge}\n`);
-  } else {
-    // compact (default) — short alias + mode badge + optional usage + profile
-    process.stdout.write(`🔑 ${cyan(shortName)} ${modeLabel}${usageBadge}${profileBadge}\n`);
-  }
-}
-
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const cmd = parseCommand(args);
@@ -363,47 +265,26 @@ async function main(): Promise<void> {
   // Statusline is called on every Claude Code redraw — return as fast as
   // possible. Skip every check that touches the filesystem beyond what we
   // strictly need.
+  const statuslineCtx: CommandContext = {
+    claudeJsonPath: cJson,
+    accountsDirPath: aDir,
+    updateInfo: null,
+    selfUrl: import.meta.url,
+  };
   if (cmd.action === 'statusline') {
-    renderStatusline(cmd.format, cmd.color, cJson, aDir);
+    handleStatusline(statuslineCtx, { format: cmd.format, color: cmd.color });
     return;
   }
   if (cmd.action === 'statusline-install') {
-    const { installStatusLine, PLAIN_COMMAND, CCSTATUSLINE_COMMAND, claudeSettingsPath } = await import('../src/statusline-install.js');
-    const command = cmd.variant === 'ccstatusline' ? CCSTATUSLINE_COMMAND : PLAIN_COMMAND;
-    installStatusLine(command);
-    console.log(`Installed status line in ${claudeSettingsPath()}`);
-    console.log(`  command: ${command}`);
-    console.log('\nReopen Claude Code to see the badge in its status bar.');
+    await handleStatuslineInstall(cmd.variant);
     return;
   }
   if (cmd.action === 'statusline-uninstall') {
-    const { uninstallStatusLine, claudeSettingsPath } = await import('../src/statusline-install.js');
-    const removed = uninstallStatusLine();
-    console.log(removed
-      ? `Removed claude-switch status line from ${claudeSettingsPath()}`
-      : 'No claude-switch status line was installed (or settings.json has a foreign one — left untouched).');
+    await handleStatuslineUninstall();
     return;
   }
   if (cmd.action === 'statusline-status') {
-    const { detectExistingStatusLine, claudeSettingsPath } = await import('../src/statusline-install.js');
-    const status = detectExistingStatusLine();
-    console.log(`Settings file: ${claudeSettingsPath()}`);
-    switch (status.kind) {
-      case 'absent':
-        console.log('Status line: not configured');
-        console.log('Run: claude switch statusline install');
-        break;
-      case 'ours-plain':
-        console.log('Status line: claude-switch badge (plain)');
-        break;
-      case 'ours-ccstatusline':
-        console.log('Status line: claude-switch badge + ccstatusline');
-        break;
-      case 'foreign':
-        console.log('Status line: a different command is configured');
-        console.log(`  command: ${status.command}`);
-        break;
-    }
+    await handleStatuslineStatus();
     return;
   }
 
@@ -655,42 +536,12 @@ async function main(): Promise<void> {
 
   switch (cmd.action) {
     case 'switch-interactive':
-      // Persistent menu loop when we have a real terminal — actions return to
-      // the menu instead of exiting. Falls back to the legacy numbered list
-      // for pipes / CI / dumb terminals that can't render arrow-key
-      // navigation.
-      if (process.stdin.isTTY && process.stdout.isTTY) {
-        await runApp(cJson, aDir);
-      } else {
-        await switchInteractive(cJson, aDir);
-      }
+      await handleSwitchInteractive(ctx);
       break;
 
-    case 'switch-to': {
-      const resolved = resolveAlias(cmd.target, aDir);
-      const accounts = listAccounts(aDir);
-      const matches = fuzzyMatch(resolved, accounts);
-      if (matches.length === 1) {
-        // Warn (don't block) if other claude sessions are running — they
-        // won't see the switch until restarted. See FAQ in README.
-        const { countActiveClaudeSessions, buildActiveSessionsWarning } = await import('../src/active-sessions.js');
-        const sessions = countActiveClaudeSessions(getSavedClaudeBin());
-        const warning = buildActiveSessionsWarning(sessions.count);
-        if (warning) process.stderr.write(`${warning}\n\n`);
-        // Bundle switch + fallback flip in one withLock so a concurrent
-        // `claude switch` can't race the two writes (see switcher.ts).
-        const outcome = switchToAndSyncFallback(matches[0]!, cJson, aDir, { autoFlipFallback: true });
-        console.log(outcome.message);
-        process.stderr.write(outcome.hasApiKey ? '  Fallback ON — API key active\n' : '  Fallback OFF — no API key\n');
-      } else if (matches.length > 1) {
-        console.log('Multiple matches:');
-        for (const m of matches) console.log(`  ${m}`);
-        console.log('Be more specific.');
-      } else {
-        console.log(`No account matching "${cmd.target}". Run: claude switch list`);
-      }
+    case 'switch-to':
+      await handleSwitchTo(ctx, cmd.target);
       break;
-    }
 
     case 'add':
       await handleAdd(ctx);
