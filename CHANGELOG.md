@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.2.0](https://github.com/SIRTHEO/claude-switch/compare/v3.1.2...v3.2.0) (2026-05-06)
+
+
+### Features
+
+* **cli:** rename `fallback auto` → `auto-revert`, keep `auto` as deprecated alias ([e24bfee](https://github.com/SIRTHEO/claude-switch/commit/e24bfee97a9ed12ce74d9e335065d2c21e6552ef))
+
+
+### Bug Fixes
+
+* **brand:** align hyphen baseline in logo wordmark ([cb581f0](https://github.com/SIRTHEO/claude-switch/commit/cb581f0ac8813a3125c9af2ecc368ad2a763a154))
+
 ## [3.1.2](https://github.com/SIRTHEO/claude-switch/compare/v3.1.1...v3.1.2) (2026-05-06)
 
 
