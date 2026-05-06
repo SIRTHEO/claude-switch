@@ -235,53 +235,10 @@ function findClaude(): string {
   return bin;
 }
 
-/** Read a line from stdin without echoing it (TTY) or from a pipe (non-TTY). */
-async function _promptSecret(question: string): Promise<string> {
-  const readline = await import('node:readline');
-
-  if (!process.stdin.isTTY) {
-    // Non-interactive: read first line from pipe.
-    const rl = readline.createInterface({ input: process.stdin });
-    return new Promise(resolve => {
-      rl.once('line', line => { rl.close(); resolve(line.trim()); });
-    });
-  }
-
-  process.stderr.write(question);
-  const rl = readline.createInterface({ input: process.stdin, output: process.stderr, terminal: true });
-  // Mute the readline output so the key isn't echoed to the terminal.
-  // _writeToOutput is a documented hook of the readline Interface.
-  (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string): void => {
-    if (s.includes('\n') || s.includes('\r')) process.stderr.write('\n');
-  };
-  return new Promise(resolve => {
-    rl.question('', (answer: string) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
-
-/**
- * Resolve a target alias/fuzzy string to a single saved email, or throw.
- * Used by apikey commands so they accept the same target syntax as switch.
- */
-function _resolveTargetEmail(target: string, accountsDirPath: string): string {
-  const resolved = resolveAlias(target, accountsDirPath);
-  const accounts = listAccounts(accountsDirPath);
-  const matches = accounts.filter(a => a === resolved);
-  if (matches.length === 1) return matches[0]!;
-  // Fuzzy fallback for partial matches (mirrors switch behaviour).
-  const fuzzy = accounts.filter(a => a.toLowerCase().includes(resolved.toLowerCase()));
-  if (fuzzy.length === 1) return fuzzy[0]!;
-  if (fuzzy.length > 1) {
-    throw new ExitError(`Multiple matches for "${target}":\n${fuzzy.map(m => `  ${m}`).join('\n')}\nBe more specific.`);
-  }
-  throw new ExitError(`No account matching "${target}". Run: claude switch list`);
-}
-
-// fallbackEnvFor moved to src/fallback-env.ts so the multi-account
-// hot-path decision is testable in isolation. Behaviour unchanged.
+// `promptSecret` and `resolveTargetEmail` moved to src/commands/_helpers.ts
+// so per-command handlers can share them without dragging cli.ts as a
+// dependency. cli.ts only retains helpers still used by the inline
+// dispatcher (statusline + update prompt).
 
 /** Prompt for y/n on stderr and return true if the user typed y or Y. */
 async function askYN(question: string): Promise<boolean> {
