@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.3.0](https://github.com/SIRTHEO/claude-switch/compare/v3.2.0...v3.3.0) (2026-05-06)
+
+
+### Features
+
+* **auth:** live OAuth ↔ API transitions, per-account authMode ([9e2b58e](https://github.com/SIRTHEO/claude-switch/commit/9e2b58e86596744ed7d4de70432c94f32e61a4ff))
+
+
+### Documentation
+
+* **readme:** add trademark notice clarifying community/non-affiliated status ([bc41b1b](https://github.com/SIRTHEO/claude-switch/commit/bc41b1ba61475c1c9d101e1948c9d8894183fa02))
+
 ## [3.2.0](https://github.com/SIRTHEO/claude-switch/compare/v3.1.2...v3.2.0) (2026-05-06)
 
 
