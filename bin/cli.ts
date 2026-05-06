@@ -28,7 +28,7 @@ import { setApiKeyInteractive } from '../src/ui/set-apikey.js';
 import { runSetupWizard } from '../src/ui/setup-wizard.js';
 import { addAccountInteractive } from '../src/ui/add-account.js';
 import { removeAccountInteractive } from '../src/ui/remove-account.js';
-import { startRotatingProxy } from '../src/api-proxy.js';
+import { startFallbackProxy } from '../src/api-proxy.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -1321,23 +1321,17 @@ async function main(): Promise<void> {
         }
       }
 
-      // When 2+ accounts have API keys, run a local rotating proxy so that
-      // a 429 mid-session transparently retries under a different account's
-      // key — no REPL restart needed.
-      const allAccountEmails = listAccounts(aDir);
-      const keyAccounts = [
-        ...allAccountEmails.filter(e => e === email),
-        ...allAccountEmails.filter(e => e !== email),
-      ]
-        .map(e => ({ email: e, apiKey: getApiKey(e, aDir) }))
-        .filter((a): a is { email: string; apiKey: string } => a.apiKey !== null);
+      // If the active account has an API key, start a local proxy so that a
+      // 429 mid-session retries with the API key — no REPL restart needed.
+      // The proxy forwards requests with the original OAuth token first; only
+      // on 429 does it swap in the API key (same account, never cross-account).
+      const activeApiKey = getApiKey(email, aDir);
 
-      if (keyAccounts.length >= 2) {
-        const proxy = await startRotatingProxy(keyAccounts);
+      if (activeApiKey) {
+        const proxy = await startFallbackProxy(activeApiKey);
         process.on('exit', () => proxy.close());
-        // Explicitly clear ANTHROPIC_API_KEY so the binary uses its OAuth
-        // flow (→ our proxy intercepts and swaps in the API key).  If an
-        // inherited key is present the SDK might bypass ANTHROPIC_BASE_URL.
+        // Clear any inherited ANTHROPIC_API_KEY so the binary uses OAuth and
+        // routes through ANTHROPIC_BASE_URL instead of bypassing the proxy.
         proxyRun(claudeBin, cmd.args, {
           ANTHROPIC_BASE_URL: `http://127.0.0.1:${proxy.port}`,
           ANTHROPIC_API_KEY: '',
