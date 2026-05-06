@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.1.1](https://github.com/SIRTHEO/claude-switch/compare/v3.1.0...v3.1.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* **security:** close audit findings from post-3.1.0 review ([977b1d8](https://github.com/SIRTHEO/claude-switch/commit/977b1d8d73ef765978271dac506866c5c7fb584b))
+
+
+### Documentation
+
+* **readme:** redesign with logo + TL;DR + per-feature sections ([7e49a28](https://github.com/SIRTHEO/claude-switch/commit/7e49a28372831502bb15c46ed74c9da19053b1e9))
+* **readme:** rename logo to wordmark.svg to bust camo cache ([9550539](https://github.com/SIRTHEO/claude-switch/commit/9550539fd814eb10e6f838e44d8dc3359c3f4fe8))
+* **readme:** trim verbose sections, polish logo wordmark ([c800bac](https://github.com/SIRTHEO/claude-switch/commit/c800bac44b25e72294b9da00a469039f6d7cc1a4))
+
 ## [3.1.0](https://github.com/SIRTHEO/claude-switch/compare/v3.0.1...v3.1.0) (2026-05-06)
 
 
