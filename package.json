@@ -1,6 +1,6 @@
 {
   "name": "@sirtheo/claude-switch",
-  "version": "3.1.2",
+  "version": "3.2.0",
   "description": "Multi-account manager for Claude Code. Sign in once per account, switch instantly. Bypass Max/Pro rate limits with API key fallback and auto-revert. macOS · Linux · Windows.",
   "type": "module",
   "bin": {
