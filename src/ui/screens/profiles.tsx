@@ -34,12 +34,12 @@ import { ORANGE } from '../theme.js';
 // Result shapes
 // ---------------------------------------------------------------------------
 
-type LaunchRequest =
+export type LaunchRequest =
   | { kind: 'isolated'; email: string; profileName: string; profileDir: string }
   | { kind: 'use-profile'; profileName: string; profileDir: string; emailAddress: string }
   | { kind: 'login-profile'; profileName: string; profileDir: string };
 
-type ScreenExit =
+export type ScreenExit =
   | { kind: 'back' }
   | { kind: 'launch'; req: LaunchRequest };
 
@@ -159,7 +159,7 @@ interface ScreenProps {
   onExit: (e: ScreenExit) => void;
 }
 
-function ProfilesScreen({ accountsDirPath, initialNotice, onExit }: ScreenProps) {
+export function ProfilesScreen({ accountsDirPath, initialNotice, onExit }: ScreenProps) {
   const { exit } = useApp();
   const [step, setStep] = useState<Step>(initialNotice ? { kind: 'note', title: 'Profiles', body: initialNotice } : { kind: 'home' });
   const [items, setItems] = useState<MenuItem[]>(() => buildHomeItems(accountsDirPath));
