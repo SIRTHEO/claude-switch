@@ -145,4 +145,30 @@ describe('parseCommand', () => {
   it('throws on unknown fallback subcommand', () => {
     assert.throws(() => parseCommand(['switch', 'fallback', 'maybe']), /fallback/);
   });
+
+  it('parses "fallback auto-revert on" (canonical name from v3.2.0)', () => {
+    assert.deepEqual(parseCommand(['switch', 'fallback', 'auto-revert', 'on']),
+      { action: 'fallback-auto', mode: 'on' });
+  });
+
+  it('parses "fallback auto-revert off"', () => {
+    assert.deepEqual(parseCommand(['switch', 'fallback', 'auto-revert', 'off']),
+      { action: 'fallback-auto', mode: 'off' });
+  });
+
+  it('parses "fallback auto-revert on --threshold 70"', () => {
+    assert.deepEqual(parseCommand(['switch', 'fallback', 'auto-revert', 'on', '--threshold', '70']),
+      { action: 'fallback-auto', mode: 'on', threshold: 70 });
+  });
+
+  it('parses "fallback auto-engage on" (always canonical)', () => {
+    assert.deepEqual(parseCommand(['switch', 'fallback', 'auto-engage', 'on']),
+      { action: 'fallback-auto-engage', mode: 'on' });
+  });
+
+  it('still parses "fallback auto" as a deprecated alias for auto-revert', () => {
+    // Same parse output as auto-revert; deprecation warning printed to stderr.
+    assert.deepEqual(parseCommand(['switch', 'fallback', 'auto', 'on']),
+      { action: 'fallback-auto', mode: 'on' });
+  });
 });
