@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readKeychain, writeKeychain, type KeychainData } from './keychain.js';
 import { writeJsonAtomic } from './atomic-write.js';
+import { withLock } from './lock.js';
 
 // Whitelist of characters allowed in account names. RFC 5321 email local-part
 // can contain more than this, but accepting only [A-Za-z0-9._+@-] covers ~all
@@ -141,6 +142,29 @@ export function remove(email: string, accountsDirPath: string): void {
     }
     throw e;
   }
+}
+
+/**
+ * Remove an account, refusing to drop the currently-active one. The
+ * "active?" check and the unlink share a single `withLock` so a switch
+ * happening concurrently can't sneak through between the two reads.
+ *
+ * Throws if the target is the active account; this is a hard error,
+ * not a silent no-op — callers want to surface "switch first" to the
+ * user. ENOENT bubbles up unchanged from `remove()`.
+ */
+export function removeSafely(
+  email: string,
+  claudeJsonPath: string,
+  accountsDirPath: string,
+): void {
+  withLock(accountsDirPath, () => {
+    const currentNow = getCurrent(claudeJsonPath);
+    if (currentNow === email) {
+      throw new Error('Cannot remove the active account. Switch to another one first.');
+    }
+    remove(email, accountsDirPath);
+  });
 }
 
 export function load(email: string, claudeJsonPath: string, accountsDirPath: string): { keychainRestored: boolean } {

@@ -24,9 +24,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isFallbackEnabled, setFallbackEnabledInLock } from './fallback.js';
 import { getCurrent } from './accounts.js';
-import { getApiKey } from './apikey.js';
+import { getApiKey, setApiKey } from './apikey.js';
 import { readUsageCacheFor } from './usage.js';
 import { writeJsonAtomic } from './atomic-write.js';
+import { withLock } from './lock.js';
 
 const CONFIG_FILE = '.auto-fallback.json';
 const DEFAULT_REVERT_THRESHOLD = 80;
@@ -120,6 +121,29 @@ export function maybeInitSmartFallback(accountsDirPath: string): boolean {
   if (fs.existsSync(configPath(accountsDirPath))) return false;
   setAutoFallbackConfig(accountsDirPath, { enabled: true, engageEnabled: true });
   return true;
+}
+
+/**
+ * Save an API key for an account and, if smart-fallback has never been
+ * configured before, opportunistically turn it on with sane defaults.
+ * Two-step UX flow consolidated here so screens don't have to remember
+ * to chain `setApiKey` → `maybeInitSmartFallback` (and the order between
+ * lock-required vs lock-free calls).
+ *
+ * Returns `{ smartEnabled }` reflecting whether THIS call initialised
+ * smart-fallback (false on every subsequent call once the config exists).
+ */
+export function saveApiKeyAndMaybeInit(
+  email: string,
+  key: string,
+  accountsDirPath: string,
+): { smartEnabled: boolean } {
+  withLock(accountsDirPath, () => setApiKey(email, key, accountsDirPath));
+  // Lock-free: maybeInitSmartFallback only writes the auto-fallback
+  // config file (separate from the per-account state), so it doesn't
+  // need to coordinate with the per-account write above.
+  const smartEnabled = maybeInitSmartFallback(accountsDirPath);
+  return { smartEnabled };
 }
 
 export interface AutoDisableResult {
