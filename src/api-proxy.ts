@@ -1,26 +1,37 @@
 // src/api-proxy.ts
-// Local HTTP proxy for same-account OAuth → API key fallback within a session.
+// Local HTTP proxy for live OAuth ↔ API-key handover within a single
+// `claude` session.
 //
 // The claude binary respects ANTHROPIC_BASE_URL. We start a server on a
 // random loopback port and set that env var before spawning the binary.
 //
-// Two modes, controlled by the `startWithOAuth` parameter:
+// Modes (controlled by the `mode` option):
 //
-//   startWithOAuth = true  (fallback OFF, key saved):
-//     OAuth first → [quota/rate-limit failure] → retry with API key.
-//     Statusline shows "OAuth". The subscription is used until it hits the
-//     rate limit, then API credits kick in transparently.
+//   'oauth-first':
+//     Default for accounts that have BOTH a working OAuth token AND a saved
+//     API key. Each request is sent with OAuth Bearer first; on a quota /
+//     rate-limit failure (status 402/403/429 or a top-of-stream error
+//     envelope) we retry that single request with the API key.
 //
-//   startWithOAuth = false  (fallback ON, key saved):
-//     API key from the first request, no OAuth attempt.
-//     Statusline shows "API". Equivalent to the old ANTHROPIC_API_KEY inject
-//     but routed through the proxy so future rotation can be added.
+//     If we see N consecutive OAuth failures we enter a temporary
+//     `api-burst` sub-state: subsequent requests skip the OAuth attempt and
+//     go straight to the API key, except for a periodic OAuth probe (every
+//     M minutes). When the probe succeeds we drop back to oauth-first.
+//     This gives symmetric live recovery — subscription comes back online
+//     and the running claude session resumes billing the subscription
+//     without restart.
 //
-// In both modes `oauth-2025-04-20` is stripped from `anthropic-beta` when
-// forwarding with an API key, so Anthropic bills API credits not subscription.
+//   'api-first':
+//     Forward every request with `x-api-key` directly. Never probes OAuth.
+//     For users who explicitly want to bill API credits (or whose OAuth
+//     subscription is unavailable). Equivalent to the old fallback-ON
+//     mode in v3.x.
 //
-// No cross-account rotation happens. Started when the active account has a
-// saved API key.
+// `oauth-2025-04-20` is stripped from `anthropic-beta` whenever the proxy
+// forwards with an API key, so Anthropic bills API credits not subscription.
+//
+// The proxy is started ONLY when the active account has a saved API key.
+// Pure-OAuth accounts launch claude without the proxy at all.
 
 import http from 'node:http';
 import https from 'node:https';
@@ -29,10 +40,36 @@ import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
 
 export const DEFAULT_UPSTREAM = 'https://api.anthropic.com';
 export const DEFAULT_MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
+export const DEFAULT_BURST_FAILURE_THRESHOLD = 3;
+export const DEFAULT_BURST_PROBE_INTERVAL_MS = 5 * 60 * 1000;
+
+/** Modes externally chosen by the caller (per-account `authMode`).
+ *  `oauth-only` is not a proxy mode — when there's no API key the caller
+ *  doesn't start the proxy at all. */
+export type ProxyMode = 'oauth-first' | 'api-first';
+
+/** Snapshot of the proxy's runtime state, exposed to callers for diagnostics
+ *  and statusline display. */
+export interface ProxyRuntimeState {
+  mode: ProxyMode;
+  /** True when oauth-first has temporarily downgraded to API key only after
+   *  N consecutive OAuth failures. False in `api-first` mode (always). */
+  burstActive: boolean;
+  /** How many OAuth attempts in a row have failed without an intervening
+   *  successful response. */
+  consecutiveOauthFailures: number;
+}
 
 export interface ProxyHandle {
   port: number;
   close: (cb?: () => void) => void;
+  /** Read the current runtime state (mode + burst flag + counter). */
+  state(): ProxyRuntimeState;
+}
+
+export interface BurstConfig {
+  failureThreshold: number;
+  probeIntervalMs: number;
 }
 
 /**
@@ -114,25 +151,71 @@ export function buildApiKeyHeaders(
   return out;
 }
 
+export interface StartFallbackProxyOptions {
+  apiKey: string;
+  mode: ProxyMode;
+  upstreamBase?: string;
+  maxRequestBodyBytes?: number;
+  burstConfig?: Partial<BurstConfig>;
+  /** Wall-clock provider for tests. Defaults to `Date.now`. */
+  now?: () => number;
+}
+
 /**
  * Start the fallback proxy.
  *
- * @param apiKey       The account's saved API key.
- * @param startWithOAuth
- *   `true`  — forward with OAuth first; retry with API key only on
- *             subscription quota/rate-limit failures.
- *             Use when `fallback` is OFF. Statusline shows "OAuth".
- *   `false` — use the API key from the very first request.
- *             Use when `fallback` is ON. Statusline shows "API".
- * @param upstreamBase Upstream base URL (override for testing).
- * @param maxRequestBodyBytes Hard cap before forwarding to upstream.
+ * In `oauth-first` mode the proxy implements live transitions in both
+ * directions: it falls back to the API key on subscription failures, then
+ * periodically probes OAuth so the running claude session can return to
+ * subscription billing as soon as the rate limit clears — no restart.
+ *
+ * In `api-first` mode the proxy always uses the API key.
  */
-export function startFallbackProxy(
-  apiKey: string,
-  startWithOAuth = true,
-  upstreamBase = DEFAULT_UPSTREAM,
-  maxRequestBodyBytes = DEFAULT_MAX_REQUEST_BODY_BYTES,
-): Promise<ProxyHandle> {
+export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<ProxyHandle> {
+  const apiKey = opts.apiKey;
+  const mode = opts.mode;
+  const upstreamBase = opts.upstreamBase ?? DEFAULT_UPSTREAM;
+  const maxRequestBodyBytes = opts.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES;
+  const burstConfig: BurstConfig = {
+    failureThreshold: opts.burstConfig?.failureThreshold ?? DEFAULT_BURST_FAILURE_THRESHOLD,
+    probeIntervalMs: opts.burstConfig?.probeIntervalMs ?? DEFAULT_BURST_PROBE_INTERVAL_MS,
+  };
+  const now = opts.now ?? Date.now;
+
+  // Mutable runtime state shared across requests. Only meaningful in
+  // `oauth-first` mode — `api-first` ignores it.
+  let burstActive = false;
+  let consecutiveOauthFailures = 0;
+  let lastOauthAttemptAt = 0;
+
+  const recordOauthFailure = (): void => {
+    consecutiveOauthFailures++;
+    lastOauthAttemptAt = now();
+    if (!burstActive && consecutiveOauthFailures >= burstConfig.failureThreshold) {
+      burstActive = true;
+      process.stderr.write(
+        `\n⚡ claude-switch: OAuth failed ${consecutiveOauthFailures}× in a row — entering API-burst mode (probing OAuth every ${Math.round(burstConfig.probeIntervalMs / 60000)} min)\n\n`,
+      );
+    }
+  };
+
+  const recordOauthSuccess = (): void => {
+    if (burstActive) {
+      process.stderr.write(
+        '\n⚡ claude-switch: OAuth probe succeeded — exiting API-burst, back to subscription\n\n',
+      );
+    }
+    burstActive = false;
+    consecutiveOauthFailures = 0;
+    lastOauthAttemptAt = now();
+  };
+
+  /** Decide whether THIS request should attempt OAuth, given oauth-first
+   *  mode and the current burst state. */
+  const shouldTryOauth = (): boolean => {
+    if (!burstActive) return true;
+    return now() - lastOauthAttemptAt >= burstConfig.probeIntervalMs;
+  };
   const upstream = new URL(upstreamBase);
   const isHttps = upstream.protocol === 'https:';
   const upstreamPort = upstream.port
@@ -192,9 +275,8 @@ export function startFallbackProxy(
         if (requestTooLarge) return;
         const body = Buffer.concat(chunks);
 
-        if (!startWithOAuth) {
-          // API-key-first mode (fallback ON): no OAuth attempt, just forward
-          // with the API key. Pass 429 through if it occurs.
+        // Pure API-first mode: never attempt OAuth, never probe.
+        if (mode === 'api-first') {
           const headers = buildApiKeyHeaders(req.headers, apiKey);
           forward(headers, req.method, req.url, body,
             (proxyRes) => {
@@ -208,13 +290,38 @@ export function startFallbackProxy(
           return;
         }
 
-        // OAuth-first mode (fallback OFF): try subscription, retry with API
-        // key on quota/rate-limit failures (status code OR error envelope
-        // inside a 200 body — Anthropic returns "out of extra usage" via
-        // the body, not via status).
+        // OAuth-first mode. Two paths:
+        //   - Outside burst (or probe interval elapsed): send OAuth, fall
+        //     back to API key per-request on retryable error, track success
+        //     to maintain the consecutive-failures counter.
+        //   - Inside burst (probe interval not elapsed): skip OAuth entirely,
+        //     forward straight with API key. The next probe will re-attempt
+        //     OAuth and either confirm we're still over the limit (stays in
+        //     burst) or recover us (exits burst).
         const oauthHeaders = buildPassthroughHeaders(req.headers);
 
+        const tryOauth = shouldTryOauth();
+        if (!tryOauth) {
+          // API-burst sub-state, between probes — go straight to API key.
+          const headers = buildApiKeyHeaders(req.headers, apiKey);
+          forward(headers, req.method, req.url, body,
+            (proxyRes) => {
+              res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
+              proxyRes.pipe(res);
+            },
+            () => {
+              if (!res.headersSent) { res.writeHead(502); res.end(); }
+            },
+          );
+          return;
+        }
+
+        // We're attempting OAuth. Mark the timestamp so future probes are
+        // paced correctly even if the request takes a while.
+        lastOauthAttemptAt = now();
+
         const retryWithApiKey = (reason: string): void => {
+          recordOauthFailure();
           process.stderr.write(
             `\n⚡ claude-switch: ${reason} — retrying with API key\n\n`,
           );
@@ -250,6 +357,10 @@ export function startFallbackProxy(
               if (decided) return;
               decided = true;
               if (res.headersSent) return;
+              // Reaching here means OAuth replied with a non-error 200 — the
+              // subscription is healthy. Reset the burst state so the next
+              // request goes straight at OAuth without probing logic.
+              recordOauthSuccess();
               res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
               for (const c of peeked) res.write(c);
               proxyRes.pipe(res);
@@ -289,7 +400,15 @@ export function startFallbackProxy(
     server.on('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address() as AddressInfo;
-      resolve({ port: addr.port, close: (cb) => server.close(cb) });
+      resolve({
+        port: addr.port,
+        close: (cb) => server.close(cb),
+        state: () => ({
+          mode,
+          burstActive,
+          consecutiveOauthFailures,
+        }),
+      });
     });
   });
 }

@@ -63,6 +63,7 @@ function SettingsScreen({ accountsDirPath, initialAccount, onDone }: ScreenProps
       autoLaunchOnSwitch: globalPrefs.defaultAutoLaunchOnSwitch,
       autoFlipFallback: globalPrefs.defaultAutoFlipFallback,
       defaultIsolated: false,
+      authMode: 'auto',
     },
   );
   // Cached "which keys are explicitly overridden" so we don't hit disk on

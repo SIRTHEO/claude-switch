@@ -19,6 +19,7 @@ import {
   readStoredAccountPrefs,
   writeStoredAccountPrefs,
   resolveAccountPrefs,
+  resolveEffectiveAuthMode,
 } from '../src/preferences.js';
 
 describe('global preferences', () => {
@@ -116,5 +117,67 @@ describe('per-account preferences', () => {
     save('work@example.com', claudeJson, accDir);
     const after = JSON.parse(fs.readFileSync(path.join(accDir, 'work@example.com.json'), 'utf-8'));
     assert.deepEqual(after._prefs, { defaultIsolated: true });
+  });
+});
+
+describe('resolveEffectiveAuthMode', () => {
+  // 4-state matrix × 3 user choices. Resolution must be deterministic and
+  // match the table documented in preferences.ts. This is the single
+  // source of truth for what mode the proxy boots into; getting it wrong
+  // is what causes "wrong account billed" incidents.
+
+  it('auto + healthy OAuth + key → oauth-first', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'auto', oauthHealthy: true, hasApiKey: true }), 'oauth-first');
+  });
+  it('auto + healthy OAuth + no key → oauth-only', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'auto', oauthHealthy: true, hasApiKey: false }), 'oauth-only');
+  });
+  it('auto + dead OAuth + key → api-first', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'auto', oauthHealthy: false, hasApiKey: true }), 'api-first');
+  });
+  it('auto + dead OAuth + no key → error', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'auto', oauthHealthy: false, hasApiKey: false }), 'error');
+  });
+
+  it('explicit oauth-first + healthy + key → oauth-first', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'oauth-first', oauthHealthy: true, hasApiKey: true }), 'oauth-first');
+  });
+  it('explicit oauth-first + healthy + no key → oauth-only (degrades — no fallback path)', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'oauth-first', oauthHealthy: true, hasApiKey: false }), 'oauth-only');
+  });
+  it('explicit oauth-first + dead + key → api-first (degrades — token unusable)', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'oauth-first', oauthHealthy: false, hasApiKey: true }), 'api-first');
+  });
+  it('explicit oauth-first + dead + no key → error', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'oauth-first', oauthHealthy: false, hasApiKey: false }), 'error');
+  });
+
+  it('explicit api-first + dead + key → api-first', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'api-first', oauthHealthy: false, hasApiKey: true }), 'api-first');
+  });
+  it('explicit api-first + healthy + key → api-first (user intent honoured)', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'api-first', oauthHealthy: true, hasApiKey: true }), 'api-first');
+  });
+  it('explicit api-first + healthy + no key → oauth-only (degrades — no key to use)', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'api-first', oauthHealthy: true, hasApiKey: false }), 'oauth-only');
+  });
+  it('explicit api-first + dead + no key → error', () => {
+    assert.equal(resolveEffectiveAuthMode({ authMode: 'api-first', oauthHealthy: false, hasApiKey: false }), 'error');
+  });
+
+  it('default authMode in resolveAccountPrefs is "auto"', () => {
+    // Smoke against the default — guard against regressions where someone
+    // changes the default to oauth-first/api-first thinking it's "more
+    // explicit". Default MUST stay auto so installs upgrade transparently.
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-default-auth-'));
+    const dir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'a@b.com.json'), JSON.stringify({ emailAddress: 'a@b.com' }));
+    try {
+      const prefs = resolveAccountPrefs('a@b.com', dir);
+      assert.equal(prefs.authMode, 'auto');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
