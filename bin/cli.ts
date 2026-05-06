@@ -108,8 +108,21 @@ export function parseCommand(args: string[]): Command {
       if (!sub2 || sub2 === 'status') return { action: 'fallback', mode: 'status' };
       if (sub2 === 'on') return { action: 'fallback', mode: 'on' };
       if (sub2 === 'off') return { action: 'fallback', mode: 'off' };
-      if (sub2 === 'auto' || sub2 === 'auto-engage') {
-        const action = sub2 === 'auto' ? 'fallback-auto' : 'fallback-auto-engage';
+      // Sub-tree map. `auto-revert` is the new canonical name; `auto` is
+      // a deprecated alias kept for one minor cycle (since v3.2.0). Both
+      // route to the same action.
+      const SUBTREE_ACTIONS: Record<string, 'fallback-auto' | 'fallback-auto-engage'> = {
+        auto: 'fallback-auto',
+        'auto-revert': 'fallback-auto',
+        'auto-engage': 'fallback-auto-engage',
+      };
+      if (sub2 && sub2 in SUBTREE_ACTIONS) {
+        if (sub2 === 'auto') {
+          process.stderr.write(
+            'Note: `claude switch fallback auto …` is deprecated; use `auto-revert` instead.\n',
+          );
+        }
+        const action = SUBTREE_ACTIONS[sub2]!;
         const sub3 = args[3];
         if (!sub3 || sub3 === 'status') return { action, mode: 'status' };
         if (sub3 === 'off') return { action, mode: 'off' };
@@ -126,7 +139,7 @@ export function parseCommand(args: string[]): Command {
         }
         throw new ExitError(`Usage: claude switch fallback ${sub2} <on|off|status> [--threshold <1-100>]`);
       }
-      throw new ExitError('Usage: claude switch fallback <on|off|status|auto|auto-engage>');
+      throw new ExitError('Usage: claude switch fallback <on|off|status|auto-revert|auto-engage>');
     }
     case 'usage': {
       const flags = args.slice(2);
@@ -230,8 +243,10 @@ Usage:
   claude switch apikey show <a|e>        Show saved API key (masked)
   claude switch apikey remove <a|e>      Delete saved API key
   claude switch fallback on|off|status   Toggle API key fallback (overrides OAuth)
-  claude switch fallback auto on|off     Smart-switch: auto-OFF when 5h+7d drop
-                                         opts: --threshold <1-100> (default 80)
+  claude switch fallback auto-revert     auto-OFF fallback when 5h+7d drop below threshold
+    on|off|status                        opts: --threshold <1-100> (default 80)
+  claude switch fallback auto-engage     auto-ON fallback when 5h or 7d cross threshold
+    on|off|status                        opts: --threshold <1-100> (default 95)
   claude switch usage [--force]          Show subscription usage % (5h, 7d)
   claude switch statusline [opts]        One-line account/mode for shell prompt
                                          opts: --full | --json | --no-color
