@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from '../src/resolver.js';
 import { getCurrent, save, list as listAccounts, remove as removeAccount } from '../src/accounts.js';
 import { withLock } from '../src/lock.js';
-import { fuzzyMatch, switchTo, switchInteractive, addAccount, runTemporarySwitch, checkPendingRestore } from '../src/switcher.js';
+import { fuzzyMatch, switchToAndSyncFallback, switchInteractive, addAccount, runTemporarySwitch, checkPendingRestore } from '../src/switcher.js';
 import { run as proxyRun } from '../src/proxy.js';
 import { claudeJsonPath, accountsDir } from '../src/paths.js';
 import { generateBash, generateZsh, generateFish, generatePowerShell } from '../src/completions.js';
@@ -736,10 +736,11 @@ async function main(): Promise<void> {
         const sessions = countActiveClaudeSessions(getSavedClaudeBin());
         const warning = buildActiveSessionsWarning(sessions.count);
         if (warning) process.stderr.write(`${warning}\n\n`);
-        console.log(switchTo(matches[0]!, cJson, aDir));
-        const hasKey = !!getApiKey(matches[0]!, aDir);
-        setFallbackEnabled(aDir, hasKey);
-        process.stderr.write(hasKey ? '  Fallback ON — API key active\n' : '  Fallback OFF — no API key\n');
+        // Bundle switch + fallback flip in one withLock so a concurrent
+        // `claude switch` can't race the two writes (see switcher.ts).
+        const outcome = switchToAndSyncFallback(matches[0]!, cJson, aDir, { autoFlipFallback: true });
+        console.log(outcome.message);
+        process.stderr.write(outcome.hasApiKey ? '  Fallback ON — API key active\n' : '  Fallback OFF — no API key\n');
       } else if (matches.length > 1) {
         console.log('Multiple matches:');
         for (const m of matches) console.log(`  ${m}`);
@@ -1372,5 +1373,16 @@ function handleError(e: unknown): void {
     console.error(e.message);
     process.exit(e.code);
   }
-  throw e;
+  // Anything else is an unexpected internal error. Print the message
+  // without the raw stack trace — stack frames leak install paths and
+  // sometimes credential-adjacent state on stderr. Set CLAUDE_SWITCH_DEBUG=1
+  // to opt back into the full trace for bug reports.
+  const msg = e instanceof Error ? e.message : String(e);
+  console.error(`Internal error: ${msg}`);
+  if (process.env.CLAUDE_SWITCH_DEBUG === '1' && e instanceof Error && e.stack) {
+    console.error(e.stack);
+  } else {
+    console.error('Set CLAUDE_SWITCH_DEBUG=1 to see the stack trace.');
+  }
+  process.exit(1);
 }

@@ -8,9 +8,7 @@ import { useEffect, useState } from 'react';
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { StatusMessage } from '@inkjs/ui';
 
-import { switchTo } from '../../switcher.js';
-import { getApiKey } from '../../apikey.js';
-import { setFallbackEnabled } from '../../fallback.js';
+import { switchToAndSyncFallback } from '../../switcher.js';
 import { resolveAccountPrefs } from '../../preferences.js';
 import { useSnapshot, type AccountRow } from '../hooks/use-snapshot.js';
 import { useAsyncAction } from '../hooks/use-async-action.js';
@@ -390,13 +388,18 @@ function HomeScreen({ claudeJsonPath, accountsDirPath, initialNotice, onExit }: 
     const before = target.email;
     const previous = snap.current;
     void run(() => {
-      const result = switchTo(before, claudeJsonPath, accountsDirPath);
       const prefs = resolveAccountPrefs(before, accountsDirPath);
+      // Bundle the switch + fallback flip into one withLock so a concurrent
+      // `claude switch` from another terminal can't race the two writes
+      // and leave us with `active=B / fallback=ON / B has no key`.
+      const outcome = switchToAndSyncFallback(before, claudeJsonPath, accountsDirPath, {
+        autoFlipFallback: prefs.autoFlipFallback,
+      });
       let fallbackHint = '';
       if (prefs.autoFlipFallback) {
-        const hasKey = !!getApiKey(before, accountsDirPath);
-        setFallbackEnabled(accountsDirPath, hasKey);
-        fallbackHint = hasKey ? ' · fallback ON (API key)' : ' · fallback OFF (OAuth)';
+        fallbackHint = outcome.hasApiKey
+          ? ' · fallback ON (API key)'
+          : ' · fallback OFF (OAuth)';
       }
       refresh();
       queueMicrotask(() => finish('switched', {
@@ -405,7 +408,7 @@ function HomeScreen({ claudeJsonPath, accountsDirPath, initialNotice, onExit }: 
         autoLaunch: prefs.autoLaunchOnSwitch,
         defaultIsolated: prefs.defaultIsolated,
       }));
-      return result + fallbackHint;
+      return outcome.message + fallbackHint;
     });
   };
 
