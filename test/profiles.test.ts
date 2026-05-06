@@ -185,6 +185,33 @@ describe('importProfileFromAccount', () => {
     );
   });
 
+  it('rejects path-traversal email values before opening any file', () => {
+    // Regression: pre-fix, `path.join(accountsDir, "../../foo.json")` resolved
+    // outside the accounts dir, letting `claude switch profile import` read
+    // arbitrary files. The guard must trip on the email shape, not on
+    // missing-file behaviour.
+    assert.throws(
+      () => importProfileFromAccount('../../etc/passwd', accountsDir),
+      /unsafe for filenames|outside accounts directory/i,
+    );
+    assert.throws(
+      () => importProfileFromAccount('../escape@x.com', accountsDir),
+      /unsafe for filenames|outside accounts directory/i,
+    );
+  });
+
+  it('rejects symlink account files', () => {
+    // Plant a symlink in the accounts directory and confirm we refuse to
+    // follow it into another location.
+    const target = path.join(tmpHome, 'sneaky.json');
+    fs.writeFileSync(target, JSON.stringify({ emailAddress: 'evil@x.com' }));
+    fs.symlinkSync(target, path.join(accountsDir, 'evil@x.com.json'));
+    assert.throws(
+      () => importProfileFromAccount('evil@x.com', accountsDir),
+      /symbolic link/i,
+    );
+  });
+
   it('uses email local-part as default profile name', () => {
     fs.writeFileSync(path.join(accountsDir, 'work@example.com.json'), JSON.stringify({
       emailAddress: 'work@example.com',

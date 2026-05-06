@@ -8,6 +8,8 @@ import { setAlias } from './aliases.js';
 import { buildSpawnArgs } from './proxy.js';
 import { ExitError } from './errors.js';
 import { withLock } from './lock.js';
+import { getApiKey } from './apikey.js';
+import { isFallbackEnabled, setFallbackEnabled } from './fallback.js';
 
 export interface SwitcherDeps {
   spawnSyncFn?: (command: string, args: string[], options: object) => SpawnSyncReturns<Buffer>;
@@ -45,6 +47,64 @@ export function switchTo(targetEmail: string, claudeJsonPath: string, accountsDi
       ? ''
       : '\nWarning: no saved credentials for this account — API tokens may be wrong.\nRun: claude switch add (to re-authenticate and capture tokens)';
     return `Switched to ${targetEmail}${warning}`;
+  });
+}
+
+export interface SwitchOutcome {
+  /** Human-readable status line (already includes any warning). */
+  message: string;
+  /** Whether the new account has a saved API key. */
+  hasApiKey: boolean;
+  /** Whether the fallback flag was actually flipped during this call. */
+  fallbackFlipped: boolean;
+}
+
+/**
+ * Switch + atomically reconcile the global fallback flag with the new
+ * account's API-key capability, all under one `withLock`. The single-lock
+ * invariant is what protects against this race: caller A reads `hasKey`
+ * for account B, B becomes active, A's deferred `setFallbackEnabled(true)`
+ * lands and the system is now `active=B / fallback=ON / B has no key`.
+ *
+ * Bundling the read and write here closes the window. Mirrors the lock
+ * pattern in `bin/cli.ts:1263` (`passthrough` snapshot).
+ */
+export function switchToAndSyncFallback(
+  targetEmail: string,
+  claudeJsonPath: string,
+  accountsDirPath: string,
+  options: { autoFlipFallback: boolean },
+): SwitchOutcome {
+  return withLock(accountsDirPath, () => {
+    const currentEmail = getCurrent(claudeJsonPath);
+
+    if (targetEmail === currentEmail) {
+      const hasApiKey = !!getApiKey(targetEmail, accountsDirPath);
+      return { message: `Already on ${targetEmail}`, hasApiKey, fallbackFlipped: false };
+    }
+
+    if (currentEmail) {
+      save(currentEmail, claudeJsonPath, accountsDirPath);
+    }
+
+    const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
+    const hasApiKey = !!getApiKey(targetEmail, accountsDirPath);
+
+    let fallbackFlipped = false;
+    if (options.autoFlipFallback) {
+      // Read the previous flag inside the same lock so we don't flip when
+      // the desired state already matches — keeps the operation idempotent.
+      const wasOn = isFallbackEnabled(accountsDirPath);
+      if (wasOn !== hasApiKey) {
+        setFallbackEnabled(accountsDirPath, hasApiKey);
+        fallbackFlipped = true;
+      }
+    }
+
+    const warning = keychainRestored
+      ? ''
+      : '\nWarning: no saved credentials for this account — API tokens may be wrong.\nRun: claude switch add (to re-authenticate and capture tokens)';
+    return { message: `Switched to ${targetEmail}${warning}`, hasApiKey, fallbackFlipped };
   });
 }
 

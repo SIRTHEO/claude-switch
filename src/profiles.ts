@@ -19,6 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { writeJsonAtomic } from './atomic-write.js';
 import { writeKeychainAt, type KeychainData } from './keychain.js';
+import { isSafeEmail, resolvedAccountFile } from './accounts.js';
 
 // Conservative naming rules so a profile name is never ambiguous on
 // disk, in shell completions, or in error messages. Letters, digits,
@@ -187,10 +188,26 @@ interface LegacyAccountFile {
 }
 
 function readLegacyAccount(email: string, accountsDirPath: string): LegacyAccountFile {
-  const file = path.join(accountsDirPath, `${email}.json`);
-  if (!fs.existsSync(file)) {
+  // Reject anything that isn't a safe email up front so we never feed a
+  // raw `../../etc/passwd` into `path.join`. Mirrors the guard that
+  // `accounts.ts` applies on its read/write paths.
+  if (!email || !isSafeEmail(email)) {
+    throw new Error(`Email contains characters unsafe for filenames: ${email}`);
+  }
+  const file = resolvedAccountFile(email, accountsDirPath);
+
+  // Reject symlinks before opening — a local attacker who can write into
+  // ~/.claude/accounts/ could otherwise plant a symlink to an arbitrary
+  // file and have us parse it as account data. Same defence applied by
+  // `accounts.load`.
+  const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+  if (!stat) {
     throw new Error(`No saved account for ${email}. List accounts with: claude switch list`);
   }
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Account file for ${email} is a symbolic link and cannot be trusted`);
+  }
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
