@@ -15,5 +15,5 @@
       }
     </style>
   </defs>
-  <text x="360" y="100" text-anchor="middle" font-size="92" font-weight="800" letter-spacing="-4" class="claude-text">claude<tspan class="hyphen" font-weight="400" dx="-2" dy="-8">-</tspan><tspan fill="url(#switchGrad)" dx="-2">switch</tspan></text>
+  <text x="360" y="100" text-anchor="middle" font-size="92" font-weight="800" letter-spacing="-4" class="claude-text">claude<tspan class="hyphen" font-weight="400" dx="-2">-</tspan><tspan fill="url(#switchGrad)" dx="-2">switch</tspan></text>
 </svg>
