@@ -6,6 +6,7 @@ dist/
 .claude/
 .claude-plugin/
 hooks/
+!src/ui/hooks/
 harness.toml
 CLAUDE.md
 AGENTS.md
