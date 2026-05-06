@@ -10,7 +10,6 @@ import { withLock } from '../src/lock.js';
 import { fuzzyMatch, switchToAndSyncFallback, switchInteractive, addAccount, runTemporarySwitch, checkPendingRestore } from '../src/switcher.js';
 import { run as proxyRun } from '../src/proxy.js';
 import { claudeJsonPath, accountsDir } from '../src/paths.js';
-import { generateBash, generateZsh, generateFish, generatePowerShell } from '../src/completions.js';
 import { VERSION } from '../src/version.js';
 import { ExitError } from '../src/errors.js';
 import { setAlias, listAliases, removeAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
@@ -29,6 +28,12 @@ import { runSetupWizardScreen } from '../src/ui/screens/setup-wizard.js';
 import { runAddAccountScreen } from '../src/ui/screens/add-account.js';
 import { runRemoveAccountScreen } from '../src/ui/screens/remove-account.js';
 import { startFallbackProxy } from '../src/api-proxy.js';
+import { handleHelp } from '../src/commands/help.js';
+import { handleVersion } from '../src/commands/version.js';
+import { handleCompletions } from '../src/commands/completions.js';
+import { handleList } from '../src/commands/list.js';
+import { handleStatus } from '../src/commands/status.js';
+import type { CommandContext } from '../src/commands/context.js';
 
 export type Command =
   | { action: 'switch-interactive' }
@@ -224,55 +229,6 @@ function findClaude(): string {
     process.exit(1);
   }
   return bin;
-}
-
-function showHelp(): void {
-  console.log(`claude-switch — multi-account wrapper for Claude Code
-
-Usage:
-  claude switch                          Switch account (interactive menu)
-  claude switch <alias|email>            Switch to account (alias or fuzzy match)
-  claude switch add                      Add a new account (opens browser)
-  claude switch list                     List saved accounts
-  claude switch remove <email>           Remove a saved account
-  claude switch status                   Show active account, token, fallback
-  claude switch alias <n> <email>        Set an alias
-  claude switch alias --list             List aliases
-  claude switch alias --remove <n>       Remove an alias
-  claude switch apikey set <a|e>         Save an Anthropic API key for an account
-  claude switch apikey show <a|e>        Show saved API key (masked)
-  claude switch apikey remove <a|e>      Delete saved API key
-  claude switch fallback on|off|status   Toggle API key fallback (overrides OAuth)
-  claude switch fallback auto-revert     auto-OFF fallback when 5h+7d drop below threshold
-    on|off|status                        opts: --threshold <1-100> (default 80)
-  claude switch fallback auto-engage     auto-ON fallback when 5h or 7d cross threshold
-    on|off|status                        opts: --threshold <1-100> (default 95)
-  claude switch usage [--force]          Show subscription usage % (5h, 7d)
-  claude switch statusline [opts]        One-line account/mode for shell prompt
-                                         opts: --full | --json | --no-color
-  claude switch statusline install       Add badge to Claude Code status bar
-                                         opts: --ccstatusline (chain instead of replace)
-  claude switch statusline uninstall     Remove the badge from Claude Code
-  claude switch statusline status        Show what's configured in settings.json
-  claude switch profile import <email>   Convert an existing saved account into an
-                                         isolated profile (no browser re-login needed
-                                         on macOS — uses the saved Keychain snapshot)
-                                         opt: --as <profile-name>
-  claude switch profile create <name>    Create an isolated profile (separate from
-                                         the global account swap flow above)
-  claude switch profile login <name>     Authenticate a profile (browser opens)
-  claude switch profile use <name>       Start claude using only that profile
-                                         — other terminals are unaffected
-  claude switch profile list             List profiles + which account each has
-  claude switch profile remove <name>    Delete a profile and its state
-  claude switch profile status [<name>]  Show profile metadata
-  claude switch update                   Check for updates and install if available
-  claude switch help                     Show this help
-  claude switch setup                    Re-run first-time setup
-  claude --as <alias|email> ...          Use account temporarily
-  claude switch --completions <shell>    Generate shell completions
-
-All other commands are passed through to the real claude binary.`);
 }
 
 /** Read a line from stdin without echoing it (TTY) or from a pipe (non-TTY). */
@@ -727,6 +683,15 @@ async function main(): Promise<void> {
     }
   }
 
+  // Shared context for the per-command handlers extracted under
+  // `src/commands/`. Keeps the dispatcher thin: parse → handler.
+  const ctx: CommandContext = {
+    claudeJsonPath: cJson,
+    accountsDirPath: aDir,
+    updateInfo,
+    selfUrl: import.meta.url,
+  };
+
   switch (cmd.action) {
     case 'switch-interactive':
       // Persistent menu loop when we have a real terminal — actions return to
@@ -782,32 +747,9 @@ async function main(): Promise<void> {
       break;
     }
 
-    case 'list': {
-      const accounts = listAccounts(aDir);
-      // EACCES on ~/.claude.json shouldn't break `list` — historically this
-      // command returned the saved account list even if the active marker
-      // was unreadable. Surface the issue on stderr but keep the listing.
-      let current = '';
-      try {
-        current = getCurrent(cJson);
-      } catch (e) {
-        process.stderr.write(`Note: could not determine active account — ${(e as Error).message}\n\n`);
-      }
-      if (accounts.length === 0) {
-        console.log('No saved accounts. Run: claude switch add');
-      } else {
-        console.log('Saved accounts:\n');
-        for (const email of accounts) {
-          const isActive = email === current;
-          const marker = isActive ? '  * ' : '    ';
-          const activeLabel = isActive ? ' (active)' : '';
-          const emailAliases = getAliasesForEmail(email, aDir);
-          const aliasLabel = emailAliases.length > 0 ? ` [${emailAliases.join(', ')}]` : '';
-          console.log(`${marker}${email}${activeLabel}${aliasLabel}`);
-        }
-      }
+    case 'list':
+      handleList(ctx);
       break;
-    }
 
     case 'alias-set': {
       if (!cmd.email) {
@@ -872,62 +814,9 @@ async function main(): Promise<void> {
       }
       break;
 
-    case 'status': {
-      const current = getCurrent(cJson);
-      if (!current) {
-        console.log('No account connected. Run: claude switch add');
-        break;
-      }
-
-      // Auto-save if active account not yet saved, or if the saved file
-      // pre-dates keychain support and lacks token data.
-      const savedAccounts = listAccounts(aDir);
-      if (!savedAccounts.includes(current)) {
-        withLock(aDir, () => save(current, cJson, aDir));
-        console.log(`Detected account: ${current} (saved automatically)\n`);
-      } else {
-        // Migrate old account files that lack _keychain by re-saving.
-        const accountFile = path.join(aDir, `${current}.json`);
-        try {
-          const existing = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
-          if (!existing._keychain) {
-            withLock(aDir, () => save(current, cJson, aDir));
-          }
-        } catch { /* ignore, best-effort migration */ }
-      }
-
-      const health = getTokenHealth(cJson);
-      const emailAliases = getAliasesForEmail(current, aDir);
-
-      console.log(`Active account: ${current}`);
-      if (emailAliases.length > 0) {
-        console.log(`  Alias: ${emailAliases.join(', ')}`);
-      }
-
-      switch (health.status) {
-        case 'valid':
-          console.log(`  Token: valid (expires ${health.expiresIn})`);
-          break;
-        case 'expired':
-          console.log(`  Token: expired (${health.expiresIn}) — run: claude switch add`);
-          break;
-        case 'present':
-          console.log('  Token: present');
-          break;
-        case 'missing':
-          console.log('  Token: missing — run: claude switch add');
-          break;
-      }
-
-      const apiKey = getApiKey(current, aDir);
-      const fallbackOn = isFallbackEnabled(aDir);
-      console.log(`  API key: ${apiKey ? maskApiKey(apiKey) : 'not set'}`);
-      console.log(`  Fallback: ${fallbackOn ? 'on' : 'off'}`);
-      if (fallbackOn && !apiKey) {
-        console.log('  ⚠ fallback is on but no API key saved — claude will use OAuth');
-      }
+    case 'status':
+      handleStatus(ctx);
       break;
-    }
 
     case 'apikey-set': {
       if (!cmd.target) {
@@ -1159,27 +1048,16 @@ async function main(): Promise<void> {
       break;
     }
 
-    case 'completions': {
-      const generators: Record<string, () => string> = {
-        bash: generateBash,
-        zsh: generateZsh,
-        fish: generateFish,
-        powershell: generatePowerShell,
-      };
-      const gen = cmd.shell ? generators[cmd.shell] : undefined;
-      if (!gen) {
-        throw new ExitError('Usage: claude switch --completions <bash|zsh|fish|powershell>');
-      }
-      console.log(gen());
+    case 'completions':
+      handleCompletions(cmd.shell);
       break;
-    }
 
     case 'version':
-      console.log(`claude-switch ${VERSION}`);
+      handleVersion();
       break;
 
     case 'help':
-      showHelp();
+      handleHelp();
       break;
 
     case 'temporary-switch': {
@@ -1345,27 +1223,47 @@ async function main(): Promise<void> {
         }
       }
 
-      // If the active account has an API key, start a local proxy so that a
-      // 429 mid-session retries with the API key — no REPL restart needed.
+      // If the active account has an API key, start the local proxy so the
+      // session can transition between OAuth and API live, in BOTH directions.
       //
-      // startWithOAuth mirrors the statusline display:
-      //   fallbackOn=false (extraEnv=null)  → OAuth first, API key on 429  → statusline "OAuth"
-      //   fallbackOn=true  (extraEnv≠null)  → API key from first request   → statusline "API"
+      // Proxy mode resolution (per account `authMode` preference + token
+      // health, see `resolveEffectiveAuthMode`):
+      //   oauth-first  → OAuth first, retry API on 429/error per request,
+      //                  enter API-burst sub-state after N consecutive
+      //                  OAuth failures + periodic OAuth probe to recover.
+      //   api-first    → API key always.
+      //   oauth-only   → no proxy needed (no key) — fall through.
+      //   error        → no auth available — fall through (claude will fail).
       const activeApiKey = getApiKey(email, aDir);
 
       if (activeApiKey) {
-        const startWithOAuth = !extraEnv;
-        const proxy = await startFallbackProxy(activeApiKey, startWithOAuth);
-        process.on('exit', () => proxy.close());
-        // Clear any inherited ANTHROPIC_API_KEY so the binary uses the proxy
-        // and cannot bypass ANTHROPIC_BASE_URL.
-        proxyRun(claudeBin, cmd.args, {
-          ANTHROPIC_BASE_URL: `http://127.0.0.1:${proxy.port}`,
-          ANTHROPIC_API_KEY: '',
+        const { resolveAccountPrefs, resolveEffectiveAuthMode } = await import('../src/preferences.js');
+        const prefs = resolveAccountPrefs(email, aDir);
+        const tokenHealth = getTokenHealth(cJson);
+        const oauthHealthy = tokenHealth.status === 'valid' || tokenHealth.status === 'present';
+        const effective = resolveEffectiveAuthMode({
+          authMode: prefs.authMode,
+          oauthHealthy,
+          hasApiKey: true,
         });
-      } else {
-        proxyRun(claudeBin, cmd.args, extraEnv);
+        // `oauth-only` and `error` mean "don't use the API key" — handled
+        // below by falling through to the no-key branch.
+        if (effective === 'oauth-first' || effective === 'api-first') {
+          const proxy = await startFallbackProxy({
+            apiKey: activeApiKey,
+            mode: effective,
+          });
+          process.on('exit', () => proxy.close());
+          // Clear any inherited ANTHROPIC_API_KEY so the binary uses the proxy
+          // and cannot bypass ANTHROPIC_BASE_URL.
+          proxyRun(claudeBin, cmd.args, {
+            ANTHROPIC_BASE_URL: `http://127.0.0.1:${proxy.port}`,
+            ANTHROPIC_API_KEY: '',
+          });
+          break;
+        }
       }
+      proxyRun(claudeBin, cmd.args, extraEnv);
       break;
     }
   }

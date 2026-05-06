@@ -69,6 +69,31 @@ export function writeGlobalPrefs(accountsDirPath: string, partial: Partial<Globa
 // Per-account preferences
 // ---------------------------------------------------------------------------
 
+/** Auth mode for the local fallback proxy.
+ *
+ *  - `auto` (default): pick at startup based on token health + saved key.
+ *      OAuth healthy AND key saved → effective `oauth-first`.
+ *      OAuth healthy AND no key → effective `oauth-only`.
+ *      OAuth broken AND key saved → effective `api-first` (token dead, no point probing).
+ *      OAuth broken AND no key → error: no auth available.
+ *
+ *  - `oauth-first`: explicit. OAuth-first proxy with live retry on
+ *      429/error envelopes; after N consecutive failures it enters a
+ *      temporary `api-burst` sub-state and probes OAuth periodically;
+ *      when probe returns OK it drops back to oauth-first. This gives
+ *      symmetric live recovery in both directions within one `claude`
+ *      session.
+ *
+ *  - `api-first`: explicit. Always uses the API key, never probes OAuth.
+ *      For users who want to bill API credits deliberately, or whose
+ *      OAuth subscription is unavailable.
+ *
+ *  Note: `oauth-only` exists as a runtime resolution in `auto` mode but
+ *  is not exposed as a stored preference — choosing it explicitly is
+ *  equivalent to `auto` with no saved API key.
+ */
+export type AuthMode = 'auto' | 'oauth-first' | 'api-first';
+
 export interface AccountPrefs {
   /** Spawn `claude` automatically right after switching to this account. */
   autoLaunchOnSwitch: boolean;
@@ -76,6 +101,8 @@ export interface AccountPrefs {
   autoFlipFallback: boolean;
   /** Always launch in isolated mode (per-terminal profile) instead of swapping the global account. */
   defaultIsolated: boolean;
+  /** How the local fallback proxy should authenticate this account's traffic. */
+  authMode: AuthMode;
 }
 
 /** Resolve the effective preferences by composing globals + per-account overrides. */
@@ -89,6 +116,7 @@ export function resolveAccountPrefs(
     autoLaunchOnSwitch: stored.autoLaunchOnSwitch ?? global.defaultAutoLaunchOnSwitch,
     autoFlipFallback: stored.autoFlipFallback ?? global.defaultAutoFlipFallback,
     defaultIsolated: stored.defaultIsolated ?? false,
+    authMode: stored.authMode ?? 'auto',
   };
 }
 
@@ -97,6 +125,7 @@ export interface StoredAccountPrefs {
   autoLaunchOnSwitch?: boolean;
   autoFlipFallback?: boolean;
   defaultIsolated?: boolean;
+  authMode?: AuthMode;
 }
 
 export function readStoredAccountPrefs(email: string, accountsDirPath: string): StoredAccountPrefs {
@@ -109,6 +138,40 @@ export function readStoredAccountPrefs(email: string, accountsDirPath: string): 
   } catch {
     return {};
   }
+}
+
+/** Effective authentication mode at proxy startup. Same set as `AuthMode`
+ *  plus `oauth-only` (proxy uses OAuth, no key fallback) and `error` (no
+ *  working auth at all — caller should refuse to start). */
+export type EffectiveAuthMode = 'oauth-first' | 'oauth-only' | 'api-first' | 'error';
+
+/** Resolve the effective auth mode from the stored preference + the current
+ *  token + key state. Pure function — easy to unit-test the matrix. */
+export function resolveEffectiveAuthMode(input: {
+  authMode: AuthMode;
+  oauthHealthy: boolean;
+  hasApiKey: boolean;
+}): EffectiveAuthMode {
+  const { authMode, oauthHealthy, hasApiKey } = input;
+  if (authMode === 'oauth-first') {
+    // Explicit OAuth-first only makes sense if OAuth works AND we have an
+    // API key for the live retry/burst path. Without a key it degrades to
+    // oauth-only; without OAuth it degrades to api-first if possible.
+    if (oauthHealthy && hasApiKey) return 'oauth-first';
+    if (oauthHealthy) return 'oauth-only';
+    if (hasApiKey) return 'api-first';
+    return 'error';
+  }
+  if (authMode === 'api-first') {
+    if (hasApiKey) return 'api-first';
+    if (oauthHealthy) return 'oauth-only';
+    return 'error';
+  }
+  // auto
+  if (oauthHealthy && hasApiKey) return 'oauth-first';
+  if (oauthHealthy) return 'oauth-only';
+  if (hasApiKey) return 'api-first';
+  return 'error';
 }
 
 export function writeStoredAccountPrefs(

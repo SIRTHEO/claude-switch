@@ -159,12 +159,12 @@ describe('retry/error detection helpers', () => {
 describe('startFallbackProxy — normal flow', () => {
   it('forwards original OAuth Authorization unchanged on non-429 response', async () => {
     let receivedAuth = '';
-    const upstream = await createUpstream((req, res) => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
       receivedAuth = req.headers['authorization'] ?? '';
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end('{"ok":true}');
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url });
     try {
       await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer sk-ant-oat01-original', 'content-type': 'application/json' },
@@ -179,11 +179,11 @@ describe('startFallbackProxy — normal flow', () => {
 
   it('does NOT strip oauth-2025-04-20 from anthropic-beta on the first attempt', async () => {
     let receivedBeta = '';
-    const upstream = await createUpstream((req, res) => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
       receivedBeta = req.headers['anthropic-beta'] as string ?? '';
       res.writeHead(200); res.end('ok');
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url });
     try {
       await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer tok', 'anthropic-beta': 'claude-code-20250219,oauth-2025-04-20' },
@@ -199,7 +199,7 @@ describe('startFallbackProxy — normal flow', () => {
     const upstream = await createUpstream((_req, res) => {
       res.writeHead(401); res.end('{"error":"unauthorized"}');
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url });
     try {
       const { status } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer tok' },
@@ -213,12 +213,12 @@ describe('startFallbackProxy — normal flow', () => {
 
   it('pipes the request body to the upstream unchanged', async () => {
     let receivedBody = '';
-    const upstream = await createUpstream((req, res) => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
       const chunks: Buffer[] = [];
       req.on('data', (c: Buffer) => chunks.push(c));
       req.on('end', () => { receivedBody = Buffer.concat(chunks).toString(); res.writeHead(200); res.end(); });
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url });
     const body = JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] });
     try {
       await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
@@ -240,7 +240,7 @@ describe('startFallbackProxy — 429 fallback', () => {
   it('retries with API key after a 429 and returns the successful response', async () => {
     let callCount = 0;
     let lastAuth = '';
-    const upstream = await createUpstream((req, res) => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
       callCount++;
       lastAuth = req.headers['authorization'] ?? '';
       if (callCount === 1) {
@@ -249,7 +249,7 @@ describe('startFallbackProxy — 429 fallback', () => {
         res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}');
       }
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-mykey', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-mykey', mode: 'oauth-first', upstreamBase: upstream.url });
     try {
       const { status } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer sk-ant-oat01-orig' },
@@ -267,7 +267,7 @@ describe('startFallbackProxy — 429 fallback', () => {
   it('sends x-api-key on the retry', async () => {
     let callCount = 0;
     let retryApiKey = '';
-    const upstream = await createUpstream((req, res) => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
       callCount++;
       if (callCount === 1) {
         res.writeHead(429); res.end();
@@ -276,7 +276,7 @@ describe('startFallbackProxy — 429 fallback', () => {
         res.writeHead(200); res.end('ok');
       }
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url });
     try {
       await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer sk-ant-oat01-x' },
@@ -291,7 +291,7 @@ describe('startFallbackProxy — 429 fallback', () => {
   it('strips oauth-2025-04-20 from anthropic-beta on the API key retry', async () => {
     let callCount = 0;
     let retryBeta = '';
-    const upstream = await createUpstream((req, res) => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
       callCount++;
       if (callCount === 1) {
         res.writeHead(429); res.end();
@@ -300,7 +300,7 @@ describe('startFallbackProxy — 429 fallback', () => {
         res.writeHead(200); res.end('ok');
       }
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url });
     try {
       await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: {
@@ -318,7 +318,7 @@ describe('startFallbackProxy — 429 fallback', () => {
 
   it('sends the same request body on the retry', async () => {
     const bodies: string[] = [];
-    const upstream = await createUpstream((req, res) => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
       const chunks: Buffer[] = [];
       req.on('data', (c: Buffer) => chunks.push(c));
       req.on('end', () => {
@@ -327,7 +327,7 @@ describe('startFallbackProxy — 429 fallback', () => {
         else { res.writeHead(200); res.end('ok'); }
       });
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url });
     const body = 'original-request-body';
     try {
       await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
@@ -346,7 +346,7 @@ describe('startFallbackProxy — 429 fallback', () => {
     const upstream = await createUpstream((_req, res) => {
       res.writeHead(429, { 'content-type': 'application/json' }); res.end('{}');
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url });
     try {
       const { status } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer tok' },
@@ -367,7 +367,7 @@ describe('startFallbackProxy — conservative retry policy', () => {
       res.writeHead(500, { 'content-type': 'application/json' });
       res.end('{"error":"server error"}');
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url });
     try {
       const { status, body } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer tok' },
@@ -388,7 +388,7 @@ describe('startFallbackProxy — conservative retry policy', () => {
       res.writeHead(200);
       res.end('ok');
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', false, upstream.url, 8);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'api-first', upstreamBase: upstream.url, maxRequestBodyBytes: 8 });
     try {
       const { status, body } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer tok' },
@@ -411,11 +411,11 @@ describe('startFallbackProxy — conservative retry policy', () => {
 describe('startFallbackProxy — API-key-first mode (startWithOAuth=false)', () => {
   it('uses API key from the first request, no OAuth attempt', async () => {
     let receivedAuth = '';
-    const upstream = await createUpstream((req, res) => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
       receivedAuth = req.headers['authorization'] ?? '';
       res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}');
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-mykey', false, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-mykey', mode: 'api-first', upstreamBase: upstream.url });
     try {
       await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer sk-ant-oat01-original' },
@@ -430,11 +430,11 @@ describe('startFallbackProxy — API-key-first mode (startWithOAuth=false)', () 
 
   it('sends x-api-key from the first request', async () => {
     let receivedApiKey = '';
-    const upstream = await createUpstream((req, res) => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
       receivedApiKey = req.headers['x-api-key'] as string ?? '';
       res.writeHead(200); res.end('ok');
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-mykey', false, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-mykey', mode: 'api-first', upstreamBase: upstream.url });
     try {
       await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer sk-ant-oat01-original' },
@@ -448,11 +448,11 @@ describe('startFallbackProxy — API-key-first mode (startWithOAuth=false)', () 
 
   it('strips oauth-2025-04-20 from anthropic-beta on the first request', async () => {
     let receivedBeta = '';
-    const upstream = await createUpstream((req, res) => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
       receivedBeta = req.headers['anthropic-beta'] as string ?? '';
       res.writeHead(200); res.end('ok');
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', false, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'api-first', upstreamBase: upstream.url });
     try {
       await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: {
@@ -474,7 +474,7 @@ describe('startFallbackProxy — API-key-first mode (startWithOAuth=false)', () 
       callCount++;
       res.writeHead(429, { 'content-type': 'application/json' }); res.end('{}');
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', false, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'api-first', upstreamBase: upstream.url });
     try {
       const { status } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer tok' },
@@ -500,7 +500,7 @@ describe('startFallbackProxy — SSE passthrough', () => {
       res.write('data: chunk2\n\n');
       res.end();
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url });
     try {
       const { status, body, headers } = await httpRequest(
         `http://127.0.0.1:${proxy.port}/v1/messages`,
@@ -521,7 +521,7 @@ describe('startFallbackProxy — body error fallback', () => {
   it('retries with API key when HTTP 200 SSE starts with an error event', async () => {
     let callCount = 0;
     let retryApiKey = '';
-    const upstream = await createUpstream((req, res) => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
       callCount++;
       if (callCount === 1) {
         res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -532,7 +532,7 @@ describe('startFallbackProxy — body error fallback', () => {
         res.end('{"ok":true}');
       }
     });
-    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    const proxy = await startFallbackProxy({ apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url });
     try {
       const { status, body } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
         headers: { authorization: 'Bearer sk-ant-oat01-original' },
@@ -541,6 +541,166 @@ describe('startFallbackProxy — body error fallback', () => {
       assert.equal(body, '{"ok":true}');
       assert.equal(callCount, 2);
       assert.equal(retryApiKey, 'sk-ant-api03-key');
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+});
+
+describe('startFallbackProxy — oauth-first burst transitions (live OAuth ↔ API)', () => {
+  // The burst sub-state is what gives running claude sessions live recovery
+  // in BOTH directions: OAuth → API on rate-limit, API → OAuth when the
+  // subscription clears. These tests exercise the state machine with a
+  // controllable clock so probe intervals can be triggered without sleeps.
+
+  it('records consecutive OAuth failures and enters burst at the threshold', async () => {
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
+      if (req.headers['authorization']) {
+        // Always 429 on OAuth path.
+        res.writeHead(429, { 'content-type': 'application/json' });
+        res.end('{"type":"error"}');
+      } else {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"ok":true}');
+      }
+    });
+
+    const clock = 0;
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key',
+      mode: 'oauth-first',
+      upstreamBase: upstream.url,
+      burstConfig: { failureThreshold: 2, probeIntervalMs: 60_000 },
+      now: () => clock,
+    });
+    try {
+      // Pre-burst: state shows oauth-first, no failures recorded.
+      assert.equal(proxy.state().burstActive, false);
+      assert.equal(proxy.state().consecutiveOauthFailures, 0);
+
+      // First request: OAuth → 429 → retry API. Failure counter increments.
+      await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, { method: 'POST', headers: { authorization: 'Bearer x' }, body: '{}' });
+      assert.equal(proxy.state().burstActive, false);
+      assert.equal(proxy.state().consecutiveOauthFailures, 1);
+
+      // Second request: still pre-threshold, OAuth attempted again.
+      await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, { method: 'POST', headers: { authorization: 'Bearer x' }, body: '{}' });
+      // Threshold = 2 → burst triggers.
+      assert.equal(proxy.state().burstActive, true);
+      assert.equal(proxy.state().consecutiveOauthFailures, 2);
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+
+  it('skips OAuth attempts during burst until probeIntervalMs elapses', async () => {
+    let oauthCalls = 0;
+    let apiKeyCalls = 0;
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
+      if (req.headers['authorization']) {
+        oauthCalls++;
+        res.writeHead(429, { 'content-type': 'application/json' });
+        res.end('{"type":"error"}');
+      } else {
+        apiKeyCalls++;
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"ok":true}');
+      }
+    });
+
+    const clock = 0;
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key',
+      mode: 'oauth-first',
+      upstreamBase: upstream.url,
+      burstConfig: { failureThreshold: 1, probeIntervalMs: 60_000 },
+      now: () => clock,
+    });
+    try {
+      // First request: OAuth fails → enters burst (threshold=1).
+      await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, { method: 'POST', headers: { authorization: 'Bearer x' }, body: '{}' });
+      assert.equal(proxy.state().burstActive, true);
+      const oauthAfterFirst = oauthCalls;
+      const apiAfterFirst = apiKeyCalls;
+
+      // Second request, clock didn't advance — should go straight to API key,
+      // NO OAuth attempt.
+      await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, { method: 'POST', headers: { authorization: 'Bearer x' }, body: '{}' });
+      assert.equal(oauthCalls, oauthAfterFirst, 'no new OAuth attempt during burst');
+      assert.equal(apiKeyCalls, apiAfterFirst + 1, 'request went straight to API key');
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+
+  it('exits burst when an OAuth probe succeeds after probeIntervalMs', async () => {
+    let upstreamMode: 'fail' | 'ok' = 'fail';
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
+      if (req.headers['authorization']) {
+        if (upstreamMode === 'fail') {
+          res.writeHead(429, { 'content-type': 'application/json' });
+          res.end('{"type":"error"}');
+        } else {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end('{"ok":true}');
+        }
+      } else {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"ok":true}');
+      }
+    });
+
+    let clock = 0;
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key',
+      mode: 'oauth-first',
+      upstreamBase: upstream.url,
+      burstConfig: { failureThreshold: 1, probeIntervalMs: 60_000 },
+      now: () => clock,
+    });
+    try {
+      // Trip into burst.
+      await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, { method: 'POST', headers: { authorization: 'Bearer x' }, body: '{}' });
+      assert.equal(proxy.state().burstActive, true);
+
+      // Subscription comes back online.
+      upstreamMode = 'ok';
+
+      // Advance the clock past the probe interval — next request will probe.
+      clock += 61_000;
+      await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, { method: 'POST', headers: { authorization: 'Bearer x' }, body: '{}' });
+      assert.equal(proxy.state().burstActive, false, 'successful probe exits burst');
+      assert.equal(proxy.state().consecutiveOauthFailures, 0);
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+
+  it('api-first mode never probes OAuth and never reports burst', async () => {
+    let oauthCalls = 0;
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
+      if (req.headers['authorization']) oauthCalls++;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+    });
+
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key',
+      mode: 'api-first',
+      upstreamBase: upstream.url,
+    });
+    try {
+      // 5 requests through the proxy; OAuth must never be attempted.
+      for (let i = 0; i < 5; i++) {
+        await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, { method: 'POST', headers: { authorization: 'Bearer x' }, body: '{}' });
+      }
+      assert.equal(oauthCalls, 0, 'api-first must not attempt OAuth');
+      assert.equal(proxy.state().burstActive, false);
+      assert.equal(proxy.state().mode, 'api-first');
     } finally {
       proxy.close();
       await upstream.close();
