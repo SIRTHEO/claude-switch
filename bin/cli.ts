@@ -64,7 +64,8 @@ export type Command =
   | { action: 'profile-login'; name: string }
   | { action: 'profile-remove'; name: string }
   | { action: 'profile-status'; name: string | undefined }
-  | { action: 'profile-import'; email: string; profileName?: string };
+  | { action: 'profile-import'; email: string; profileName?: string }
+  | { action: 'dashboard' };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -82,6 +83,8 @@ export function parseCommand(args: string[]): Command {
     case 'add': return { action: 'add' };
     case 'list':
     case 'ls': return { action: 'list' };
+    case 'dashboard':
+    case 'dash': return { action: 'dashboard' };
     case 'remove':
     case 'rm': return { action: 'remove', email: args[2] };
     case 'status': return { action: 'status' };
@@ -753,6 +756,12 @@ async function main(): Promise<void> {
       } else {
         await addAccount(claudeBin, cJson, aDir);
       }
+      break;
+    }
+
+    case 'dashboard': {
+      const { runDashboard } = await import('../src/ui/ink/run-dashboard.js');
+      await runDashboard(cJson, aDir);
       break;
     }
 
