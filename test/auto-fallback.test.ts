@@ -8,6 +8,7 @@ import {
   setAutoFallbackConfig,
   maybeAutoDisableFallback,
   maybeAutoEngageFallback,
+  maybeInitSmartFallback,
 } from '../src/auto-fallback.js';
 import { setFallbackEnabled, isFallbackEnabled } from '../src/fallback.js';
 
@@ -352,5 +353,34 @@ describe('maybeAutoEngageFallback', () => {
     const result = maybeAutoEngageFallback(dir, claudeJson);
     assert.strictEqual(result.engaged, false);
     assert.strictEqual(isFallbackEnabled(dir), false);
+  });
+});
+
+describe('maybeInitSmartFallback', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csw-init-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writes config with both flags enabled when no config file exists', () => {
+    const result = maybeInitSmartFallback(dir);
+    assert.strictEqual(result, true);
+    const cfg = getAutoFallbackConfig(dir);
+    assert.strictEqual(cfg.enabled, true);
+    assert.strictEqual(cfg.engageEnabled, true);
+  });
+
+  it('is idempotent — no-op when config file already exists', () => {
+    setAutoFallbackConfig(dir, { enabled: false, engageEnabled: false });
+    const result = maybeInitSmartFallback(dir);
+    assert.strictEqual(result, false);
+    const cfg = getAutoFallbackConfig(dir);
+    assert.strictEqual(cfg.enabled, false);
+    assert.strictEqual(cfg.engageEnabled, false);
   });
 });

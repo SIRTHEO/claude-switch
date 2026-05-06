@@ -15,9 +15,10 @@
 //   80%  ──●───────●─── (revert at 80%)
 //   0%
 //
-// Strictly opt-in. Both decisions are made off the cached usage payload
-// (no extra network call in the passthrough hot path) and only act on
-// the next `claude` launch — they cannot affect a running REPL.
+// Auto-init: when an API key is saved for the first time (or on the first
+// passthrough that finds a key but no config), smart fallback is enabled
+// automatically via `maybeInitSmartFallback`. The config file acts as the
+// opt-out sentinel — if it exists, the user's existing settings are kept.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -107,6 +108,18 @@ export function setAutoFallbackConfig(
   }
   writeJsonAtomic(configPath(accountsDirPath), next);
   return next;
+}
+
+/**
+ * Write smart-fallback defaults (both auto-revert and auto-engage enabled)
+ * when no config file exists yet. Called after `apikey set` and on the first
+ * passthrough that finds a key. Idempotent: no-op if the config file already
+ * exists (preserves deliberate opt-outs).
+ */
+export function maybeInitSmartFallback(accountsDirPath: string): boolean {
+  if (fs.existsSync(configPath(accountsDirPath))) return false;
+  setAutoFallbackConfig(accountsDirPath, { enabled: true, engageEnabled: true });
+  return true;
 }
 
 export interface AutoDisableResult {
