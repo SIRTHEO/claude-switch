@@ -1,10 +1,14 @@
 node_modules/
 dist/
 
-# Harness runtime state — machine-local, not for sharing
+# Harness / Claude Code dev tooling — local-only, not part of the product
 .harness/
 .claude/
+.claude-plugin/
 hooks/
+harness.toml
+CLAUDE.md
+AGENTS.md
 
 # Internal planning / research docs
 Plans.md

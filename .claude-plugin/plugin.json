@@ -1,8 +1,0 @@
-{
-  "name": "claude-switch",
-  "version": "2.6.0",
-  "description": "Multi-account manager for Claude Code CLI",
-  "skills": [
-    "./skills/"
-  ]
-}
