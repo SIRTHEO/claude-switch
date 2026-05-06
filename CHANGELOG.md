@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.1.2](https://github.com/SIRTHEO/claude-switch/compare/v3.1.1...v3.1.2) (2026-05-06)
+
+
+### Documentation
+
+* bundle transparent logo into npm release ([1523128](https://github.com/SIRTHEO/claude-switch/commit/15231280f559ea4d51279a3437942f5a809d5efe))
+* **readme:** transparent logo with theme-aware fill ([88c4590](https://github.com/SIRTHEO/claude-switch/commit/88c45906f3ff1609666e60a8661a6fe72856063b))
+
 ## [3.1.1](https://github.com/SIRTHEO/claude-switch/compare/v3.1.0...v3.1.1) (2026-05-06)
 
 
