@@ -20,10 +20,13 @@ export function claudeSettingsPath(): string {
 /** Direct command: just our badge, no chaining. Simplest, no dependency. */
 export const PLAIN_COMMAND = 'claude switch sl --no-color';
 
+export const CCSTATUSLINE_VERSION = '2.2.12';
+
 /** Chained with ccstatusline so the user keeps the rest of their bar.
- *  Mirrors the recipe documented in the README. */
+ *  Pinned for deterministic installs; avoid executing registry `latest`
+ *  inside Claude Code's frequently-rendered statusline hook. */
 export const CCSTATUSLINE_COMMAND =
-  'bash -c \'INPUT=$(cat); claude switch sl; echo "$INPUT" | npx -y ccstatusline@latest\'';
+  `bash -c 'INPUT=$(cat); claude switch sl; echo "$INPUT" | npx -y ccstatusline@${CCSTATUSLINE_VERSION}'`;
 
 export type ExistingStatus =
   | { kind: 'absent' }

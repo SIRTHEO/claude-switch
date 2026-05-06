@@ -9,6 +9,7 @@ import {
   uninstallStatusLine,
   PLAIN_COMMAND,
   CCSTATUSLINE_COMMAND,
+  CCSTATUSLINE_VERSION,
 } from '../src/statusline-install.js';
 
 describe('detectExistingStatusLine', () => {
@@ -37,6 +38,11 @@ describe('detectExistingStatusLine', () => {
   it('returns ours-ccstatusline for the chained command', () => {
     fs.writeFileSync(settings, JSON.stringify({ statusLine: { type: 'command', command: CCSTATUSLINE_COMMAND } }));
     assert.deepStrictEqual(detectExistingStatusLine(settings), { kind: 'ours-ccstatusline' });
+  });
+
+  it('pins the ccstatusline command instead of executing latest', () => {
+    assert.match(CCSTATUSLINE_COMMAND, new RegExp(`ccstatusline@${CCSTATUSLINE_VERSION.replaceAll('.', '\\.')}`));
+    assert.doesNotMatch(CCSTATUSLINE_COMMAND, /@latest/);
   });
 
   it('returns foreign for an unrelated command', () => {

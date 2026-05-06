@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -8,6 +8,8 @@ import {
   buildPassthroughHeaders,
   buildApiKeyHeaders,
   stripOauthBeta,
+  looksLikeErrorBody,
+  isRetryableStatus,
 } from '../src/api-proxy.js';
 
 // ---------------------------------------------------------------------------
@@ -31,7 +33,7 @@ function createUpstream(
 
 function httpRequest(
   url: string,
-  options: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  options: { method?: string; headers?: Record<string, string>; body?: string | Buffer } = {},
 ): Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }> {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
@@ -100,12 +102,13 @@ describe('buildPassthroughHeaders', () => {
 });
 
 describe('buildApiKeyHeaders', () => {
-  it('replaces Authorization with the API key', () => {
+  it('replaces OAuth Authorization with x-api-key', () => {
     const out = buildApiKeyHeaders(
       { authorization: 'Bearer sk-ant-oat01-abc' },
       'sk-ant-api03-xyz',
     );
-    assert.equal(out['authorization'], 'Bearer sk-ant-api03-xyz');
+    assert.equal(out['authorization'], undefined);
+    assert.equal(out['x-api-key'], 'sk-ant-api03-xyz');
   });
 
   it('strips oauth-2025-04-20 from anthropic-beta', () => {
@@ -127,6 +130,25 @@ describe('buildApiKeyHeaders', () => {
   it('drops the host header', () => {
     const out = buildApiKeyHeaders({ host: 'api.anthropic.com' }, 'sk-ant-api03-key');
     assert.equal(out['host'], undefined);
+  });
+});
+
+describe('retry/error detection helpers', () => {
+  it('treats subscription quota statuses as retryable', () => {
+    for (const code of [402, 403, 429]) {
+      assert.equal(isRetryableStatus(code), true, `${code} should retry`);
+    }
+    assert.equal(isRetryableStatus(500), false);
+    assert.equal(isRetryableStatus(503), false);
+    assert.equal(isRetryableStatus(529), false);
+    assert.equal(isRetryableStatus(401), false);
+    assert.equal(isRetryableStatus(200), false);
+  });
+
+  it('detects SSE error envelopes and quota body text', () => {
+    assert.equal(looksLikeErrorBody('event: error\ndata: {"type":"error"}\n\n'), true);
+    assert.equal(looksLikeErrorBody('data: {"type":"error","error":{"message":"out of extra usage"}}\n\n'), true);
+    assert.equal(looksLikeErrorBody('data: {"type":"message_start"}\n\n'), false);
   });
 });
 
@@ -235,7 +257,31 @@ describe('startFallbackProxy — 429 fallback', () => {
       });
       assert.equal(status, 200);
       assert.equal(callCount, 2, 'upstream called twice');
-      assert.equal(lastAuth, 'Bearer sk-ant-api03-mykey', 'retry uses API key');
+      assert.equal(lastAuth, '', 'retry strips OAuth Authorization');
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+
+  it('sends x-api-key on the retry', async () => {
+    let callCount = 0;
+    let retryApiKey = '';
+    const upstream = await createUpstream((req, res) => {
+      callCount++;
+      if (callCount === 1) {
+        res.writeHead(429); res.end();
+      } else {
+        retryApiKey = req.headers['x-api-key'] as string ?? '';
+        res.writeHead(200); res.end('ok');
+      }
+    });
+    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    try {
+      await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        headers: { authorization: 'Bearer sk-ant-oat01-x' },
+      });
+      assert.equal(retryApiKey, 'sk-ant-api03-key');
     } finally {
       proxy.close();
       await upstream.close();
@@ -313,6 +359,51 @@ describe('startFallbackProxy — 429 fallback', () => {
   });
 });
 
+describe('startFallbackProxy — conservative retry policy', () => {
+  it('does not retry ambiguous 5xx responses', async () => {
+    let callCount = 0;
+    const upstream = await createUpstream((_req, res) => {
+      callCount++;
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end('{"error":"server error"}');
+    });
+    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    try {
+      const { status, body } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        headers: { authorization: 'Bearer tok' },
+      });
+      assert.equal(status, 500);
+      assert.equal(body, '{"error":"server error"}');
+      assert.equal(callCount, 1);
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+
+  it('rejects oversized request bodies before forwarding upstream', async () => {
+    let callCount = 0;
+    const upstream = await createUpstream((_req, res) => {
+      callCount++;
+      res.writeHead(200);
+      res.end('ok');
+    });
+    const proxy = await startFallbackProxy('sk-ant-api03-key', false, upstream.url, 8);
+    try {
+      const { status, body } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        headers: { authorization: 'Bearer tok' },
+        body: '0123456789',
+      });
+      assert.equal(status, 413);
+      assert.match(body, /request_too_large/);
+      assert.equal(callCount, 0);
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Integration: startWithOAuth = false (API-key-first mode)
 // ---------------------------------------------------------------------------
@@ -330,7 +421,25 @@ describe('startFallbackProxy — API-key-first mode (startWithOAuth=false)', () 
         headers: { authorization: 'Bearer sk-ant-oat01-original' },
         body: 'payload',
       });
-      assert.equal(receivedAuth, 'Bearer sk-ant-api03-mykey', 'API key used from first request');
+      assert.equal(receivedAuth, '', 'OAuth Authorization removed from first request');
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+
+  it('sends x-api-key from the first request', async () => {
+    let receivedApiKey = '';
+    const upstream = await createUpstream((req, res) => {
+      receivedApiKey = req.headers['x-api-key'] as string ?? '';
+      res.writeHead(200); res.end('ok');
+    });
+    const proxy = await startFallbackProxy('sk-ant-api03-mykey', false, upstream.url);
+    try {
+      await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        headers: { authorization: 'Bearer sk-ant-oat01-original' },
+      });
+      assert.equal(receivedApiKey, 'sk-ant-api03-mykey');
     } finally {
       proxy.close();
       await upstream.close();
@@ -401,6 +510,37 @@ describe('startFallbackProxy — SSE passthrough', () => {
       assert.ok(headers['content-type']?.includes('text/event-stream'));
       assert.ok(body.includes('chunk1'));
       assert.ok(body.includes('chunk2'));
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+});
+
+describe('startFallbackProxy — body error fallback', () => {
+  it('retries with API key when HTTP 200 SSE starts with an error event', async () => {
+    let callCount = 0;
+    let retryApiKey = '';
+    const upstream = await createUpstream((req, res) => {
+      callCount++;
+      if (callCount === 1) {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.end('event: error\ndata: {"type":"error","error":{"message":"out of extra usage"}}\n\n');
+      } else {
+        retryApiKey = req.headers['x-api-key'] as string ?? '';
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"ok":true}');
+      }
+    });
+    const proxy = await startFallbackProxy('sk-ant-api03-key', true, upstream.url);
+    try {
+      const { status, body } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        headers: { authorization: 'Bearer sk-ant-oat01-original' },
+      });
+      assert.equal(status, 200);
+      assert.equal(body, '{"ok":true}');
+      assert.equal(callCount, 2);
+      assert.equal(retryApiKey, 'sk-ant-api03-key');
     } finally {
       proxy.close();
       await upstream.close();

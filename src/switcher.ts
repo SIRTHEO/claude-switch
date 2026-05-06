@@ -13,6 +13,9 @@ export interface SwitcherDeps {
   spawnSyncFn?: (command: string, args: string[], options: object) => SpawnSyncReturns<Buffer>;
   askFn?: (question: string) => Promise<string>;
   exitFn?: (code: number) => never;
+  getTokenHealthFn?: (claudeJsonPath: string) => { status: string } | null;
+  saveFn?: (email: string, claudeJsonPath: string, accountsDirPath: string) => void;
+  loadFn?: (email: string, claudeJsonPath: string, accountsDirPath: string) => { keychainRestored: boolean };
 }
 
 function defaultAsk(question: string): Promise<string> {
@@ -137,6 +140,8 @@ export async function runTemporarySwitch(
 ): Promise<never> {
   const doSpawnSync = deps?.spawnSyncFn ?? spawnSync;
   const doExit: (code: number) => never = deps?.exitFn ?? ((code: number) => process.exit(code));
+  const doSave = deps?.saveFn ?? save;
+  const doLoad = deps?.loadFn ?? load;
   const currentEmail = getCurrent(claudeJsonPath);
 
   if (targetEmail === currentEmail) {
@@ -156,9 +161,9 @@ export async function runTemporarySwitch(
   withLock(accountsDirPath, () => {
     if (currentEmail) {
       savePendingRestore(currentEmail, accountsDirPath);
-      save(currentEmail, claudeJsonPath, accountsDirPath);
+      doSave(currentEmail, claudeJsonPath, accountsDirPath);
     }
-    const result = load(targetEmail, claudeJsonPath, accountsDirPath);
+    const result = doLoad(targetEmail, claudeJsonPath, accountsDirPath);
     keychainRestored = result.keychainRestored;
   });
 
@@ -179,7 +184,7 @@ export async function runTemporarySwitch(
     if (currentEmail) {
       try {
         withLock(accountsDirPath, () => {
-          load(currentEmail, claudeJsonPath, accountsDirPath);
+          doLoad(currentEmail, claudeJsonPath, accountsDirPath);
         });
       } catch { /* best-effort */ }
       clearPendingRestore(accountsDirPath);
@@ -243,14 +248,15 @@ export async function reAuthenticate(
 ): Promise<string | null> {
   const doSpawnSync = deps?.spawnSyncFn ?? spawnSync;
   const { getTokenHealth } = await import('./token.js');
+  const getHealth = deps?.getTokenHealthFn ?? getTokenHealth;
   const emailBefore = getCurrent(claudeJsonPath);
-  const healthBefore = getTokenHealth(claudeJsonPath);
+  const healthBefore = getHealth(claudeJsonPath);
 
   const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform);
   doSpawnSync(command, args, options);
 
   const emailAfter = getCurrent(claudeJsonPath);
-  const healthAfter = getTokenHealth(claudeJsonPath);
+  const healthAfter = getHealth(claudeJsonPath);
 
   const outcome = reAuthOutcome(emailBefore, healthBefore, emailAfter, healthAfter);
   if (!outcome) return null;
