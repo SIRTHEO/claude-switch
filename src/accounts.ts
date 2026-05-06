@@ -67,13 +67,32 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
     accountPayload._keychain = keychainData;
   }
 
+  // Snapshot the API-key acceptance state so it does NOT leak across
+  // accounts. Claude Code writes `customApiKeyResponses.approved` (and
+  // sometimes `apiKey`) directly into ~/.claude.json the first time the
+  // user answers "Use this API key? [Y/n]". Without this snapshot, the
+  // approval array stays in the file across a `claude switch`, so the
+  // newly-active account inherits the previous account's approved key
+  // and silently uses it instead of OAuth — observed in the wild on
+  // 2026-05-06: switched matteo19 → claude still billed tech's key.
+  if (data.customApiKeyResponses) {
+    accountPayload._customApiKeyResponses = data.customApiKeyResponses;
+  }
+  if (typeof data.apiKey === 'string' && data.apiKey) {
+    accountPayload._claudeJsonApiKey = data.apiKey;
+  }
+
   // Preserve any per-account API key (used for fallback when subscription
-  // limits are hit) across re-saves, since save() rewrites the whole file.
+  // limits are hit) AND per-account preferences across re-saves, since
+  // save() rewrites the whole file.
   const accountFile = resolvedAccountFile(email, accountsDirPath);
   try {
     const existing = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
     if (typeof existing._apiKey === 'string' && existing._apiKey) {
       accountPayload._apiKey = existing._apiKey;
+    }
+    if (existing._prefs && typeof existing._prefs === 'object') {
+      accountPayload._prefs = existing._prefs;
     }
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
@@ -147,7 +166,14 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   }
 
   // Strip internal fields so they never leak into ~/.claude.json.
-  const { _keychain, _apiKey: _ignored, ...oauthAccount } = accountData;
+  const {
+    _keychain,
+    _apiKey: _ignored,
+    _prefs: _ignoredPrefs,
+    _customApiKeyResponses,
+    _claudeJsonApiKey,
+    ...oauthAccount
+  } = accountData;
   const keychainRestored = !!(_keychain && typeof _keychain === 'object');
 
   let data: Record<string, unknown>;
@@ -163,6 +189,23 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   // Keychain write fails afterwards (keeps the two sources of truth in sync).
   const previousOauthAccount = data.oauthAccount;
   data.oauthAccount = oauthAccount;
+
+  // Restore (or actively CLEAR) the API-key acceptance state. Clearing is
+  // the load-bearing part: without it, a previously-approved API key from
+  // another account would carry over into ~/.claude.json and Claude Code
+  // would silently use it instead of OAuth, billing the wrong account.
+  // The user gets re-prompted "Use this API key? [Y/n]" on first use of
+  // a key under the new account — that's the correct UX after a switch.
+  if (_customApiKeyResponses && typeof _customApiKeyResponses === 'object') {
+    data.customApiKeyResponses = _customApiKeyResponses;
+  } else {
+    delete data.customApiKeyResponses;
+  }
+  if (typeof _claudeJsonApiKey === 'string' && _claudeJsonApiKey) {
+    data.apiKey = _claudeJsonApiKey;
+  } else {
+    delete data.apiKey;
+  }
 
   // Write JSON first (cheaper, more recoverable). If this fails, the Keychain
   // is untouched and state stays consistent.

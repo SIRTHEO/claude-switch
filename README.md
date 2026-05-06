@@ -57,28 +57,61 @@ claude switch --version
 
 ## Daily use
 
-Type `claude switch` and the interactive menu does everything:
+Type `claude switch` and the dashboard opens — three stacked sections: **Accounts**, **Account** (contextual to the row you've highlighted), **General**. `Tab` cycles focus between sections, `↑↓` navigates inside a section, `enter` activates. Single-letter hotkeys work as accelerators from any section.
 
 ```
-◆ Status
-│ Account     work@company.com
-│ Auth mode   OAuth subscription
-│ Token       valid (expires in 3 days)
-│ Usage       5h 42%   7d 18%
-└──
+⚡ claude-switch  multi-account dashboard  ·  tab cycles  ·  ? help  ·  q quit
 
-◆ What would you like to do?
-● Switch account
-○ Turn fallback ON (use API key)
-○ Enable auto-revert to OAuth
-○ Set API key
-○ Manage account…
-○ Profiles…
-○ Advanced…
-○ Exit
+╭─ Accounts (2) ────────────────────────────────────────────────────────╮
+│                                                                       │
+│ ▸ work@company.com  @work  ◀ active                                   │
+│       OAuth  ·  fallback OFF  ·  token ✓ valid · 3 days               │
+│       ● 5h ████▒░░░░░░░░░ 42%    ● 7d ▒░░░░░░░░░░░░░ 18%              │
+│                                                                       │
+│   personal@gmail.com                                                  │
+│       OAuth + key saved  ·  sk-ant-…2BBB  ·  isolated default         │
+│       no usage cached                                                 │
+│                                                                       │
+╰───────────────────────────────────────────────────────────────────────╯
+
+╭─ Account  for work@company.com ───────────────────────────────────────╮
+│ ▸ [↵] Launch claude (already active)        open a session            │
+│   [k] Replace API key                       currently sk-ant-…1AAA    │
+│   [m] Manage (alias · key · remove)         detailed account ops      │
+│   [f] Toggle fallback                       flip OAuth ↔ API key      │
+│   [c] Re-authenticate                       browser re-login          │
+│   [d] Remove account                        delete saved              │
+╰───────────────────────────────────────────────────────────────────────╯
+
+╭─ General ─────────────────────────────────────────────────────────────╮
+│   [a] Add account            log in with a new email                  │
+│   [g] Settings               global + per-account preferences         │
+│   [p] Profiles               isolated per-terminal sessions           │
+│   [F] Auto-fallback          thresholds for auto-engage / auto-revert │
+│   [u] Refresh usage          force-fetch from Anthropic               │
+│   [s] Setup wizard           fix claude binary / shell PATH           │
+│   [q] Quit                   or press esc                             │
+╰───────────────────────────────────────────────────────────────────────╯
 ```
 
-You never need to remember any command — the menu shows your current state and walks you through every action.
+**Reading the dashboard at a glance**:
+- Each row in **Accounts** shows what's configured (`OAuth`, `OAuth + key saved`, `isolated default`) and the masked API key when one is set. The active row also includes the live runtime context — fallback flag, token health, expiry — and any cached usage bars (5h + 7d windows).
+- The **Account** section follows whichever row you've highlighted, so you always see what you're about to act on. Action labels reflect the row's state ("Launch claude (already active)" vs "Switch & launch claude", "Replace API key" vs "Set API key").
+- **General** stays the same regardless of cursor position — these are session-wide actions.
+
+The orange border indicates the focused section. `Tab` (or shift-Tab to go back) flips the focus.
+
+**Smart defaults you can disable from `g` Settings**:
+
+| Default | What it does | Where to override |
+|---|---|---|
+| Auto-launch claude after switch | Picking an account drops you straight into a `claude` REPL — no need to type it again | Settings → Account → "Auto-launch claude after switch" |
+| Auto-toggle fallback on switch | Switching to a key-bearing account turns fallback ON; switching to a key-less account turns it OFF (prevents stale ANTHROPIC_API_KEY leaks) | Settings → Account → "Auto-toggle fallback on switch" |
+| Refresh usage on menu open | Foreground-fetches fresh subscription usage when you open the menu | Settings → Global → "Refresh usage on menu open" |
+| Hide manual profile ops | Hides "Create profile" / "Import account as profile" — profiles are auto-created on demand when you launch isolated | Settings → Global → "Hide manual profile ops" |
+| Always launch isolated | Per-account opt-in: the account always starts in its own per-terminal profile (instead of swapping the global account) | Settings → Account → "Always launch isolated" |
+
+Settings live in `~/.claude/accounts/.user-prefs.json` (global) and inside each `accounts/<email>.json` under `_prefs` (per-account overrides).
 
 ---
 
@@ -165,17 +198,17 @@ claude switch statusline install
 claude switch --completions bash >> ~/.bashrc   # or zsh / fish / powershell
 ```
 
-**Keyboard shortcuts in the menu** — `↑`/`↓` to move, `Enter` to confirm, `Esc` or `Ctrl+C` to cancel.
+**Keyboard shortcuts in the dashboard** — `Tab` cycles between sections, `↑`/`↓` move within a section, `Enter` activates, `Esc` or `Ctrl+C` cancel. Single-letter hotkeys (`a`, `k`, `m`, `f`, `c`, `d`, `g`, `p`, `u`, `s`, `F`) work as accelerators from any section. Press `?` for the full list inline.
 
 ---
 
 ## Common questions
 
 **How do I add a second account?**
-`claude switch` → **Advanced…** → **Add account**. Browser opens once, you sign in, done.
+`claude switch` → press `a` (or pick **Add account** from the General section). Browser opens once, you sign in, done.
 
 **How do I switch accounts without logging out?**
-`claude switch` → **Switch account** → pick from the list. No browser. Under a second.
+`claude switch` → highlight the account in the **Accounts** section → press `Enter`. No browser. Under a second.
 
 **Does it work on macOS, Linux and Windows?**
 Yes. Requires Node.js 20.12 or newer.
@@ -196,7 +229,7 @@ claude-switch's fallback works by injecting `ANTHROPIC_API_KEY` into the environ
 | Symptom | Fix |
 |---|---|
 | `claude` not found after install | Open a new terminal. If still broken, run `claude switch setup` again. |
-| "Token: EXPIRED" in the menu | Menu shows **Re-authenticate** at the top. Click it. |
+| "Token: ✗ expired" in the dashboard | Press `c` (Re-authenticate) on the active row, or pick it from the Account section. |
 | Fallback is on but claude still uses OAuth | The first time Claude Code sees a new API key it asks `Use this API key? [y/N]` — press **y**. |
 | Usage stats show nothing | Only works for Max/Pro subscribers. |
 | Anything else | [Open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) with your OS and `node --version`. |
@@ -213,6 +246,8 @@ claude-switch's fallback works by injecting `ANTHROPIC_API_KEY` into the environ
 ---
 
 ## What's new
+
+**v3.1.x** — **Ink TUI rebuild.** The interactive menu is rebuilt on Ink (React for the terminal). Three-section dashboard: account roster with per-row auth/key/usage detail (active row also shows live fallback + token state), contextual **Account** menu that follows the highlighted row, **General** menu for cross-cutting actions. `Tab` cycles focus, `↑↓` navigates, single-letter hotkeys as accelerators. New **Settings** screen (`g`) for global + per-account preferences — every smart behaviour (auto-launch, auto-toggle fallback, default-isolated, refresh-on-open) is configurable. Cross-account API-key leak fixed (Claude's `customApiKeyResponses` now snapshotted per-account so a key approved under one account no longer carries over after a switch). `@clack/prompts` removed.
 
 **v2.8.x** — **Auto-update.** claude-switch now updates itself silently in the background while `claude` is running. No more `npm install -g` after every release — just install once and stay current automatically.
 

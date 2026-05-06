@@ -415,7 +415,19 @@ describe('runTemporarySwitch — with mocked spawnSync + exitFn', () => {
     fs.writeFileSync(path.join(accDir, 'a@x.com.json'), JSON.stringify({ emailAddress: 'a@x.com' }));
     fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com', _keychain: 'yes' }));
     const { exitFn, codes } = makeExitFn();
-    const deps: SwitcherDeps = { spawnSyncFn: makeSpawnFn(7), exitFn };
+    const deps: SwitcherDeps = {
+      spawnSyncFn: makeSpawnFn(7),
+      exitFn,
+      saveFn: (email, sourcePath, accountsPath) => {
+        const data = JSON.parse(fs.readFileSync(sourcePath, 'utf-8'));
+        fs.writeFileSync(path.join(accountsPath, `${email}.json`), JSON.stringify(data.oauthAccount));
+      },
+      loadFn: (email, targetPath, accountsPath) => {
+        const account = JSON.parse(fs.readFileSync(path.join(accountsPath, `${email}.json`), 'utf-8'));
+        fs.writeFileSync(targetPath, JSON.stringify({ oauthAccount: account }));
+        return { keychainRestored: false };
+      },
+    };
     await assert.rejects(
       () => runTemporarySwitch('claude', 'b@x.com', [], claudeJson, accDir, null, deps),
       /exit:7/,
@@ -464,7 +476,14 @@ describe('reAuthenticate — with mocked spawnSync', () => {
       }));
       return makeSpawnFn(0)!(cmd, args, opts);
     };
-    const deps: SwitcherDeps = { spawnSyncFn: spawnFn };
+    const deps: SwitcherDeps = {
+      spawnSyncFn: spawnFn,
+      getTokenHealthFn: pathToRead => {
+        const data = JSON.parse(fs.readFileSync(pathToRead, 'utf-8'));
+        const expiresAt = data.oauthAccount?.expiresAt ?? 0;
+        return expiresAt > Date.now() ? { status: 'valid' } : { status: 'expired' };
+      },
+    };
     const result = await reAuthenticate('claude', claudeJson, accDir, deps);
     assert.strictEqual(result, 'me@x.com');
     assert.ok(fs.existsSync(path.join(accDir, 'me@x.com.json')));

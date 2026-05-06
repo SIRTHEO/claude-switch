@@ -14,7 +14,7 @@ import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { spawnSync, spawn } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const PACKAGE_NAME = '@sirtheo/claude-switch';
@@ -207,20 +207,6 @@ export function performUpdate(): boolean {
   console.log(`Running: ${cmd} ${args.join(' ')}\n`);
   const result = spawnSync(cmd, args, { stdio: 'inherit' });
   return result.status === 0 && !result.error;
-}
-
-/**
- * Fire-and-forget update: spawns the install command as a detached child so
- * it outlives the current process. Used by passthrough mode to update in the
- * background while claude is running — zero startup delay for the user.
- */
-export function performUpdateBackground(): void {
-  const [cmd, ...args] = detectInstallCommand();
-  if (!cmd) return;
-  try {
-    const child = spawn(cmd, args, { stdio: 'pipe', detached: true });
-    child.unref();
-  } catch { /* never block the caller */ }
 }
 
 // ---------------------------------------------------------------------------

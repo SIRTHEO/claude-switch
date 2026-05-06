@@ -290,3 +290,106 @@ describe('remove', () => {
     assert.throws(() => remove('../../.bashrc', accDir), /unsafe for filenames|outside accounts/i);
   });
 });
+
+describe('save/load — API-key acceptance leak prevention', () => {
+  // Regression: switching from a key-bearing account to a key-less one was
+  // leaving `customApiKeyResponses.approved` (and any `apiKey` field) in
+  // ~/.claude.json, so Claude Code would silently keep using the previous
+  // account's API key under the new account's identity. Observed 2026-05-06.
+
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-leak-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('snapshots customApiKeyResponses + apiKey into the per-account file on save', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'tech@example.com' },
+      customApiKeyResponses: { approved: ['sk-ant-api03-aaa'], rejected: [] },
+      apiKey: 'sk-ant-api03-aaa',
+    }));
+    save('tech@example.com', claudeJson, accDir);
+    const stored = JSON.parse(fs.readFileSync(path.join(accDir, 'tech@example.com.json'), 'utf-8'));
+    assert.deepEqual(stored._customApiKeyResponses, { approved: ['sk-ant-api03-aaa'], rejected: [] });
+    assert.equal(stored._claudeJsonApiKey, 'sk-ant-api03-aaa');
+  });
+
+  it('clears customApiKeyResponses + apiKey on load when target has no snapshot', () => {
+    // Simulate the bug: claude.json carries tech's key approval, target
+    // account file has no snapshot (older claude-switch never captured it).
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'tech@example.com' },
+      customApiKeyResponses: { approved: ['sk-ant-api03-tech'], rejected: [] },
+      apiKey: 'sk-ant-api03-tech',
+    }));
+    fs.writeFileSync(path.join(accDir, 'matteo@example.com.json'), JSON.stringify({
+      emailAddress: 'matteo@example.com',
+    }));
+    load('matteo@example.com', claudeJson, accDir);
+    const after = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
+    assert.equal(after.oauthAccount.emailAddress, 'matteo@example.com');
+    assert.equal(after.customApiKeyResponses, undefined, 'must drop tech key approval');
+    assert.equal(after.apiKey, undefined, 'must drop tech apiKey field');
+  });
+
+  it('restores customApiKeyResponses + apiKey on load when target has its own snapshot', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'tech@example.com' },
+    }));
+    fs.writeFileSync(path.join(accDir, 'matteo@example.com.json'), JSON.stringify({
+      emailAddress: 'matteo@example.com',
+      _customApiKeyResponses: { approved: ['sk-ant-api03-matteo'], rejected: [] },
+      _claudeJsonApiKey: 'sk-ant-api03-matteo',
+    }));
+    load('matteo@example.com', claudeJson, accDir);
+    const after = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
+    assert.deepEqual(after.customApiKeyResponses, { approved: ['sk-ant-api03-matteo'], rejected: [] });
+    assert.equal(after.apiKey, 'sk-ant-api03-matteo');
+  });
+
+  it('round-trip: save tech, switch to matteo, switch back to tech — tech regains its own approval', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'tech@example.com' },
+      customApiKeyResponses: { approved: ['sk-ant-api03-tech'], rejected: [] },
+    }));
+    save('tech@example.com', claudeJson, accDir);
+
+    // Switch to matteo (no snapshot) — claude.json should be wiped.
+    fs.writeFileSync(path.join(accDir, 'matteo@example.com.json'), JSON.stringify({
+      emailAddress: 'matteo@example.com',
+    }));
+    load('matteo@example.com', claudeJson, accDir);
+    const midway = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
+    assert.equal(midway.customApiKeyResponses, undefined);
+
+    // Switch back to tech — restore tech's snapshot.
+    save('matteo@example.com', claudeJson, accDir);
+    load('tech@example.com', claudeJson, accDir);
+    const restored = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
+    assert.deepEqual(restored.customApiKeyResponses, { approved: ['sk-ant-api03-tech'], rejected: [] });
+  });
+
+  it('does not strip _customApiKeyResponses internal field into claude.json', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'tech@example.com' } }));
+    fs.writeFileSync(path.join(accDir, 'matteo@example.com.json'), JSON.stringify({
+      emailAddress: 'matteo@example.com',
+      _customApiKeyResponses: { approved: ['sk-ant-api03-matteo'], rejected: [] },
+    }));
+    load('matteo@example.com', claudeJson, accDir);
+    const after = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
+    // Internal field name stays inside the per-account file, never bleeds
+    // into the live ~/.claude.json snapshot.
+    assert.equal(after._customApiKeyResponses, undefined);
+    assert.equal(after.oauthAccount._customApiKeyResponses, undefined);
+  });
+});

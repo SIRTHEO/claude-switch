@@ -16,18 +16,18 @@ import { ExitError } from '../src/errors.js';
 import { setAlias, listAliases, removeAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
 import { getTokenHealth } from '../src/token.js';
 import { getSavedClaudeBin, runSetup } from '../src/setup.js';
-import { checkForUpdate, fetchLatestVersionSync, performUpdate, performUpdateBackground, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
+import { checkForUpdate, fetchLatestVersionSync, performUpdate, isNewer, detectInstallCommand, writeUpdateCache } from '../src/update-check.js';
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
 import { isFallbackEnabled, isFallbackAutoEngaged, setFallbackEnabled } from '../src/fallback.js';
 import { fallbackEnvFor } from '../src/fallback-env.js';
 import { getAutoFallbackConfig, setAutoFallbackConfig, maybeAutoDisableFallback, maybeAutoEngageFallback, maybeInitSmartFallback } from '../src/auto-fallback.js';
 import { fetchUsageCached, getAccessTokenFromKeychain, readUsageCache, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
-import { runMainMenu } from '../src/ui/main-menu.js';
+import { runApp } from '../src/ui/run-app.js';
 import { profilesDir } from '../src/profiles.js';
-import { setApiKeyInteractive } from '../src/ui/set-apikey.js';
-import { runSetupWizard } from '../src/ui/setup-wizard.js';
-import { addAccountInteractive } from '../src/ui/add-account.js';
-import { removeAccountInteractive } from '../src/ui/remove-account.js';
+import { runApikeyScreen } from '../src/ui/screens/set-apikey.js';
+import { runSetupWizardScreen } from '../src/ui/screens/setup-wizard.js';
+import { runAddAccountScreen } from '../src/ui/screens/add-account.js';
+import { runRemoveAccountScreen } from '../src/ui/screens/remove-account.js';
 import { startFallbackProxy } from '../src/api-proxy.js';
 
 export type Command =
@@ -665,9 +665,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Check for update (reads cache synchronously — never blocks).
-  // Passthrough is now included: a background auto-update fires before exec.
-  // temporary-switch is still skipped (short-lived, not worth the noise).
+  // Check for update (reads cache synchronously — never blocks). Passthrough
+  // is included so long Claude sessions can show a hint, but updates are
+  // explicit: this tool handles credentials, so it must never install code in
+  // the background while the user is trying to work.
   const updateInfo = cmd.action !== 'temporary-switch'
     ? checkForUpdate(VERSION)
     : null;
@@ -718,7 +719,7 @@ async function main(): Promise<void> {
       // for pipes / CI / dumb terminals that can't render arrow-key
       // navigation.
       if (process.stdin.isTTY && process.stdout.isTTY) {
-        await runMainMenu(cJson, aDir);
+        await runApp(cJson, aDir);
       } else {
         await switchInteractive(cJson, aDir);
       }
@@ -752,7 +753,7 @@ async function main(): Promise<void> {
     case 'add': {
       const claudeBin = findClaude();
       if (process.stdin.isTTY && process.stderr.isTTY) {
-        await addAccountInteractive(claudeBin, cJson, aDir);
+        await runAddAccountScreen(claudeBin, cJson, aDir);
       } else {
         await addAccount(claudeBin, cJson, aDir);
       }
@@ -760,8 +761,8 @@ async function main(): Promise<void> {
     }
 
     case 'dashboard': {
-      const { runDashboard } = await import('../src/ui/ink/run-dashboard.js');
-      await runDashboard(cJson, aDir);
+      // Alias for the persistent menu — same screen.
+      await runApp(cJson, aDir);
       break;
     }
 
@@ -839,7 +840,7 @@ async function main(): Promise<void> {
         throw new ExitError('Usage: claude switch remove <email>');
       }
       if (process.stdin.isTTY && process.stderr.isTTY) {
-        await removeAccountInteractive(cmd.email, cJson, aDir);
+        await runRemoveAccountScreen(cmd.email, cJson, aDir);
       } else {
         try {
           const current = getCurrent(cJson);
@@ -920,7 +921,7 @@ async function main(): Promise<void> {
 
       // TUI when we have a real terminal; legacy text fallback for pipes/CI.
       if (process.stdin.isTTY && process.stderr.isTTY) {
-        const result = await setApiKeyInteractive(email, aDir);
+        const result = await runApikeyScreen(email, aDir);
         if (!result.saved && !result.cancelled) {
           // setApiKey threw — let the next invocation try again.
           process.exit(1);
@@ -1194,7 +1195,7 @@ async function main(): Promise<void> {
 
     case 'setup':
       if (process.stdin.isTTY && process.stderr.isTTY) {
-        await runSetupWizard(fileURLToPath(import.meta.url));
+        await runSetupWizardScreen(fileURLToPath(import.meta.url));
       } else {
         await runSetup(fileURLToPath(import.meta.url));
       }
@@ -1303,13 +1304,11 @@ async function main(): Promise<void> {
       } else if (engage.blocked) {
         process.stderr.write(`⚠ auto-engage wanted to switch to API key but ${engage.blocked}\n\n`);
       }
-      // Auto-update in background: fires before exec so the new binary is
-      // ready on the next invocation without any startup delay.
       if (updateInfo) {
         process.stderr.write(
-          `🔄 claude-switch ${VERSION} → ${updateInfo.latestVersion} — updating in background\n\n`,
+          `↥ claude-switch ${VERSION} → ${updateInfo.latestVersion} available\n` +
+          `  Update manually: ${updateInfo.installCommand}\n\n`,
         );
-        performUpdateBackground();
       }
       // Banner on stderr so we don't pollute structured stdout (e.g. when
       // claude is piped into jq with --output-format json).
