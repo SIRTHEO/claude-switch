@@ -1,5 +1,5 @@
 // src/proxy.ts
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 interface SpawnOptions {
   stdio: 'inherit';
@@ -34,6 +34,42 @@ export function buildSpawnArgs(
 }
 
 export function run(binaryPath: string, args: string[], extraEnv?: NodeJS.ProcessEnv | null): never {
+  const { command, args: spawnArgs, options } = buildSpawnArgs(
+    binaryPath,
+    args,
+    process.platform,
+    extraEnv,
+  );
+
+  // Async spawn keeps Node's event loop running so any local servers (e.g.
+  // the fallback proxy on 127.0.0.1) can serve requests while claude is
+  // running. spawnSync blocks the loop — fatal when claude depends on a
+  // proxy hosted in this same process via ANTHROPIC_BASE_URL.
+  const child = spawn(command, spawnArgs, options);
+
+  child.on('error', (err) => {
+    console.error(`Error: could not run claude: ${err.message}`);
+    process.exit(1);
+  });
+
+  // Forward signals so Ctrl-C in the terminal reaches claude cleanly.
+  const forward = (sig: NodeJS.Signals) => () => { try { child.kill(sig); } catch { /* noop */ } };
+  process.on('SIGINT', forward('SIGINT'));
+  process.on('SIGTERM', forward('SIGTERM'));
+  process.on('SIGHUP', forward('SIGHUP'));
+
+  child.on('exit', (code, signal) => {
+    if (signal) process.kill(process.pid, signal);
+    else process.exit(code ?? 1);
+  });
+
+  // Block here so the function's `never` contract holds — the actual exit
+  // is driven by the child's 'exit' handler above.
+  return new Promise<never>(() => {}) as never;
+}
+
+// Legacy sync runner kept for callers that still rely on synchronous wait.
+export function runSync(binaryPath: string, args: string[], extraEnv?: NodeJS.ProcessEnv | null): never {
   const { command, args: spawnArgs, options } = buildSpawnArgs(
     binaryPath,
     args,
