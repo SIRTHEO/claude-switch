@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.1.0](https://github.com/SIRTHEO/claude-switch/compare/v3.0.1...v3.1.0) (2026-05-06)
+
+
+### Features
+
+* **ui:** Ink dashboard PoC under \`claude switch dashboard\` ([d8e50e5](https://github.com/SIRTHEO/claude-switch/commit/d8e50e51978140e7358f885011fa1097f7853c23))
+* **ui:** rebuild interactive TUI on Ink with per-account preferences ([e0170c2](https://github.com/SIRTHEO/claude-switch/commit/e0170c2e5125c7ab8b109b546ab10173122ac824))
+
+
+### Bug Fixes
+
+* **ui:** include src/ui/hooks/ in the build (gitignore was eating it) ([a42c694](https://github.com/SIRTHEO/claude-switch/commit/a42c6948ff74fe6216152ff356875abead06f351))
+
 ## [3.0.1](https://github.com/SIRTHEO/claude-switch/compare/v3.0.0...v3.0.1) (2026-05-06)
 
 
