@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 220" font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="720" height="220" fill="#0d1117" rx="20"/>
+
+  <!-- mark: two arcs forming a switch loop -->
+  <g transform="translate(110,110)" filter="url(#glow)">
+    <circle r="62" fill="none" stroke="#1f2937" stroke-width="6"/>
+    <path d="M -50 -8 A 50 50 0 0 1 50 -8" fill="none" stroke="url(#g1)" stroke-width="10" stroke-linecap="round"/>
+    <path d="M 50 8 A 50 50 0 0 1 -50 8" fill="none" stroke="url(#g2)" stroke-width="10" stroke-linecap="round"/>
+    <polygon points="50,-18 64,-8 50,2" fill="#f59e0b"/>
+    <polygon points="-50,18 -64,8 -50,-2" fill="#fbbf24"/>
+    <circle r="6" fill="#0d1117" stroke="#f59e0b" stroke-width="2"/>
+  </g>
+
+  <!-- wordmark -->
+  <g transform="translate(220,0)">
+    <text x="0" y="118" font-size="56" font-weight="700" fill="#f5f5f4" letter-spacing="-1.5">claude</text>
+    <text x="200" y="118" font-size="56" font-weight="300" fill="#71717a">/</text>
+    <text x="226" y="118" font-size="56" font-weight="700" fill="url(#g1)" letter-spacing="-1.5">switch</text>
+    <text x="2" y="158" font-size="14" font-weight="500" fill="#52525b" letter-spacing="3">MULTI · ACCOUNT · CLI</text>
+    <circle cx="430" cy="153" r="3" fill="#3fb950"/>
+    <text x="442" y="158" font-size="14" font-weight="500" fill="#52525b" letter-spacing="1">v3.1</text>
+  </g>
+</svg>
