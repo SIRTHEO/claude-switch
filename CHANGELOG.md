@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.1](https://github.com/SIRTHEO/claude-switch/compare/v3.4.0...v3.4.1) (2026-05-06)
+
+
+### Refactors
+
+* **ui:** consolidate multi-step workflows behind domain helpers ([b5a01c7](https://github.com/SIRTHEO/claude-switch/commit/b5a01c7a1ae48ff5e7851814cc4f05f8bf87eb31))
+
 ## [3.4.0](https://github.com/SIRTHEO/claude-switch/compare/v3.3.0...v3.4.0) (2026-05-06)
 
 
