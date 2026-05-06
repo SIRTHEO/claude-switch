@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/images/logo.svg" alt="claude-switch — multi-account manager for Claude Code" width="540"/>
+<img src="docs/images/wordmark.svg" alt="claude-switch — multi-account manager for Claude Code" width="540"/>
 
 ### The fastest way to manage multiple Claude Code accounts, bypass Max & Pro rate limits, and run parallel Claude sessions on the same machine.
 
