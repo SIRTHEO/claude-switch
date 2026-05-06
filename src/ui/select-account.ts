@@ -9,7 +9,7 @@ import { getCurrent, list } from '../accounts.js';
 import { switchTo } from '../switcher.js';
 import { getAliasesForEmail } from '../aliases.js';
 import { getApiKey } from '../apikey.js';
-import { isFallbackEnabled } from '../fallback.js';
+import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
 import { readUsageCache } from '../usage.js';
 
 interface AccountRow {
@@ -121,7 +121,10 @@ export async function selectAccountInteractive(
   spin.start(`Switching to ${choice}`);
   try {
     const message = switchTo(choice, claudeJsonPath, accountsDirPath);
-    spin.stop(message);
+    const hasKey = !!getApiKey(choice, accountsDirPath);
+    setFallbackEnabled(accountsDirPath, hasKey);
+    const fallbackHint = hasKey ? ' · fallback ON (API key)' : ' · fallback OFF (OAuth)';
+    spin.stop(message + fallbackHint);
   } catch (e) {
     spin.stop('Switch failed');
     p.cancel((e as Error).message);

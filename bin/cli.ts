@@ -732,6 +732,9 @@ async function main(): Promise<void> {
         const warning = buildActiveSessionsWarning(sessions.count);
         if (warning) process.stderr.write(`${warning}\n\n`);
         console.log(switchTo(matches[0]!, cJson, aDir));
+        const hasKey = !!getApiKey(matches[0]!, aDir);
+        setFallbackEnabled(aDir, hasKey);
+        process.stderr.write(hasKey ? '  Fallback ON — API key active\n' : '  Fallback OFF — no API key\n');
       } else if (matches.length > 1) {
         console.log('Multiple matches:');
         for (const m of matches) console.log(`  ${m}`);
