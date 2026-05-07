@@ -62,7 +62,79 @@ That's the whole API. Nothing else to memorize.
 | 🔋 | **Bypass Max & Pro rate limits** — auto-fallback to your API key, **auto-revert** when the window resets |
 | 🪟 | **Two accounts, two terminals, same machine** — isolated profiles, zero interference |
 | 🔐 | **Zero telemetry, zero analytics** — credentials in your OS keychain, atomic writes, no `postinstall` |
+| 🎯 | **Project-aware routing** — drop a `.claude-switch` in the repo and `claude` automatically picks the right account based on `cwd`. [See below.](#-project-aware-routing--never-claude-switch-again) |
 | 🔔 | **Update notifier** — checks npm once a day, prompts you on the next interactive `claude switch`. **Never installs silently.** No telemetry sent — only the registry version check. |
+
+---
+
+## 🎯 Project-aware routing — never `claude switch` again
+
+> [!TIP]
+> The README promised *"keep typing `claude`"*. With routing, that's now **literal**: you stop running `claude switch` entirely. The right account is selected from the directory you're in.
+
+The pain it kills:
+
+> *"I `cd`'d into the work repo, typed `claude`, did half a session, and only then noticed the banner said `🔑 personal@gmail.com` — I'd been burning personal quota on a work task."*
+
+Two ways to set it up. Pick whichever fits.
+
+### A. Per-repo, committable: `.claude-switch`
+
+Drop a file at the repo root:
+
+```json
+{ "match": { "emailDomain": "acme.com" } }
+```
+
+Commit it. From now on, every teammate that `cd`s into this repo and runs `claude` is auto-routed to **whichever of their saved accounts** has an `@acme.com` email. The committed file expresses a **constraint** (any acme account), not a specific identity — so it works regardless of how each teammate aliased their accounts locally.
+
+The flow:
+
+```bash
+$ cd ~/work/payroll-service
+$ claude "refactor the auth middleware"
+🎯 routed to theo@acme.com via .claude-switch (repo requires @acme.com)
+🔑 theo@acme.com
+
+… session runs as @acme, not @gmail …
+```
+
+Don't have a matching account saved? You get a **warning, not a crash** — `claude` falls back to your active account so the session still runs, but the banner makes the misalignment obvious before you waste a turn:
+
+```
+⚠ this repo expects @acme.com — no saved account matches.
+  Run: claude switch add. Falling back to active: personal@gmail.com
+```
+
+### B. Per-machine, gitignored: `claude switch route`
+
+For routing rules that are **yours**, not the team's — global glob → account map:
+
+```bash
+claude switch route add  '~/work/**'      work@acme.com
+claude switch route add  '~/clients/foo/**'  foobar          # alias works too
+claude switch route list
+claude switch route test ~/work/payroll-service              # debug: dry-run
+claude switch route remove '~/clients/foo/**'
+```
+
+Stored in `~/.claude/accounts/.routing.json`, never committed.
+
+### Override knobs
+
+| Want | How |
+|---|---|
+| One-off run as a different account | `claude --as personal "..."` *(unchanged)* |
+| Global override for one shell | `CLAUDE_SWITCH_ACCOUNT=work claude` |
+| Disable routing for a specific repo | `.claude-switch` with `{ "match": { "disable": true } }` |
+| Stay in your own profile, ignore routing | Already-set `CLAUDE_CONFIG_DIR` is respected — routing skips |
+| Keep the account always isolated | Mark it `defaultIsolated: true` in Settings — routing won't flip global, it points you at the profile flow instead |
+
+### Resolution order
+
+`CLAUDE_SWITCH_ACCOUNT` env > `.claude-switch` in the repo (walk-up bounded by `.git/`) > `.routing.json` global rules > active account *(today's behavior)*.
+
+When routing has no opinion, behavior is **identical** to without routing. Don't create either file → nothing changes.
 
 ---
 
@@ -237,6 +309,7 @@ Three sections: **Accounts** (roster + live usage), **Account** (actions for the
 |---|:---:|:---:|:---:|:---:|
 | 🧠 Command you type | **`claude`** *(unchanged)* | `claude` | `claude` | new alias per account |
 | ⏱ Switch time | **< 1 sec** | 30–60 sec | seconds (risky) | seconds |
+| 🎯 Auto-routes by `cwd` (repo-aware) | ✅ `.claude-switch` + global rules | 🚫 | 🚫 | 🚫 |
 | 👥 Multiple accounts | ✅ unlimited | 🚫 one at a time | ⚠️ manual | ✅ |
 | 🔋 API-key fallback + auto-revert | ✅ | 🚫 | 🚫 | 🚫 |
 | 🪟 Parallel terminal sessions | ✅ profiles | 🚫 | 🚫 | ✅ *(if hand-rolled)* |
@@ -301,6 +374,7 @@ Fallback injects `ANTHROPIC_API_KEY` into the env of the `claude` process it spa
 
 ## 📦 What's new
 
+- **v3.8.x** *(upcoming)* — 🎯 **Project-aware routing.** `.claude-switch` per-repo + `claude switch route` global rules pick the right account from `cwd`.
 - **v3.4.x** — 🔐 **API keys in macOS Keychain.** Plus unified ephemeral state with on-read migration.
 - **v3.3.x** — 🔁 **Live OAuth ↔ API transitions.** Per-account `authMode`, swap modes without re-launching.
 - **v3.2.x** — 🪶 **`auto-revert`** renamed from `fallback auto` (legacy alias preserved).
@@ -340,6 +414,6 @@ For Anthropic's official products visit [anthropic.com](https://www.anthropic.co
 npm install -g @sirtheo/claude-switch
 ```
 
-<sub><b>Keywords</b> — claude code profile · claude code profiles · claude --profile · claude code multi account · claude account switcher · claude code login switch · claude code work personal · claude max 5h limit · claude weekly limit · anthropic oauth switcher · CLAUDE_CONFIG_DIR · claude isolated session · claude code parallel sessions · anthropic api key fallback · drop-in claude wrapper</sub>
+<sub><b>Keywords</b> — claude code profile · claude code profiles · claude --profile · claude code multi account · claude account switcher · claude code login switch · claude code work personal · claude max 5h limit · claude weekly limit · anthropic oauth switcher · CLAUDE_CONFIG_DIR · claude isolated session · claude code parallel sessions · anthropic api key fallback · drop-in claude wrapper · project-aware account routing · cwd-based claude switch · .claude-switch repo file · automatic account selection</sub>
 
 </div>
