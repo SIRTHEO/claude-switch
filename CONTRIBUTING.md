@@ -45,21 +45,53 @@ CLAUDE_CONFIG_DIR="$PROFILE_DIR" claude --print "say OK and exit"
 If it asks for login, the OAuth refresh / Keychain layout has drifted
 from production claude. Investigate before tagging.
 
-## Marketing GIF
+## Marketing GIFs
 
-The dashboard GIF in `docs/images/dashboard.gif` is rendered from a
-synthetic `$HOME` so no real account credentials ever leak into the
-recorded frames. To regenerate:
+Three GIFs live under `docs/images/` and tell the README story:
+
+| File | Storyboard | What it shows |
+|---|---|---|
+| `dashboard.gif` | `scripts/demo.tape` | the menu — Accounts, Account actions, General |
+| `switch.gif` | `scripts/demo-switch.tape` | open menu → Up → Enter → active account flips |
+| `profiles.gif` | `scripts/demo-profiles.tape` | open menu → `p` → Profiles screen |
+
+All three are rendered from a synthetic `$HOME` so no real account
+credentials ever leak into the recorded frames. To regenerate every
+GIF:
 
 ```bash
-brew install vhs   # one-time
-npm run gif
+brew install vhs    # one-time
+npm run gif         # renders all three tapes
 ```
 
-`scripts/demo-fixture.mjs` builds the synthetic accounts (`sirtheo.work@example.com`,
-`sirtheo.personal@example.com`); `scripts/demo.tape` is the VHS storyboard;
-`scripts/render-demo.sh` glues them together and tears the fixture down
-on exit. Edit any of the three to change the demo.
+To re-render a single tape (faster iteration), pass it through:
+
+```bash
+bash scripts/render-demo.sh scripts/demo-switch.tape
+```
+
+Files involved:
+
+- `scripts/demo-fixture.mjs` — builds the synthetic `~/.claude` tree
+  (accounts `sirtheo.work@example.com` + `sirtheo.personal@example.com`,
+  one demo profile, fake usage cache, aliases, `.user-prefs.json` with
+  `defaultAutoLaunchOnSwitch=false` so the menu-driven switch demo
+  doesn't accidentally spawn the real `claude` binary).
+- `scripts/demo*.tape` — the three VHS storyboards.
+- `scripts/render-demo.sh` — wraps fixture + build + vhs and tears the
+  synthetic `$HOME` down on exit.
+
+A few non-obvious gotchas if you edit a tape:
+
+- The dashboard's account cursor starts on the **active** row. To land
+  on the other account use `Up` (or `Down`, depending on which row is
+  active in the fixture) — `Enter` on the active row only re-opens it.
+- Inside the dashboard, **don't** `Type "claude switch"` again — the
+  `c` is bound to `Re-authenticate` and will trigger an OAuth flow.
+  Let the TUI re-render itself after a `'switched'` action.
+- End each tape with a long `Sleep` on the informative TUI frame, not
+  after a `q`. The GIF loops, and a bare shell prompt as the resting
+  frame looks broken.
 
 ## Conventions
 

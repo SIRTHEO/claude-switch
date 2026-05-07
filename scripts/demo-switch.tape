@@ -29,14 +29,14 @@ Sleep 500ms
 Enter
 Sleep 2.5s
 
-# Beat 2: move the account cursor to the other row.
-Down
+# Beat 2: move the account cursor to the other row. Cursor starts
+# on the active account (work, last row), so we step Up to land on
+# personal — the row we actually want to switch into.
+Up
 Sleep 1s
 
-# Beat 3: switch by pressing Enter on the highlighted row.
+# Beat 3: switch by pressing Enter on the highlighted row. The TUI
+# stays open and re-renders with a "Switched to ..." notice and
+# the new active account — that IS the resting frame.
 Enter
-Sleep 2.5s
-
-# Beat 4: hold the post-switch dashboard so the loop's resting frame
-# is the informative state, not an empty shell.
-Sleep 2s
+Sleep 4s

@@ -136,4 +136,13 @@ fs.writeFileSync(path.join(accountsDir, '.claude-switch-state.json'), JSON.strin
   fallback: { enabled: false, autoEngaged: false },
 }, null, 2));
 
+// Global prefs: turn off auto-launch on switch. The default would
+// spawn the real `claude` binary after a successful switch, dumping
+// us into the live Claude Code onboarding screen mid-recording —
+// which leaks unrelated UI into the marketing GIF and overwrites the
+// dashboard we wanted to showcase.
+fs.writeFileSync(path.join(accountsDir, '.user-prefs.json'), JSON.stringify({
+  defaultAutoLaunchOnSwitch: false,
+}, null, 2));
+
 process.stdout.write(tmp);

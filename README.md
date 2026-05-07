@@ -179,7 +179,7 @@ claude --as work "…"   # → run a one-shot as a different account
 
 Type `claude switch`. Highlight a row. Hit `Enter`. Done.
 
-<img src="docs/images/switch.gif" alt="claude switch <alias> flips the active account in one shot" width="800" />
+<img src="docs/images/switch.gif" alt="claude switch dashboard — highlight a row, press Enter, the active account flips" width="800" />
 
 - ⚡ **Atomic swap** of OAuth token + active account in `~/.claude.json`
 - 🌐 **No browser** — tokens encrypted at rest in the macOS Keychain (or `0600`-permissioned on Linux/Windows)
@@ -263,7 +263,7 @@ Plus: tab completion (`bash` · `zsh` · `fish` · `powershell`), one-shot `clau
 
 The other 10% — Terminal A on `@work` and Terminal B on `@personal` **at the same time** — that's what **profiles** are for.
 
-<img src="docs/images/profiles.gif" alt="claude switch profile list + status — per-terminal isolated profiles" width="800" />
+<img src="docs/images/profiles.gif" alt="claude switch dashboard → press p → Profiles screen for per-terminal isolated sessions" width="800" />
 
 | You want | Use |
 |---|---|
@@ -281,26 +281,34 @@ The other 10% — Terminal A on `@work` and Terminal B on `@personal` **at the s
 ```text
 ⚡ claude-switch  multi-account dashboard  ·  tab cycles  ·  ? help  ·  q quit
 
-╭─ Accounts (2) ────────────────────────────────────────────────────────╮
-│ ▸ work@company.com  @work  ◀ active                                   │
-│       OAuth  ·  fallback OFF  ·  token ✓ valid · 3 days               │
-│       ● 5h ████▒░░░░░░░░░ 42%    ● 7d ▒░░░░░░░░░░░░░ 18%              │
-│                                                                       │
-│   personal@gmail.com                                                  │
-│       OAuth + key saved  ·  sk-ant-…2BBB  ·  isolated default         │
-╰───────────────────────────────────────────────────────────────────────╯
+╭─ Accounts (2) ───────────────────────────────────────────────────────────╮
+│   personal@example.com  @personal                                        │
+│       OAuth only                                                         │
+│       no usage cached                                                    │
+│                                                                          │
+│ ▸ work@example.com  @work  ◀ active                                      │
+│       OAuth · fallback OFF · token ✓ valid · in 1 hour                   │
+│       ◐ 5h ███████▒░░░ 67%    ● 7d ████▒░░░░░░ 38%                       │
+╰──────────────────────────────────────────────────────────────────────────╯
 
-╭─ Account  for work@company.com ───────────────────────────────────────╮
-│ ▸ [↵] Launch claude (already active)        open a session            │
-│   [k] Replace API key                       currently sk-ant-…1AAA    │
-│   [f] Toggle fallback                       flip OAuth ↔ API key      │
-│   [c] Re-authenticate                       browser re-login          │
-╰───────────────────────────────────────────────────────────────────────╯
+╭─ Account  for work@example.com ──────────────────────────────────────────╮
+│   [↵] Launch claude (already active)    open a session on this account  │
+│   [k] Set API key                       paste an Anthropic key          │
+│   [m] Manage (alias · key · remove)     detailed account operations     │
+│   [f] Toggle fallback                   flip OAuth ↔ API key globally   │
+│   [c] Re-authenticate                   browser re-login (current)      │
+│   [d] Remove account                    delete saved tokens, key, alias │
+╰──────────────────────────────────────────────────────────────────────────╯
 
-╭─ General ─────────────────────────────────────────────────────────────╮
-│   [a] Add account     [g] Settings     [p] Profiles                   │
-│   [F] Auto-fallback   [u] Refresh usage [s] Setup wizard  [q] Quit    │
-╰───────────────────────────────────────────────────────────────────────╯
+╭─ General ────────────────────────────────────────────────────────────────╮
+│   [a] Add account       log in with a new email                          │
+│   [g] Settings          global + per-account preferences                 │
+│   [p] Profiles          isolated per-terminal sessions                   │
+│   [F] Auto-fallback     thresholds for auto-engage / auto-revert         │
+│   [u] Refresh usage     force-fetch from Anthropic                       │
+│   [s] Setup wizard      fix claude binary / shell PATH                   │
+│   [q] Quit              or press esc                                     │
+╰──────────────────────────────────────────────────────────────────────────╯
 ```
 
 </details>

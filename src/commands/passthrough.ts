@@ -215,6 +215,11 @@ export async function handlePassthrough(
       const proxy = await startFallbackProxy({
         apiKey: activeApiKey,
         mode: effective,
+        // Persist final counters next to the accounts dir so the next
+        // `claude switch status` can render the previous session's
+        // proxy stats. Lets the user verify the proxy actually saw
+        // traffic / fired retries instead of guessing from a banner.
+        persistStatsTo: `${accountsDirPath}/.proxy-stats.json`,
       });
       process.on('exit', () => proxy.close());
 

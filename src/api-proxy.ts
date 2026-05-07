@@ -35,6 +35,7 @@
 
 import http from 'node:http';
 import https from 'node:https';
+import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
 
@@ -58,6 +59,24 @@ export interface ProxyRuntimeState {
   /** How many OAuth attempts in a row have failed without an intervening
    *  successful response. */
   consecutiveOauthFailures: number;
+  /** Cumulative request counters since proxy start. Surfaced in
+   *  `claude switch status` so the user can confirm whether the proxy
+   *  has actually been routing (and how the OAuth ↔ API-key split is
+   *  going) instead of having to trust a banner that shows up once. */
+  counters: {
+    totalRequests: number;
+    oauthAttempts: number;
+    oauthSuccesses: number;
+    oauthFailures: number;
+    apiKeyDirectRequests: number;
+    apiKeyRetries: number;
+    upstreamErrors: number;
+    bodySniffsTriggered: number;
+  };
+  /** Reason of the most recent OAuth → API-key retry (e.g. "subscription
+   *  returned 429" or "subscription error in response body"). Null when
+   *  no retry has happened. */
+  lastRetryReason: string | null;
 }
 
 export interface ProxyHandle {
@@ -173,6 +192,10 @@ export interface StartFallbackProxyOptions {
   burstConfig?: Partial<BurstConfig>;
   /** Wall-clock provider for tests. Defaults to `Date.now`. */
   now?: () => number;
+  /** When set, the final state snapshot is persisted to this path on
+   *  `close()` so the next `claude switch status` can render the
+   *  most recent session's counters. */
+  persistStatsTo?: string;
 }
 
 /**
@@ -196,15 +219,44 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
   };
   const now = opts.now ?? Date.now;
 
+  // CLAUDE_SWITCH_PROXY_DEBUG=1 enables verbose diagnostic logging on
+  // stderr — every request gets a method+path line, every retry
+  // decision is annotated with the reason, and every body sniff prints
+  // the first 256 bytes that triggered it (or didn't). Off by default
+  // because the noise is significant; ON when investigating "why
+  // didn't the proxy fall back?" type bugs (the same class that
+  // shipped silently for months in v3.4 because we had no visibility).
+  const debug = process.env.CLAUDE_SWITCH_PROXY_DEBUG === '1';
+  const dbg = (msg: string): void => {
+    if (debug) process.stderr.write(`[proxy-debug] ${msg}\n`);
+  };
+
   // Mutable runtime state shared across requests. Only meaningful in
   // `oauth-first` mode — `api-first` ignores it.
   let burstActive = false;
   let consecutiveOauthFailures = 0;
   let lastOauthAttemptAt = 0;
 
+  // Counters surfaced via the ProxyHandle.state() API for diagnostics
+  // and visible in `claude switch status`. Untyped numbers are fine —
+  // these are tally fields the consumer reads, not protocol values.
+  const counters = {
+    totalRequests: 0,
+    oauthAttempts: 0,
+    oauthSuccesses: 0,
+    oauthFailures: 0,
+    apiKeyDirectRequests: 0,  // api-first mode OR in-burst skip
+    apiKeyRetries: 0,         // OAuth → API-key per-request retry
+    upstreamErrors: 0,        // network failure connecting to upstream
+    bodySniffsTriggered: 0,   // body matched looksLikeErrorBody on a 200
+  };
+  let lastRetryReason: string | null = null;
+
   const recordOauthFailure = (): void => {
     consecutiveOauthFailures++;
+    counters.oauthFailures++;
     lastOauthAttemptAt = now();
+    dbg(`oauth attempt failed (consecutive=${consecutiveOauthFailures})`);
     if (!burstActive && consecutiveOauthFailures >= burstConfig.failureThreshold) {
       burstActive = true;
       process.stderr.write(
@@ -221,7 +273,9 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
     }
     burstActive = false;
     consecutiveOauthFailures = 0;
+    counters.oauthSuccesses++;
     lastOauthAttemptAt = now();
+    dbg('oauth succeeded');
   };
 
   /** Decide whether THIS request should attempt OAuth, given oauth-first
@@ -288,9 +342,12 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
       req.on('end', () => {
         if (requestTooLarge) return;
         const body = Buffer.concat(chunks);
+        counters.totalRequests++;
+        dbg(`→ ${req.method ?? 'GET'} ${req.url ?? '/'} (body=${body.length}B, mode=${mode}, burstActive=${burstActive})`);
 
         // Pure API-first mode: never attempt OAuth, never probe.
         if (mode === 'api-first') {
+          counters.apiKeyDirectRequests++;
           const headers = buildApiKeyHeaders(req.headers, apiKey);
           forward(headers, req.method, req.url, body,
             (proxyRes) => {
@@ -298,6 +355,8 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
               proxyRes.pipe(res);
             },
             () => {
+              counters.upstreamErrors++;
+              dbg('upstream connection error → 502 to claude');
               if (!res.headersSent) { res.writeHead(502); res.end(); }
             },
           );
@@ -317,6 +376,8 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
         const tryOauth = shouldTryOauth();
         if (!tryOauth) {
           // API-burst sub-state, between probes — go straight to API key.
+          counters.apiKeyDirectRequests++;
+          dbg('skipping OAuth (in burst, probe interval not elapsed)');
           const headers = buildApiKeyHeaders(req.headers, apiKey);
           forward(headers, req.method, req.url, body,
             (proxyRes) => {
@@ -324,6 +385,8 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
               proxyRes.pipe(res);
             },
             () => {
+              counters.upstreamErrors++;
+              dbg('upstream connection error → 502 to claude');
               if (!res.headersSent) { res.writeHead(502); res.end(); }
             },
           );
@@ -333,12 +396,16 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
         // We're attempting OAuth. Mark the timestamp so future probes are
         // paced correctly even if the request takes a while.
         lastOauthAttemptAt = now();
+        counters.oauthAttempts++;
 
         const retryWithApiKey = (reason: string): void => {
           recordOauthFailure();
+          counters.apiKeyRetries++;
+          lastRetryReason = reason;
           process.stderr.write(
             `\n⚡ claude-switch: ${reason} — retrying with API key\n\n`,
           );
+          dbg(`retry-with-api-key reason="${reason}"`);
           const keyHeaders = buildApiKeyHeaders(req.headers, apiKey);
           forward(keyHeaders, req.method, req.url, body,
             (retryRes) => {
@@ -391,6 +458,8 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
               const head = Buffer.concat(peeked).toString('utf8');
               if (looksLikeErrorBody(head)) {
                 decided = true;
+                counters.bodySniffsTriggered++;
+                dbg(`body sniff matched on 200 — head[0:256]=${JSON.stringify(head.slice(0, 256))}`);
                 proxyRes.removeListener('data', onData);
                 proxyRes.removeListener('end', onEnd);
                 proxyRes.resume();
@@ -418,13 +487,34 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
     server.on('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address() as AddressInfo;
+      const persistStats = (): void => {
+        if (!opts.persistStatsTo) return;
+        try {
+          fs.writeFileSync(opts.persistStatsTo, JSON.stringify({
+            persistedAt: now(),
+            mode,
+            burstActive,
+            consecutiveOauthFailures,
+            counters,
+            lastRetryReason,
+          }, null, 2));
+        } catch {
+          /* best-effort — diagnostic data, not a hard requirement */
+        }
+      };
+
       resolve({
         port: addr.port,
-        close: (cb) => server.close(cb),
+        close: (cb) => {
+          persistStats();
+          server.close(cb);
+        },
         state: () => ({
           mode,
           burstActive,
           consecutiveOauthFailures,
+          counters: { ...counters },
+          lastRetryReason,
         }),
       });
     });
