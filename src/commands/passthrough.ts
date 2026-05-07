@@ -217,6 +217,19 @@ export async function handlePassthrough(
         mode: effective,
       });
       process.on('exit', () => proxy.close());
+
+      // Visible confirmation that the live-fallback proxy is in front of
+      // claude. Without it, the only signal the user gets is when the
+      // proxy actually fires (subscription returned 429 → retried with
+      // API key) — and if that path never trips, there's no way to tell
+      // if it would. One terse line on stderr makes the architecture
+      // legible, so when something goes wrong (or doesn't fall back as
+      // expected) the user can debug.
+      const modeLabel = effective === 'oauth-first'
+        ? 'OAuth subscription, API-key on rate-limit'
+        : 'API key';
+      process.stderr.write(`⚡ claude-switch proxy active — ${modeLabel}\n`);
+
       // Clear any inherited ANTHROPIC_API_KEY so the binary uses the proxy
       // and cannot bypass ANTHROPIC_BASE_URL.
       proxyRun(claudeBin, passthroughArgs, {
