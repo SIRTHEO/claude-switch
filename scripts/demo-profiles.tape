@@ -1,15 +1,15 @@
 # scripts/demo-profiles.tape
-# Renders docs/images/profiles.gif — shows the profile system
-# (per-terminal isolated sessions) without spawning a real claude.
-# Demonstrates `profile list` and `profile status` so the viewer sees
-# the management surface; the actual `profile use` spawn would launch
-# claude itself, which is out of scope for a synthetic demo.
+# Renders docs/images/profiles.gif — third README beat.
+#
+# Story: same single entry point (`claude switch`) reaches the profile
+# system through the menu (hotkey `p`), reinforcing that everything
+# lives behind the dashboard rather than scattered subcommands.
 
 Output docs/images/profiles.gif
 
 Set FontSize 16
-Set Width 1000
-Set Height 600
+Set Width 1100
+Set Height 700
 Set Theme "Catppuccin Mocha"
 Set Padding 20
 Set TypingSpeed 60ms
@@ -23,14 +23,24 @@ Enter
 Sleep 200ms
 Show
 
-# Beat 1: list profiles
-Type "claude switch profile list"
+# Beat 1: open the dashboard.
+Type "claude switch"
+Sleep 500ms
 Enter
 Sleep 2s
 
-# Beat 2: status of the personal profile
-Type "claude switch profile status personal"
-Enter
-Sleep 3s
+# Beat 2: jump into Profiles via the universal hotkey.
+Type "p"
+Sleep 2.5s
 
-Sleep 1s
+# Beat 3: move the cursor inside the Profiles screen.
+Down
+Sleep 800ms
+Down
+Sleep 800ms
+Up
+Sleep 800ms
+
+# Beat 4: hold so the loop's resting frame is the Profiles screen,
+# not an empty shell.
+Sleep 2s

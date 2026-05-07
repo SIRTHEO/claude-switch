@@ -100,8 +100,22 @@ export function looksLikeErrorBody(head: string): boolean {
   if (/^event:\s*error/m.test(head)) return true;
   // Top-level JSON error envelope
   if (/"type"\s*:\s*"error"/.test(head)) return true;
-  // Specific quota exhausted phrasing seen in the wild
+  // Anthropic-internal error type tags (extracted from the production
+  // claude binary v2.x — these appear inside the inner `error.type`
+  // field, not the top-level one we already match above).
+  if (/"rate_limit_error"|"overloaded_error"|"payment_required"|"usage_quota"/i.test(head)) {
+    return true;
+  }
+  // Specific quota-exhausted phrasings actually emitted by the API in
+  // the response body. Reverse-engineered from the production binary
+  // — there are several variants and the previous regex only caught
+  // the user-facing rendering, NOT the wire-level message.
+  if (/extra usage credits exhausted/i.test(head)) return true;
+  if (/extra usage disabled (by your organization|for your account)/i.test(head)) return true;
+  if (/extra usage not available/i.test(head)) return true;
+  // Legacy phrasing (kept for safety; matches the user-facing copy too).
   if (/out of (extra )?usage/i.test(head)) return true;
+  // Generic rate-limit phrasing in any error envelope.
   if (/rate[_ ]?limit/i.test(head) && /"error"/.test(head)) return true;
   return false;
 }
@@ -344,14 +358,18 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
               return;
             }
 
-            // HTTP 200 — peek the first chunk to spot an SSE/JSON error
-            // envelope ("out of extra usage" arrives this way). Buffer up
-            // to 4 KB before deciding; that's enough to see the first SSE
-            // event without holding the full streaming response.
+            // HTTP 200 — peek the first N bytes to spot an SSE/JSON error
+            // envelope ("extra usage credits exhausted" and friends arrive
+            // this way). 16 KB is large enough that an error event after
+            // a ping or message_start preamble still lands inside the
+            // window, but small enough to keep streaming latency negligible.
+            // Was 4 KB until v3.5 — surfaced as a fallback miss when an
+            // error event followed a couple of warm-up SSE events that
+            // already filled the smaller window.
             let decided = false;
             const peeked: Buffer[] = [];
             let peekedLen = 0;
-            const PEEK_LIMIT = 4096;
+            const PEEK_LIMIT = 16384;
 
             const flushAndPipe = (): void => {
               if (decided) return;

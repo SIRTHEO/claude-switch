@@ -48,6 +48,6 @@ Sleep 600ms
 Up
 Sleep 600ms
 
-# 4. Quit cleanly.
-Type "q"
-Sleep 1.5s
+# 4. Hold on the dashboard. The GIF loops, and the resting frame
+#    needs to be the informative TUI — not an empty shell prompt.
+Sleep 2.5s

@@ -1,14 +1,15 @@
 # scripts/demo-switch.tape
-# Renders docs/images/switch.gif — shows the one-shot switch flow
-# (`claude switch <alias>`) which is the muscle-memory pitch of the
-# whole project. Pairs with the home-dashboard GIF as the second beat
-# of the README story.
+# Renders docs/images/switch.gif — second README beat.
+#
+# Story: one entry point (`claude switch`) drops you in the dashboard;
+# you flip the active account by moving the cursor and pressing Enter.
+# No subcommand muscle-memory required.
 
 Output docs/images/switch.gif
 
 Set FontSize 16
-Set Width 1000
-Set Height 540
+Set Width 1100
+Set Height 700
 Set Theme "Catppuccin Mocha"
 Set Padding 20
 Set TypingSpeed 60ms
@@ -22,24 +23,20 @@ Enter
 Sleep 200ms
 Show
 
-# Beat 1: where are we now?
-Type "claude switch status"
+# Beat 1: open the dashboard.
+Type "claude switch"
+Sleep 500ms
 Enter
-Sleep 2s
+Sleep 2.5s
 
-# Beat 2: flip to personal
-Type "claude switch personal"
-Enter
-Sleep 1.5s
-
-# Beat 3: confirm we're there
-Type "claude switch status"
-Enter
-Sleep 2s
-
-# Beat 4: flip back to work in one shot
-Type "claude switch work"
-Enter
-Sleep 1.5s
-
+# Beat 2: move the account cursor to the other row.
+Down
 Sleep 1s
+
+# Beat 3: switch by pressing Enter on the highlighted row.
+Enter
+Sleep 2.5s
+
+# Beat 4: hold the post-switch dashboard so the loop's resting frame
+# is the informative state, not an empty shell.
+Sleep 2s
