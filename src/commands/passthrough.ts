@@ -26,7 +26,13 @@ import {
   maybeAutoEngageFallback,
   maybeInitSmartFallback,
 } from '../auto-fallback.js';
-import { readUsageCache } from '../usage.js';
+import {
+  readUsageCache,
+  isUsageCacheStale,
+  fetchUsageCached,
+  getAccessTokenFromKeychain,
+} from '../usage.js';
+import { isFallbackEnabled } from '../fallback.js';
 import { startFallbackProxy } from '../api-proxy.js';
 import { resolveAccountPrefs, resolveEffectiveAuthMode } from '../preferences.js';
 import { resolveRouting, type RoutingDecision } from '../routing.js';
@@ -47,6 +53,27 @@ export async function handlePassthrough(
   }
 
   const claudeBin = findClaude(ctx.selfUrl);
+
+  // Pre-warm the usage cache when we're approaching auto-engage territory,
+  // so maybeAutoEngageFallback below makes a decision based on the actual
+  // current quota state. Critical for the "claude said `out of extra usage`
+  // mid-session, user re-launches" scenario: without this, the cached
+  // value is whatever was last fetched (possibly hours ago, well below the
+  // engage threshold), the decision misfires, and the relaunched session
+  // hits the same wall again.
+  //
+  // We only force-fetch when ALL of these hold:
+  //   - fallback is currently OFF (otherwise auto-engage is a no-op),
+  //   - the active account has an API key (no key → no engage possible),
+  //   - the cache is genuinely stale (older than the statusline freshness
+  //     window, or belongs to a different account, or never fetched),
+  //   - we have an OAuth access token to authenticate the request with.
+  //
+  // Cost: one HTTPS round-trip (~300-800ms) on the relevant invocation.
+  // For a session that's already burning ~5 minutes of inference per
+  // exchange, the extra second is invisible. For the cold-start case
+  // (cache fresh, no engage needed) we skip entirely — no slowdown.
+  await preWarmUsageForAutoEngage(claudeJsonPath, accountsDirPath);
 
   // Snapshot (active email, fallback env, auto-revert decision) atomically.
   // Without the lock a concurrent `claude switch B` could swap the active
@@ -312,4 +339,49 @@ export function resolveRoutingForPassthrough(input: RoutingForPassthroughInput):
   }
 
   return { decision, flipped: true };
+}
+
+/**
+ * Synchronously refresh the usage cache when the active account is on
+ * the verge of needing auto-engage. Returns silently on every failure
+ * mode (no token, network down, rate-limited): the existing
+ * cache-based path takes over and behaviour is identical to before.
+ *
+ * Gated behind a precise predicate so we don't pay the round-trip on
+ * the 99% of invocations where the cache is fresh OR fallback is
+ * already on OR there's no key to engage anyway.
+ */
+async function preWarmUsageForAutoEngage(
+  claudeJsonPath: string,
+  accountsDirPath: string,
+): Promise<void> {
+  // Already on fallback — auto-engage would no-op even with fresh data.
+  if (isFallbackEnabled(accountsDirPath)) return;
+
+  // No active account or active account has no key — engage can't trigger.
+  let email: string;
+  try {
+    email = getCurrent(claudeJsonPath);
+  } catch { return; }
+  if (!email) return;
+  if (!getApiKey(email, accountsDirPath)) return;
+
+  // Cache fresh enough — let the existing path read it as-is. We
+  // intentionally use the same `isUsageCacheStale` predicate the
+  // statusline uses, so behaviour is consistent across surfaces.
+  const cache = readUsageCache(accountsDirPath);
+  if (!isUsageCacheStale(cache, email)) return;
+
+  // We need to force-fetch. Requires an OAuth access token —
+  // getAccessTokenFromKeychain reads from `~/.claude.json` on
+  // non-darwin or queries the Keychain on darwin. If we can't get one,
+  // we silently fall through (the existing flow uses a stale cache).
+  const token = getAccessTokenFromKeychain(claudeJsonPath);
+  if (!token) return;
+
+  try {
+    await fetchUsageCached(accountsDirPath, token, { force: true, account: email });
+  } catch {
+    /* network down / 5xx / 429 — leave the existing cache untouched */
+  }
 }
