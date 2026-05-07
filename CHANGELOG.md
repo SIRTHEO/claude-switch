@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.0](https://github.com/SIRTHEO/claude-switch/compare/v3.4.1...v3.5.0) (2026-05-07)
+
+
+### Features
+
+* ship v3.5 bundle (PR [#20](https://github.com/SIRTHEO/claude-switch/issues/20) squashed without conventional prefix) ([#26](https://github.com/SIRTHEO/claude-switch/issues/26)) ([5f02338](https://github.com/SIRTHEO/claude-switch/commit/5f0233833f71e2f2f4a48a6d662bf653f9e05bfb))
+
 ## [3.4.1](https://github.com/SIRTHEO/claude-switch/compare/v3.4.0...v3.4.1) (2026-05-06)
 
 
