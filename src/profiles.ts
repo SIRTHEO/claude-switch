@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { writeJsonAtomic } from './atomic-write.js';
-import { writeKeychainAt, type KeychainData } from './keychain.js';
+import { writeKeychainAt, readKeychainAt, type KeychainData } from './keychain.js';
 import { isSafeEmail, resolvedAccountFile } from './accounts.js';
 
 // Conservative naming rules so a profile name is never ambiguous on
@@ -131,6 +131,23 @@ export function readProfile(name: string): ProfileInfo {
     }
   } catch {
     // Fresh profile (no .claude.json yet) or unreadable. Leave fields null.
+  }
+  // On macOS, OAuth tokens live in the Keychain under the profile's
+  // userID, NOT in the .claude.json file. The JSON's oauthAccount block
+  // is purely descriptive — a stale `emailAddress` can persist long
+  // after the Keychain entry has been wiped/expired/never-written. We
+  // saw this break "Open account isolated": the dispatcher trusted
+  // hasLogin=true from JSON, spawned claude in the empty profile, and
+  // claude itself fell back to its login picker. So on darwin we
+  // demote hasLogin to "JSON says yes AND Keychain entry actually
+  // resolves under userID".
+  if (
+    hasLogin &&
+    process.platform === 'darwin' &&
+    userID &&
+    process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1'
+  ) {
+    if (!readKeychainAt(userID)) hasLogin = false;
   }
   return { name, path: p, userID, emailAddress, hasLogin };
 }
@@ -338,16 +355,37 @@ export function ensureProfileForAccount(
   email: string,
   accountsDirPath: string,
 ): EnsureProfileResult {
+  // If we land on a profile that says "needs login" but the legacy
+  // account file still carries a `_keychain` snapshot, opportunistically
+  // re-write the missing Keychain entry under the profile's userID.
+  // This rescues the "Open account isolated" UX from a state where the
+  // profile JSON survived but the Keychain entry got wiped (rotated
+  // tokens, manual deletion, machine restore). Returns true when a
+  // recovery write happened so the caller can flip needsLogin to false.
+  const tryRecoverFromLegacy = (userID: string | null): boolean => {
+    if (!userID || process.platform !== 'darwin') return false;
+    try {
+      const legacy = readLegacyAccount(email, accountsDirPath);
+      if (!legacy._keychain) return false;
+      writeKeychainAt(userID, legacy._keychain);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   // Check all profiles for an email match (covers logged-in profiles).
   for (const name of listProfiles()) {
     try {
       const info = readProfile(name);
       if (info.emailAddress === email) {
+        let needsLogin = !info.hasLogin;
+        if (needsLogin && tryRecoverFromLegacy(info.userID)) needsLogin = false;
         return {
           profileName: name,
           profilePath: info.path,
           emailAddress: email,
-          needsLogin: !info.hasLogin,
+          needsLogin,
           created: false,
         };
       }
@@ -360,11 +398,13 @@ export function ensureProfileForAccount(
   const derivedName = (email.split('@')[0] ?? email).replace(/[^A-Za-z0-9_-]/g, '_');
   if (isValidProfileName(derivedName) && profileExists(derivedName)) {
     const info = readProfile(derivedName);
+    let needsLogin = !info.hasLogin;
+    if (needsLogin && tryRecoverFromLegacy(info.userID)) needsLogin = false;
     return {
       profileName: derivedName,
       profilePath: info.path,
       emailAddress: email,
-      needsLogin: !info.hasLogin,
+      needsLogin,
       created: false,
     };
   }
