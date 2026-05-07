@@ -1,4 +1,4 @@
-<div align="center">
+  <div align="center">
 
 <img src="docs/images/mark.svg" alt="claude-switch — multi-account manager for Claude Code" width="540"/>
 
@@ -374,7 +374,7 @@ Fallback injects `ANTHROPIC_API_KEY` into the env of the `claude` process it spa
 
 ## 📦 What's new
 
-- **v3.8.x** *(upcoming)* — 🎯 **Project-aware routing.** `.claude-switch` per-repo + `claude switch route` global rules pick the right account from `cwd`.
+- **v3.5.x** *(upcoming)* — 🎯 **Project-aware routing.** `.claude-switch` per-repo + `claude switch route` global rules pick the right account from `cwd`.
 - **v3.4.x** — 🔐 **API keys in macOS Keychain.** Plus unified ephemeral state with on-read migration.
 - **v3.3.x** — 🔁 **Live OAuth ↔ API transitions.** Per-account `authMode`, swap modes without re-launching.
 - **v3.2.x** — 🪶 **`auto-revert`** renamed from `fallback auto` (legacy alias preserved).
