@@ -304,8 +304,16 @@ export function importProfileFromAccount(
   let wroteToKeychain = false;
   let needsLogin = false;
 
+  // CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 forces the JSON-embedding path even on
+  // darwin. Used by the test suite (so `npm test` doesn't trigger Keychain
+  // auth prompts) and by users who explicitly opt out of the Keychain
+  // backend. The mock claude binary in test/fixtures honours the same
+  // contract — JSON-embedded tokens are read directly.
+  const useKeychain = process.platform === 'darwin'
+    && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1';
+
   if (_keychain) {
-    if (process.platform === 'darwin') {
+    if (useKeychain) {
       writeKeychainForConfigDir(dir, _keychain);
       wroteToKeychain = true;
       // Pre-populate oauthAccount so claude shows the right email even on
@@ -376,6 +384,7 @@ export function ensureProfileForAccount(
   // needsLogin to false.
   const tryRecoverFromLegacy = (profileDir: string): boolean => {
     if (process.platform !== 'darwin') return false;
+    if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1') return false;
     try {
       const legacy = readLegacyAccount(email, accountsDirPath);
       if (!legacy._keychain) return false;
