@@ -33,11 +33,23 @@ mkdir -p docs/images
 # resolvable via node_modules/.bin/claude (or however the user has
 # installed claude-switch). For the demo we invoke our own dist
 # directly to avoid needing a global install.
-# CS_DEMO_ROOT is the project root, exposed so demo.tape can resolve
+# CS_DEMO_ROOT is the project root, exposed so each .tape can resolve
 # the local dist regardless of where VHS spawns its shell.
-CS_DEMO_ROOT="$PWD" \
-CLAUDE_SWITCH_DEMO=1 \
-vhs scripts/demo.tape
+export CS_DEMO_ROOT="$PWD"
+export CLAUDE_SWITCH_DEMO=1
+
+# Pick which storyboard(s) to render. Default = all three.
+TAPES=("scripts/demo.tape" "scripts/demo-switch.tape" "scripts/demo-profiles.tape")
+if [ $# -gt 0 ]; then
+  TAPES=("$@")
+fi
+
+for tape in "${TAPES[@]}"; do
+  echo
+  echo "▶ rendering $tape"
+  vhs "$tape"
+done
 
 echo
-echo "✔ rendered → docs/images/dashboard.gif"
+echo "✔ output → docs/images/"
+ls -la docs/images/*.gif 2>/dev/null

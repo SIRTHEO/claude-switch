@@ -70,6 +70,20 @@ for (const acc of ACCOUNTS) {
 
 }
 
+// Pre-create one demo profile so `claude switch profile list` and
+// `profile status` have something to show. Uses the same synthetic
+// userID + email pattern as the accounts (no real credentials).
+const profilesDir = path.join(claudeDir, 'profiles');
+const personalProfile = path.join(profilesDir, 'personal');
+fs.mkdirSync(personalProfile, { recursive: true, mode: 0o700 });
+fs.writeFileSync(path.join(personalProfile, '.claude.json'), JSON.stringify({
+  userID: 'demoProfile000000000000000000000000000000000000000000000000fake',
+  oauthAccount: {
+    emailAddress: ACCOUNTS[1].email,
+    displayName: 'Sirtheo (personal)',
+  },
+}, null, 2));
+
 // Single shared usage cache, tagged to the active account — matches
 // production behaviour (claude-switch only caches the most-recently
 // fetched account's quota; other rows show a neutral glyph). The

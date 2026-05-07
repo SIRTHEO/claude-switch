@@ -21,6 +21,8 @@ npm install -g @sirtheo/claude-switch && claude switch setup
 
 [**🚀 Install**](#-install) · [**✨ Features**](#-features) · [**🪟 Profiles**](#-run-two-claude-accounts-in-parallel) · [**❓ FAQ**](#-faq) · [**⭐ Star it**](https://github.com/SIRTHEO/claude-switch)
 
+<img src="docs/images/dashboard.gif" alt="claude-switch dashboard — multi-account TUI with usage glyphs" width="900" />
+
 </div>
 
 > [!NOTE]
@@ -177,6 +179,8 @@ claude --as work "…"   # → run a one-shot as a different account
 
 Type `claude switch`. Highlight a row. Hit `Enter`. Done.
 
+<img src="docs/images/switch.gif" alt="claude switch <alias> flips the active account in one shot" width="800" />
+
 - ⚡ **Atomic swap** of OAuth token + active account in `~/.claude.json`
 - 🌐 **No browser** — tokens encrypted at rest in the macOS Keychain (or `0600`-permissioned on Linux/Windows)
 - 🔄 **No logout/login loop** — the next session simply starts as the new account
@@ -258,6 +262,8 @@ Plus: tab completion (`bash` · `zsh` · `fish` · `powershell`), one-shot `clau
 `claude switch work` flips the active account on the **whole machine** — what you want 90% of the time.
 
 The other 10% — Terminal A on `@work` and Terminal B on `@personal` **at the same time** — that's what **profiles** are for.
+
+<img src="docs/images/profiles.gif" alt="claude switch profile list + status — per-terminal isolated profiles" width="800" />
 
 | You want | Use |
 |---|---|
