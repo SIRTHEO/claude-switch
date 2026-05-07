@@ -172,4 +172,70 @@ describe('parseCommand', () => {
       /Usage: claude switch fallback/,
     );
   });
+
+  // ---- route sub-tree (Phase 10d) ----
+
+  it('parses "switch route" as list (default)', () => {
+    assert.deepEqual(parseCommand(['switch', 'route']), { action: 'route-list' });
+  });
+
+  it('parses "switch route list"', () => {
+    assert.deepEqual(parseCommand(['switch', 'route', 'list']), { action: 'route-list' });
+  });
+
+  it('parses "switch route ls" as list', () => {
+    assert.deepEqual(parseCommand(['switch', 'route', 'ls']), { action: 'route-list' });
+  });
+
+  it('parses "switch route add <pattern> <email>"', () => {
+    assert.deepEqual(
+      parseCommand(['switch', 'route', 'add', '~/work/**', 'a@b.com']),
+      { action: 'route-add', pattern: '~/work/**', target: 'a@b.com' },
+    );
+  });
+
+  it('parses "switch route add" with missing args (handler validates)', () => {
+    // Parser passes through `undefined` so the handler can produce a usage
+    // message. We do NOT throw at parse time so `route add --help` etc.
+    // can be added later without re-jiggering the parser.
+    assert.deepEqual(
+      parseCommand(['switch', 'route', 'add']),
+      { action: 'route-add', pattern: undefined, target: undefined },
+    );
+  });
+
+  it('parses "switch route remove <pattern>"', () => {
+    assert.deepEqual(
+      parseCommand(['switch', 'route', 'remove', '~/work/**']),
+      { action: 'route-remove', pattern: '~/work/**' },
+    );
+  });
+
+  it('parses "switch route rm" as remove', () => {
+    assert.deepEqual(
+      parseCommand(['switch', 'route', 'rm', '~/work/**']),
+      { action: 'route-remove', pattern: '~/work/**' },
+    );
+  });
+
+  it('parses "switch route test" with no cwd → uses process.cwd at handler time', () => {
+    assert.deepEqual(parseCommand(['switch', 'route', 'test']), {
+      action: 'route-test',
+      cwd: undefined,
+    });
+  });
+
+  it('parses "switch route test <cwd>"', () => {
+    assert.deepEqual(parseCommand(['switch', 'route', 'test', '/some/path']), {
+      action: 'route-test',
+      cwd: '/some/path',
+    });
+  });
+
+  it('rejects unknown route subcommand', () => {
+    assert.throws(
+      () => parseCommand(['switch', 'route', 'frobnicate']),
+      /Usage: claude switch route/,
+    );
+  });
 });

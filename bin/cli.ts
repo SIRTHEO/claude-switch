@@ -41,6 +41,12 @@ import {
   handleProfileImport,
   handleProfileRemove,
 } from '../src/commands/profile.js';
+import {
+  handleRouteAdd,
+  handleRouteList,
+  handleRouteRemove,
+  handleRouteTest,
+} from '../src/commands/route.js';
 import { handlePassthrough } from '../src/commands/passthrough.js';
 import type { CommandContext } from '../src/commands/context.js';
 
@@ -79,6 +85,10 @@ export type Command =
   | { action: 'profile-remove'; name: string }
   | { action: 'profile-status'; name: string | undefined }
   | { action: 'profile-import'; email: string; profileName?: string }
+  | { action: 'route-add'; pattern: string | undefined; target: string | undefined }
+  | { action: 'route-list' }
+  | { action: 'route-remove'; pattern: string | undefined }
+  | { action: 'route-test'; cwd: string | undefined }
   | { action: 'dashboard' };
 
 export function parseCommand(args: string[]): Command {
@@ -212,6 +222,20 @@ export function parseCommand(args: string[]): Command {
       }
       throw new ExitError('Usage: claude switch profile <list|create|use|login|import|remove|status> [name]');
     }
+    case 'route': {
+      const sub2 = args[2];
+      if (!sub2 || sub2 === 'list' || sub2 === 'ls') return { action: 'route-list' };
+      if (sub2 === 'add') {
+        return { action: 'route-add', pattern: args[3], target: args[4] };
+      }
+      if (sub2 === 'remove' || sub2 === 'rm') {
+        return { action: 'route-remove', pattern: args[3] };
+      }
+      if (sub2 === 'test') {
+        return { action: 'route-test', cwd: args[3] };
+      }
+      throw new ExitError('Usage: claude switch route <add|list|remove|test> [args]');
+    }
     default: return { action: 'switch-to', target: sub };
   }
 }
@@ -299,6 +323,15 @@ async function main(): Promise<void> {
   if (cmd.action === 'profile-use')    { await handleProfileUse(statuslineCtx, cmd.name, cmd.args); /* never returns */ }
   if (cmd.action === 'profile-import') { await handleProfileImport(statuslineCtx, cmd.email, cmd.profileName); return; }
   if (cmd.action === 'profile-remove') { await handleProfileRemove(cmd.name); return; }
+
+  // Route subcommands — manage the per-machine global routing rules
+  // (`<accountsDirPath>/.routing.json`). Read-only `list` + `test` are
+  // safe to run anywhere; `add` and `remove` mutate the file under the
+  // accounts-dir lock. Early-return so we skip the update prompt.
+  if (cmd.action === 'route-list')   { handleRouteList(statuslineCtx); return; }
+  if (cmd.action === 'route-add')    { handleRouteAdd(statuslineCtx, cmd.pattern, cmd.target); return; }
+  if (cmd.action === 'route-remove') { handleRouteRemove(statuslineCtx, cmd.pattern); return; }
+  if (cmd.action === 'route-test')   { handleRouteTest(statuslineCtx, cmd.cwd); return; }
 
   // Check for update (reads cache synchronously — never blocks). Passthrough
   // is included so long Claude sessions can show a hint, but updates are
