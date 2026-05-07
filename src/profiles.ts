@@ -23,7 +23,8 @@ import {
   writeKeychainForConfigDir,
   type KeychainData,
 } from './keychain.js';
-import { isSafeEmail, resolvedAccountFile } from './accounts.js';
+import { isSafeEmail, resolvedAccountFile, syncActiveSnapshotIfStale } from './accounts.js';
+import { claudeJsonPath } from './paths.js';
 
 // Conservative naming rules so a profile name is never ambiguous on
 // disk, in shell completions, or in error messages. Letters, digits,
@@ -265,6 +266,13 @@ export async function refreshLegacySnapshotIfStale(
   email: string,
   accountsDirPath: string,
 ): Promise<boolean> {
+  // If the legacy snapshot is for the currently-active account AND
+  // claude.json was mutated externally (e.g. /login from inside a
+  // running claude session), capture the live state first — otherwise
+  // we'd refresh stale tokens and re-store them, losing whatever
+  // claude already rotated.
+  syncActiveSnapshotIfStale(claudeJsonPath(), accountsDirPath);
+
   let legacy: LegacyAccountFile;
   try {
     legacy = readLegacyAccount(email, accountsDirPath);

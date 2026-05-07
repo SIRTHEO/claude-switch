@@ -185,6 +185,54 @@ export function removeSafely(
   });
 }
 
+/**
+ * Re-save the active account's snapshot when `~/.claude.json` has been
+ * mutated externally (typically by a `/login` issued from inside a
+ * running claude session). Without this, the snapshot keeps the
+ * tokens captured at the last `claude switch` and silently drifts —
+ * a later `profile import <email>` would replay stale tokens, claude
+ * would 401, user would re-login again, vicious loop.
+ *
+ * Idempotent: when the snapshot's mtime is at-or-after claude.json's,
+ * this is a no-op. The save only runs when claude.json is the newer
+ * source. Failures are silent — drift is a UX issue, not a hard error.
+ */
+export function syncActiveSnapshotIfStale(
+  claudeJsonPath: string,
+  accountsDirPath: string,
+): boolean {
+  let activeEmail: string;
+  try {
+    activeEmail = getCurrent(claudeJsonPath);
+  } catch { return false; }
+  if (!activeEmail) return false;
+
+  let snapshotFile: string;
+  try {
+    snapshotFile = resolvedAccountFile(activeEmail, accountsDirPath);
+  } catch { return false; }
+
+  const claudeJsonStat = fs.statSync(claudeJsonPath, { throwIfNoEntry: false });
+  if (!claudeJsonStat) return false;
+  const snapshotStat = fs.statSync(snapshotFile, { throwIfNoEntry: false });
+  // No snapshot yet → nothing to drift from. The next save() call from
+  // switch/save lifecycle will create it; we don't want to silently
+  // create a snapshot for an account that was never explicitly added.
+  if (!snapshotStat) return false;
+
+  // Allow a 1-second skew — file systems and test fixtures sometimes
+  // write the same mtime for two near-simultaneous writes, and we'd
+  // rather no-op than re-save unnecessarily on every invocation.
+  if (claudeJsonStat.mtimeMs <= snapshotStat.mtimeMs + 1000) return false;
+
+  try {
+    save(activeEmail, claudeJsonPath, accountsDirPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function load(email: string, claudeJsonPath: string, accountsDirPath: string): { keychainRestored: boolean } {
   const accountFile = resolvedAccountFile(email, accountsDirPath);
 
