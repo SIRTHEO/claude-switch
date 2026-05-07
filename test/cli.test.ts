@@ -166,9 +166,10 @@ describe('parseCommand', () => {
       { action: 'fallback-auto-engage', mode: 'on' });
   });
 
-  it('still parses "fallback auto" as a deprecated alias for auto-revert', () => {
-    // Same parse output as auto-revert; deprecation warning printed to stderr.
-    assert.deepEqual(parseCommand(['switch', 'fallback', 'auto', 'on']),
-      { action: 'fallback-auto', mode: 'on' });
+  it('rejects retired "fallback auto" alias (use auto-revert)', () => {
+    assert.throws(
+      () => parseCommand(['switch', 'fallback', 'auto', 'on']),
+      /Usage: claude switch fallback/,
+    );
   });
 });

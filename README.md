@@ -60,7 +60,7 @@ That's the whole API. Nothing else to memorize.
 | 🔋 | **Bypass Max & Pro rate limits** — auto-fallback to your API key, **auto-revert** when the window resets |
 | 🪟 | **Two accounts, two terminals, same machine** — isolated profiles, zero interference |
 | 🔐 | **Zero telemetry, zero analytics** — credentials in your OS keychain, atomic writes, no `postinstall` |
-| 🔄 | **Self-updating** — install once, stay current forever *(only network call: an npm registry version check; nothing is sent out)* |
+| 🔔 | **Update notifier** — checks npm once a day, prompts you on the next interactive `claude switch`. **Never installs silently.** No telemetry sent — only the registry version check. |
 
 ---
 
@@ -81,7 +81,7 @@ claude switch --version
 ```
 
 > [!TIP]
-> **Already installed?** Since v2.8 claude-switch updates itself silently in the background. Install once, forget about it.
+> **Already installed?** Since v2.8 claude-switch checks for new versions in the background once a day and offers a one-keypress install on your next interactive `claude switch` invocation. Or run `claude switch update` whenever you want — nothing is ever installed without your `y`.
 
 ---
 
@@ -303,7 +303,7 @@ Fallback injects `ANTHROPIC_API_KEY` into the env of the `claude` process it spa
 - **v3.3.x** — 🔁 **Live OAuth ↔ API transitions.** Per-account `authMode`, swap modes without re-launching.
 - **v3.2.x** — 🪶 **`auto-revert`** renamed from `fallback auto` (legacy alias preserved).
 - **v3.1.x** — 🎨 **Ink TUI rebuild.** Three-section dashboard, configurable smart defaults.
-- **v2.8.x** — 🔄 **Auto-update** in the background.
+- **v2.8.x** — 🔔 **Update notifier** — daily npm version check + opt-in 1-keypress install on `claude switch`.
 - **v2.7.x** — 🪟 **Profiles** — parallel sessions on one machine.
 
 📄 Full changelog: [`CHANGELOG.md`](CHANGELOG.md)

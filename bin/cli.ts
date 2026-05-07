@@ -122,20 +122,13 @@ export function parseCommand(args: string[]): Command {
       if (!sub2 || sub2 === 'status') return { action: 'fallback', mode: 'status' };
       if (sub2 === 'on') return { action: 'fallback', mode: 'on' };
       if (sub2 === 'off') return { action: 'fallback', mode: 'off' };
-      // Sub-tree map. `auto-revert` is the new canonical name; `auto` is
-      // a deprecated alias kept for one minor cycle (since v3.2.0). Both
-      // route to the same action.
+      // Sub-tree map. The legacy `auto` alias was retired after v3.4 —
+      // `auto-revert` is the only canonical name now.
       const SUBTREE_ACTIONS: Record<string, 'fallback-auto' | 'fallback-auto-engage'> = {
-        auto: 'fallback-auto',
         'auto-revert': 'fallback-auto',
         'auto-engage': 'fallback-auto-engage',
       };
       if (sub2 && sub2 in SUBTREE_ACTIONS) {
-        if (sub2 === 'auto') {
-          process.stderr.write(
-            'Note: `claude switch fallback auto …` is deprecated; use `auto-revert` instead.\n',
-          );
-        }
         const action = SUBTREE_ACTIONS[sub2]!;
         const sub3 = args[3];
         if (!sub3 || sub3 === 'status') return { action, mode: 'status' };
