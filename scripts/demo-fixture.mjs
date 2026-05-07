@@ -24,13 +24,13 @@ fs.mkdirSync(accountsDir, { recursive: true, mode: 0o700 });
 
 const ACCOUNTS = [
   {
-    email: 'alex.designer@acme.com',
+    email: 'sirtheo.work@example.com',
     isActive: true,
     usage5h: 67,
     usage7d: 38,
   },
   {
-    email: 'alex.personal@example.com',
+    email: 'sirtheo.personal@example.com',
     isActive: false,
     usage5h: 12,
     usage7d: 8,
@@ -46,8 +46,8 @@ fs.writeFileSync(path.join(tmp, '.claude.json'), JSON.stringify({
   userID: 'demoUser0000000000000000000000000000000000000000000000000000fake',
   oauthAccount: {
     emailAddress: ACCOUNTS.find((a) => a.isActive)?.email,
-    displayName: 'Alex Demo',
-    organizationName: 'Acme Studio',
+    displayName: 'Sirtheo',
+    organizationName: 'Sirtheo Workspace',
   },
 }, null, 2));
 

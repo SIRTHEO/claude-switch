@@ -56,8 +56,8 @@ brew install vhs   # one-time
 npm run gif
 ```
 
-`scripts/demo-fixture.mjs` builds the synthetic accounts (`alex.designer@acme.com`,
-`alex.personal@example.com`); `scripts/demo.tape` is the VHS storyboard;
+`scripts/demo-fixture.mjs` builds the synthetic accounts (`sirtheo.work@example.com`,
+`sirtheo.personal@example.com`); `scripts/demo.tape` is the VHS storyboard;
 `scripts/render-demo.sh` glues them together and tears the fixture down
 on exit. Edit any of the three to change the demo.
 
