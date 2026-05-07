@@ -2,9 +2,9 @@
 
 <img src="docs/images/mark.svg" alt="claude-switch — multi-account manager for Claude Code" width="540"/>
 
-### Keep typing `claude`. We handle the accounts.
+### Bypass Claude Max rate limits — auto-fallback to your API key, auto-revert when the window resets.
 
-**A drop-in upgrade for Claude Code: same command, multi-account aware, rate-limit proof. No new CLI to learn, no aliases, no shell hacks.**
+**Drop-in for Claude Code: keep typing `claude`, but never wait 5 hours again. Multi-account aware. No new CLI to learn, no aliases, no shell hacks.**
 
 **macOS · Linux · Windows**
 
@@ -31,6 +31,8 @@ npm install -g @sirtheo/claude-switch && claude switch setup
 - 🪄 **You keep typing `claude`.** We install our binary as `claude` and forward everything to the real Claude Code, except `claude switch` — that's our dashboard.
 - 🔋 **Hit your Max 5h cap?** claude-switch can fail over to your Anthropic API key automatically and **flip back** the moment your subscription window resets.
 - 🪟 **Two accounts at once?** Open one terminal as `@work`, another as `@personal`, simultaneously. No interference.
+
+> ⭐ **If this resonates** — [a star](https://github.com/SIRTHEO/claude-switch) helps other Max users find claude-switch before their next 5-hour wall.
 
 ---
 
