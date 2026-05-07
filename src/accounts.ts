@@ -62,10 +62,28 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
   }
 
   // Include Keychain credentials so they can be restored when switching back.
-  const keychainData = readKeychain();
+  // CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 forces the JSON-only path (used by the
+  // test suite + the marketing GIF renderer to keep `npm test` /
+  // `npm run gif` non-interactive). In that mode we preserve any
+  // pre-existing `_keychain` from the previous snapshot of THIS email so
+  // a save() round-trip doesn't accidentally erase it; the keychainRestored
+  // contract on subsequent loads stays correct.
+  const keychainDisabled = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1';
+  const keychainData = keychainDisabled ? null : readKeychain();
   const accountPayload: Record<string, unknown> = { ...(data.oauthAccount || {}) };
   if (keychainData) {
     accountPayload._keychain = keychainData;
+  } else if (keychainDisabled) {
+    // Preserve an existing snapshot's _keychain block when running under
+    // the disable flag — better than overwriting it with "absent".
+    try {
+      const existingFile = resolvedAccountFile(email, accountsDirPath);
+      const existingRaw = fs.readFileSync(existingFile, 'utf-8');
+      const existing = JSON.parse(existingRaw);
+      if (existing && typeof existing === 'object' && existing._keychain) {
+        accountPayload._keychain = existing._keychain;
+      }
+    } catch { /* file doesn't exist yet or is unreadable — leave _keychain absent */ }
   }
 
   // Snapshot the API-key acceptance state so it does NOT leak across
@@ -238,7 +256,11 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
 
   // Then update Keychain. If this fails, roll the JSON back to its previous
   // oauthAccount so the two sources of truth don't drift.
-  if (keychainRestored) {
+  // CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 forces the JSON-only path — used by
+  // the test suite and the marketing GIF renderer to keep `npm test` /
+  // `npm run gif` non-interactive (a Keychain write from `node` would
+  // otherwise prompt for authorization and either block forever or fail).
+  if (keychainRestored && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1') {
     try {
       writeKeychain(_keychain as KeychainData);
     } catch (e) {

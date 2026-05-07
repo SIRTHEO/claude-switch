@@ -38,6 +38,21 @@ mkdir -p docs/images
 export CS_DEMO_ROOT="$PWD"
 export CLAUDE_SWITCH_DEMO=1
 
+# Keychain writes during the recording would trigger a macOS auth
+# dialog (the demo HOME has placeholder tokens, so any switch/import
+# tries to claim a Keychain entry from the `node` process) and the
+# resulting "authorization was canceled" error would surface in the
+# GIF itself. Force the JSON-only path during rendering — same flag
+# the test suite uses for the same reason.
+export CLAUDE_SWITCH_DISABLE_KEYCHAIN=1
+
+# Override the OS username that profile status / Keychain helpers
+# would otherwise read off the host system (`claudeKeychainAccount()`
+# falls back to `os.userInfo().username`). Without this, the GIF
+# would print the maintainer's real local username — a small but
+# real privacy leak.
+export USER=sirtheo
+
 # Pick which storyboard(s) to render. Default = all three.
 TAPES=("scripts/demo.tape" "scripts/demo-switch.tape" "scripts/demo-profiles.tape")
 if [ $# -gt 0 ]; then

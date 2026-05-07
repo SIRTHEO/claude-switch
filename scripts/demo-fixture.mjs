@@ -17,7 +17,16 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-demo-'));
+// Deterministic location so the path we render in `profile status`
+// stays clean (`/tmp/sirtheo-home/.claude/...`) rather than leaking a
+// random tmpdir suffix into the marketing GIF. Use literal `/tmp` so
+// the path also stays short (macOS's os.tmpdir() resolves to
+// `/var/folders/…` which renders as a multi-line wrap in 1000px terms).
+// `os` import retained for parity with future tweaks.
+void os;
+const tmp = '/tmp/sirtheo-home';
+fs.rmSync(tmp, { recursive: true, force: true });
+fs.mkdirSync(tmp, { recursive: true });
 const claudeDir = path.join(tmp, '.claude');
 const accountsDir = path.join(claudeDir, 'accounts');
 fs.mkdirSync(accountsDir, { recursive: true, mode: 0o700 });
@@ -48,26 +57,42 @@ fs.writeFileSync(path.join(tmp, '.claude.json'), JSON.stringify({
     emailAddress: ACCOUNTS.find((a) => a.isActive)?.email,
     displayName: 'Sirtheo',
     organizationName: 'Sirtheo Workspace',
+    // Placeholder token + 2h expiry so the dashboard's tokenHealth
+    // line reads "valid" in the GIF rather than "missing". The token
+    // never reaches the real Anthropic API — CLAUDE_SWITCH_DISABLE_KEYCHAIN
+    // pins us to JSON-only, and we never spawn real claude during render.
+    accessToken: 'sk-ant-demo-access-placeholder',
+    refreshToken: 'demo-refresh',
+    expiresAt: Date.now() + 2 * 3600_000,
   },
 }, null, 2));
 
 for (const acc of ACCOUNTS) {
-  // Per-account snapshot — same shape as `claude switch add` produces,
-  // but with placeholder tokens. The dashboard never displays these.
+  // Per-account snapshot — placeholder _keychain block so accounts.load
+  // sets keychainRestored=true (skips the "no saved credentials"
+  // warning) AND placeholder oauthAccount fields so the dashboard's
+  // tokenHealth line reads "valid" after switching here in the GIF
+  // (load() copies oauthAccount into ~/.claude.json). Both placeholders
+  // never reach the real Anthropic API: render-demo.sh pins the run
+  // to JSON-only via CLAUDE_SWITCH_DISABLE_KEYCHAIN=1, no real claude
+  // is spawned.
+  const tokenExpiresAt = Date.now() + 2 * 3600_000;
   fs.writeFileSync(path.join(accountsDir, `${acc.email}.json`), JSON.stringify({
     emailAddress: acc.email,
     userID: `demo${acc.email.replace(/[^a-z0-9]/gi, '0').padEnd(58, '0')}`,
+    accessToken: 'sk-ant-demo-access-placeholder',
+    refreshToken: 'demo-refresh',
+    expiresAt: tokenExpiresAt,
     _keychain: {
       claudeAiOauth: {
-        accessToken: 'sk-ant-demo-placeholder',
-        refreshToken: 'demo-refresh-placeholder',
-        expiresAt: NOW + 7200_000,
+        accessToken: 'sk-ant-demo-access-placeholder',
+        refreshToken: 'demo-refresh',
+        expiresAt: tokenExpiresAt,
         scopes: ['user:inference', 'user:profile'],
         subscriptionType: acc.isActive ? 'max20x' : 'pro',
       },
     },
   }, null, 2));
-
 }
 
 // Pre-create one demo profile so `claude switch profile list` and
