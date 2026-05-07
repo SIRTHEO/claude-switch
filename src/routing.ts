@@ -301,7 +301,7 @@ export function findClaudeSwitchFile(
     const candidate = path.join(dir, CLAUDE_SWITCH_FILENAME);
     try {
       const stat = fs.lstatSync(candidate, { throwIfNoEntry: false });
-      if (stat && stat.isFile()) return candidate;
+      if (stat?.isFile()) return candidate;
     } catch { /* unreadable — continue */ }
 
     // Stop walking at the first `.git` boundary (the repo root).
