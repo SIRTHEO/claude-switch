@@ -460,13 +460,15 @@ function resolveFromClaudeSwitch(
   const lastUsedCandidates = Object.values(input.lastUsedByDomain).filter((e) =>
     matchingSaved.includes(e),
   );
+  const usedLastUsed = lastUsedCandidates.length > 0;
   const picked = lastUsedCandidates[0] ?? sorted[0]!;
+  const reason = usedLastUsed ? 'using last-used' : 'using alphabetical first';
   return {
     email: picked,
     source: 'claude-switch-file',
     banner:
       `🎯 routed to ${picked} via .claude-switch ` +
-      `(${matchingSaved.length} accounts match ${constraintLabel}; using last-used). ` +
+      `(${matchingSaved.length} accounts match ${constraintLabel}; ${reason}). ` +
       `Override: claude --as <other>`,
   };
 }
