@@ -273,50 +273,6 @@ The other 10% — Terminal A on `@work` and Terminal B on `@personal` **at the s
 
 ---
 
-## 🧭 The dashboard at a glance
-
-<details>
-<summary><b>Click to see the rendered dashboard</b></summary>
-
-```text
-⚡ claude-switch  multi-account dashboard  ·  tab cycles  ·  ? help  ·  q quit
-
-╭─ Accounts (2) ───────────────────────────────────────────────────────────╮
-│   personal@example.com  @personal                                        │
-│       OAuth only                                                         │
-│       no usage cached                                                    │
-│                                                                          │
-│ ▸ work@example.com  @work  ◀ active                                      │
-│       OAuth · fallback OFF · token ✓ valid · in 1 hour                   │
-│       ◐ 5h ███████▒░░░ 67%    ● 7d ████▒░░░░░░ 38%                       │
-╰──────────────────────────────────────────────────────────────────────────╯
-
-╭─ Account  for work@example.com ──────────────────────────────────────────╮
-│   [↵] Launch claude (already active)    open a session on this account  │
-│   [k] Set API key                       paste an Anthropic key          │
-│   [m] Manage (alias · key · remove)     detailed account operations     │
-│   [f] Toggle fallback                   flip OAuth ↔ API key globally   │
-│   [c] Re-authenticate                   browser re-login (current)      │
-│   [d] Remove account                    delete saved tokens, key, alias │
-╰──────────────────────────────────────────────────────────────────────────╯
-
-╭─ General ────────────────────────────────────────────────────────────────╮
-│   [a] Add account       log in with a new email                          │
-│   [g] Settings          global + per-account preferences                 │
-│   [p] Profiles          isolated per-terminal sessions                   │
-│   [F] Auto-fallback     thresholds for auto-engage / auto-revert         │
-│   [u] Refresh usage     force-fetch from Anthropic                       │
-│   [s] Setup wizard      fix claude binary / shell PATH                   │
-│   [q] Quit              or press esc                                     │
-╰──────────────────────────────────────────────────────────────────────────╯
-```
-
-</details>
-
-Three sections: **Accounts** (roster + live usage), **Account** (actions for the highlighted row), **General** (cross-cutting). Orange border = focused section.
-
----
-
 ## ⚖️ How it compares
 
 |  | **claude-switch** | `claude logout` + browser | manual `~/.claude.json` swap | shell aliases + `CLAUDE_CONFIG_DIR` |
