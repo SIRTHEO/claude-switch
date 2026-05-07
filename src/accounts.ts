@@ -92,8 +92,11 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
   // user answers "Use this API key? [Y/n]". Without this snapshot, the
   // approval array stays in the file across a `claude switch`, so the
   // newly-active account inherits the previous account's approved key
-  // and silently uses it instead of OAuth — observed in the wild on
-  // 2026-05-06: switched sirtheo → claude still billed tech's key.
+  // and silently uses it instead of OAuth — observed in the wild
+  // when an account that had previously approved an API key was
+  // switched away from, and the next account ended up with the
+  // previous one's `customApiKeyResponses.approved` entry still live
+  // in `~/.claude.json`.
   if (data.customApiKeyResponses) {
     accountPayload._customApiKeyResponses = data.customApiKeyResponses;
   }

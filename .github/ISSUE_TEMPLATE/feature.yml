@@ -1,0 +1,34 @@
+name: ✨ Feature request
+description: Suggest something new or different.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are welcome. To increase the chance of it landing,
+        please answer the three prompts below — they help maintainers
+        understand the actual user pain rather than the proposed solution.
+
+  - type: textarea
+    id: pain
+    attributes:
+      label: What problem does this solve?
+      description: The frustration in your day-to-day. The "solution" comes later.
+      placeholder: |
+        e.g. I have 3 work accounts and switch between them ~10 times a day. Every time I `cd` into the wrong repo I burn the wrong account's quota for 5 minutes before I notice the banner.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea for a fix (optional)
+      description: How you imagine claude-switch could solve it. Concrete commands, UI, config, whatever.
+      placeholder: |
+        e.g. A `.claude-switch` file the project commits, with a glob → email mapping that auto-resolves on `claude` invocation.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds you tried and why they fall short. Helps us avoid duplicating existing behaviour.
