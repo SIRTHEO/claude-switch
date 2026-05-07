@@ -42,6 +42,13 @@ export interface State {
   /** Email pending restore from an interrupted `--as` session, or
    *  undefined when no restore is queued. */
   pendingRestore?: string;
+  /** Snapshot of "last account routed to per emailDomain". Used by
+   *  project-aware routing (Phase 10) to pick deterministically when a
+   *  `.claude-switch` constraint matches multiple saved accounts. Keyed
+   *  by the lower-cased domain (`acme.com`), value is the chosen email.
+   *  Optional — older state files predate the field; resolver tolerates
+   *  an empty object. */
+  lastUsedByDomain?: Record<string, string>;
 }
 
 const EMPTY_STATE: State = {
@@ -70,10 +77,12 @@ export function readState(accountsDirPath: string): State {
           }
         : EMPTY_STATE.fallback;
       const pending = typeof raw.pendingRestore === 'string' ? raw.pendingRestore : undefined;
+      const lastUsed = sanitizeLastUsed(raw.lastUsedByDomain);
       return {
         version: 1,
         fallback,
         ...(pending ? { pendingRestore: pending } : {}),
+        ...(lastUsed ? { lastUsedByDomain: lastUsed } : {}),
       };
     }
   } catch {
@@ -82,6 +91,17 @@ export function readState(accountsDirPath: string): State {
 
   // Slow path: migrate from legacy markers if any exist.
   return migrateFromLegacy(accountsDirPath);
+}
+
+function sanitizeLastUsed(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k !== 'string' || k.length === 0) continue;
+    if (typeof v !== 'string' || v.length === 0) continue;
+    out[k.toLowerCase()] = v;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function migrateFromLegacy(accountsDirPath: string): State {

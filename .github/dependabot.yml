@@ -1,0 +1,30 @@
+# .github/dependabot.yml
+# Weekly npm + monthly GitHub Actions dependency updates.
+# Limits open PR count so a quiet stretch doesn't bury us in 30 PRs at once.
+
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    # Group patch + minor bumps so we don't get a separate PR per package.
+    # Major bumps stay separate — they're more likely to need code changes.
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"

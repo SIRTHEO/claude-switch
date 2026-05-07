@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getCurrent, save, load, list, remove, removeSafely } from '../src/accounts.js';
+import { getCurrent, save, load, list, remove, removeSafely, syncActiveSnapshotIfStale } from '../src/accounts.js';
 
 describe('getCurrent', () => {
   let tmpDir: string;
@@ -430,5 +430,62 @@ describe('removeSafely', () => {
   it('still throws ENOENT when the account file is missing', () => {
     fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'c@d.com' } }));
     assert.throws(() => removeSafely('nope@x.com', claudeJson, accDir), /No saved account/i);
+  });
+});
+
+describe('syncActiveSnapshotIfStale', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+  const email = 'a@b.com';
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-sync-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    // Seed: active account is `email`, snapshot exists for it.
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: email, accessToken: 'old-tok' },
+    }));
+    save(email, claudeJson, accDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('no-ops when claude.json is older than the snapshot', () => {
+    // After save() the snapshot was written *after* claude.json, so
+    // claudeJson.mtime ≤ snapshot.mtime → nothing to do.
+    assert.equal(syncActiveSnapshotIfStale(claudeJson, accDir), false);
+  });
+
+  it('re-saves the snapshot when claude.json was mutated externally', () => {
+    // Simulate a /login inside running claude: it rotates tokens in
+    // ~/.claude.json but doesn't touch our snapshot.
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: email, accessToken: 'fresh-tok' },
+    }));
+    // Bump mtime explicitly past the 1s skew tolerance.
+    const now = Date.now();
+    fs.utimesSync(claudeJson, now / 1000, now / 1000);
+    fs.utimesSync(path.join(accDir, `${email}.json`), (now - 5000) / 1000, (now - 5000) / 1000);
+
+    assert.equal(syncActiveSnapshotIfStale(claudeJson, accDir), true);
+
+    const snapshot = JSON.parse(fs.readFileSync(path.join(accDir, `${email}.json`), 'utf-8'));
+    assert.equal(snapshot.accessToken, 'fresh-tok',
+      'snapshot must reflect the externally-mutated claude.json');
+  });
+
+  it('returns false when no active account is set', () => {
+    fs.writeFileSync(claudeJson, '{}');
+    assert.equal(syncActiveSnapshotIfStale(claudeJson, accDir), false);
+  });
+
+  it('returns false when the snapshot file does not exist yet', () => {
+    fs.rmSync(path.join(accDir, `${email}.json`));
+    assert.equal(syncActiveSnapshotIfStale(claudeJson, accDir), false,
+      'never silently create a snapshot for an account that was never explicitly added');
   });
 });

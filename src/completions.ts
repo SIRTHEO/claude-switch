@@ -1,6 +1,11 @@
 // src/completions.ts
 
-const SUBCOMMANDS = ['add', 'list', 'ls', 'remove', 'rm', 'status', 'alias', 'apikey', 'fallback', 'update', 'setup', 'help'];
+// Top-level `claude switch <X>` completions. Sub-trees (e.g. `profile`,
+// `route`, `apikey`, `statusline`) only complete at this top level — drilling
+// into their own sub-actions (`route add`, `apikey set`, …) is left to the
+// shell's default fallback. Adding deeper completions would require a
+// per-shell state machine; not yet justified by usage.
+const SUBCOMMANDS = ['add', 'list', 'ls', 'remove', 'rm', 'status', 'alias', 'apikey', 'fallback', 'route', 'update', 'setup', 'help'];
 
 export function generateBash(): string {
   return `_claude_switch() {

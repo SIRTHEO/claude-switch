@@ -150,6 +150,56 @@ describe('retry/error detection helpers', () => {
     assert.equal(looksLikeErrorBody('data: {"type":"error","error":{"message":"out of extra usage"}}\n\n'), true);
     assert.equal(looksLikeErrorBody('data: {"type":"message_start"}\n\n'), false);
   });
+
+  it('detects the actual Anthropic wire-level error phrasings (regression for v3.5 fallback miss)', () => {
+    // These are the exact strings the production claude binary surfaces
+    // in API responses — they were missing from the previous matcher,
+    // which is why a real "out of extra usage" session went past the
+    // proxy's retry path and hit the user as a hard error.
+    assert.equal(
+      looksLikeErrorBody('data: {"type":"message_delta","delta":{"stop_reason":null}}\n\nevent: error\ndata: {"type":"error","error":{"type":"rate_limit_error","message":"extra usage credits exhausted"}}\n\n'),
+      true,
+      'extra usage credits exhausted',
+    );
+    assert.equal(
+      looksLikeErrorBody('data: {"type":"error","error":{"message":"extra usage disabled by your organization"}}'),
+      true,
+      'org-disabled extra usage',
+    );
+    assert.equal(
+      looksLikeErrorBody('data: {"type":"error","error":{"message":"extra usage disabled for your account"}}'),
+      true,
+      'account-disabled extra usage',
+    );
+    assert.equal(
+      looksLikeErrorBody('data: {"type":"error","error":{"message":"extra usage not available"}}'),
+      true,
+      'extra usage not available',
+    );
+  });
+
+  it('detects inner Anthropic error type tags', () => {
+    // The top-level "type":"error" path already catches the outer
+    // envelope. These tests pin the new fallback for cases where the
+    // outer is something else (a non-SSE 200 with the error tag inside
+    // a malformed wrapper, partial chunks, etc.) but the inner type
+    // tag is unambiguous.
+    assert.equal(
+      looksLikeErrorBody('"error":{"type":"rate_limit_error"'),
+      true,
+      'rate_limit_error',
+    );
+    assert.equal(
+      looksLikeErrorBody('"error":{"type":"overloaded_error"'),
+      true,
+      'overloaded_error',
+    );
+    assert.equal(
+      looksLikeErrorBody('{"type":"message"}'),
+      false,
+      'normal message envelope must NOT match',
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
