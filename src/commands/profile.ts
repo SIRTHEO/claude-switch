@@ -70,14 +70,17 @@ export async function handleProfileStatus(name: string | undefined): Promise<voi
     })();
 
     let keychainLine = '(not applicable on this platform)';
-    if (process.platform === 'darwin' && info.userID) {
+    if (process.platform === 'darwin') {
+      const { claudeKeychainServiceFor, claudeKeychainAccount } = await import('../keychain.js');
       const { spawnSync } = await import('node:child_process');
+      const service = claudeKeychainServiceFor(info.path);
+      const account = claudeKeychainAccount();
       const r = spawnSync('security', [
-        'find-generic-password', '-a', info.userID, '-s', 'Claude Code-credentials',
+        'find-generic-password', '-s', service, '-a', account,
       ], { stdio: 'pipe' });
-      keychainLine = r.status === 0 ? `present (account=${info.userID.slice(0, 16)}…)` : 'absent';
-    } else if (!info.userID) {
-      keychainLine = '(no userID yet — run claude once in this profile)';
+      keychainLine = r.status === 0
+        ? `present (service=${service}, account=${account})`
+        : `absent (would be at service=${service}, account=${account})`;
     }
 
     let lastUsed = '(never)';
@@ -185,7 +188,15 @@ export async function handleProfileImport(
   email: string,
   profileName: string | undefined,
 ): Promise<void> {
-  const { importProfileFromAccount } = await import('../profiles.js');
+  const { importProfileFromAccount, refreshLegacySnapshotIfStale } = await import('../profiles.js');
+
+  // Refresh the snapshot's access token if it's stale before we
+  // import — otherwise the imported profile lands with an expired
+  // token and claude 401s on first run.
+  try {
+    await refreshLegacySnapshotIfStale(email, ctx.accountsDirPath);
+  } catch { /* network failure → fall through, importProfileFromAccount may still be useful */ }
+
   let result: ReturnType<typeof importProfileFromAccount>;
   try {
     result = importProfileFromAccount(email, ctx.accountsDirPath, profileName);
@@ -220,10 +231,18 @@ export async function handleProfileRemove(name: string): Promise<void> {
     throw new ExitError((e as Error).message);
   }
   console.log(`Removed profile dir: ${result.dir}`);
-  if (result.userID && process.platform === 'darwin') {
-    console.log('');
-    console.log('Note: macOS Keychain still has an entry created by claude for this profile.');
-    console.log('To remove it manually:');
-    console.log(`  security delete-generic-password -a "${result.userID}" -s "Claude Code-credentials"`);
+  if (process.platform === 'darwin') {
+    const { claudeKeychainServiceFor, claudeKeychainAccount, deleteKeychainForConfigDir } =
+      await import('../keychain.js');
+    const service = claudeKeychainServiceFor(result.dir);
+    const account = claudeKeychainAccount();
+    const removed = deleteKeychainForConfigDir(result.dir);
+    if (removed) {
+      console.log(`Removed Keychain entry: service="${service}" account="${account}"`);
+    } else {
+      console.log('');
+      console.log('Note: no Keychain entry found for this profile (or it was already removed).');
+      console.log(`Expected location: service="${service}", account="${account}".`);
+    }
   }
 }

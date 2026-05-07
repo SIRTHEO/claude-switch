@@ -1,0 +1,58 @@
+# .github/workflows/codeql.yml
+# Static analysis pass via GitHub's CodeQL. Picks up classes of bugs
+# that biome lint can't reach (taint flows, prototype pollution,
+# command injection, hardcoded secrets, etc.).
+#
+# Runs on every push to main, on PRs targeting main, and weekly so
+# new advisory rules from GitHub's security team eventually catch
+# issues even on unchanged code.
+#
+# Free for public repos. Required permission set is intentionally
+# minimal — read-only on contents, write-only on the security-events
+# stream so findings show up in the Security tab.
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays at 04:17 UTC — off the top of the hour to avoid the
+    # "everyone scheduled for :00" GitHub-side queue.
+    - cron: '17 4 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      security-events: write
+      contents: read
+      packages: read
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # `security-and-quality` adds quality rules on top of the
+          # default security suite — slightly more findings, slightly
+          # more false positives, but useful at this scale.
+          queries: security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

@@ -62,10 +62,28 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
   }
 
   // Include Keychain credentials so they can be restored when switching back.
-  const keychainData = readKeychain();
+  // CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 forces the JSON-only path (used by the
+  // test suite + the marketing GIF renderer to keep `npm test` /
+  // `npm run gif` non-interactive). In that mode we preserve any
+  // pre-existing `_keychain` from the previous snapshot of THIS email so
+  // a save() round-trip doesn't accidentally erase it; the keychainRestored
+  // contract on subsequent loads stays correct.
+  const keychainDisabled = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1';
+  const keychainData = keychainDisabled ? null : readKeychain();
   const accountPayload: Record<string, unknown> = { ...(data.oauthAccount || {}) };
   if (keychainData) {
     accountPayload._keychain = keychainData;
+  } else if (keychainDisabled) {
+    // Preserve an existing snapshot's _keychain block when running under
+    // the disable flag — better than overwriting it with "absent".
+    try {
+      const existingFile = resolvedAccountFile(email, accountsDirPath);
+      const existingRaw = fs.readFileSync(existingFile, 'utf-8');
+      const existing = JSON.parse(existingRaw);
+      if (existing && typeof existing === 'object' && existing._keychain) {
+        accountPayload._keychain = existing._keychain;
+      }
+    } catch { /* file doesn't exist yet or is unreadable — leave _keychain absent */ }
   }
 
   // Snapshot the API-key acceptance state so it does NOT leak across
@@ -167,6 +185,54 @@ export function removeSafely(
   });
 }
 
+/**
+ * Re-save the active account's snapshot when `~/.claude.json` has been
+ * mutated externally (typically by a `/login` issued from inside a
+ * running claude session). Without this, the snapshot keeps the
+ * tokens captured at the last `claude switch` and silently drifts —
+ * a later `profile import <email>` would replay stale tokens, claude
+ * would 401, user would re-login again, vicious loop.
+ *
+ * Idempotent: when the snapshot's mtime is at-or-after claude.json's,
+ * this is a no-op. The save only runs when claude.json is the newer
+ * source. Failures are silent — drift is a UX issue, not a hard error.
+ */
+export function syncActiveSnapshotIfStale(
+  claudeJsonPath: string,
+  accountsDirPath: string,
+): boolean {
+  let activeEmail: string;
+  try {
+    activeEmail = getCurrent(claudeJsonPath);
+  } catch { return false; }
+  if (!activeEmail) return false;
+
+  let snapshotFile: string;
+  try {
+    snapshotFile = resolvedAccountFile(activeEmail, accountsDirPath);
+  } catch { return false; }
+
+  const claudeJsonStat = fs.statSync(claudeJsonPath, { throwIfNoEntry: false });
+  if (!claudeJsonStat) return false;
+  const snapshotStat = fs.statSync(snapshotFile, { throwIfNoEntry: false });
+  // No snapshot yet → nothing to drift from. The next save() call from
+  // switch/save lifecycle will create it; we don't want to silently
+  // create a snapshot for an account that was never explicitly added.
+  if (!snapshotStat) return false;
+
+  // Allow a 1-second skew — file systems and test fixtures sometimes
+  // write the same mtime for two near-simultaneous writes, and we'd
+  // rather no-op than re-save unnecessarily on every invocation.
+  if (claudeJsonStat.mtimeMs <= snapshotStat.mtimeMs + 1000) return false;
+
+  try {
+    save(activeEmail, claudeJsonPath, accountsDirPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function load(email: string, claudeJsonPath: string, accountsDirPath: string): { keychainRestored: boolean } {
   const accountFile = resolvedAccountFile(email, accountsDirPath);
 
@@ -238,7 +304,11 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
 
   // Then update Keychain. If this fails, roll the JSON back to its previous
   // oauthAccount so the two sources of truth don't drift.
-  if (keychainRestored) {
+  // CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 forces the JSON-only path — used by
+  // the test suite and the marketing GIF renderer to keep `npm test` /
+  // `npm run gif` non-interactive (a Keychain write from `node` would
+  // otherwise prompt for authorization and either block forever or fail).
+  if (keychainRestored && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1') {
     try {
       writeKeychain(_keychain as KeychainData);
     } catch (e) {

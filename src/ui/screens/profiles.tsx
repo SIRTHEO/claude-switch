@@ -21,6 +21,7 @@ import {
   removeProfile,
   importProfileFromAccount,
   ensureProfileForAccount,
+  refreshLegacySnapshotIfStale,
   profilePath,
   isValidProfileName,
   profileExists,
@@ -37,7 +38,12 @@ import { ORANGE } from '../theme.js';
 export type LaunchRequest =
   | { kind: 'isolated'; email: string; profileName: string; profileDir: string }
   | { kind: 'use-profile'; profileName: string; profileDir: string; emailAddress: string }
-  | { kind: 'login-profile'; profileName: string; profileDir: string };
+  | { kind: 'login-profile'; profileName: string; profileDir: string }
+  // login-then-isolated: profile exists but creds are unrecoverable
+  // (refresh_token also expired). Wrapper drives a browser login then
+  // continues into the isolated launch — single user-visible action,
+  // not a "go run this command first" note.
+  | { kind: 'login-then-isolated'; email: string; profileName: string; profileDir: string };
 
 export type ScreenExit =
   | { kind: 'back' }
@@ -239,26 +245,44 @@ export function ProfilesScreen({ accountsDirPath, initialNotice, onExit }: Scree
   const onAccountPick = (email: string): void => {
     if (step.kind !== 'pick-account') return;
     if (step.purpose === 'isolated') {
-      try {
-        const ensured = ensureProfileForAccount(email, accountsDirPath);
-        if (ensured.needsLogin) {
-          setStep({
-            kind: 'note',
-            title: 'Authentication required',
-            body: `Profile "${ensured.profileName}" needs a one-time browser login.\nRun: claude switch profile login ${ensured.profileName}`,
+      // Fire-and-await the legacy-snapshot refresh BEFORE the sync
+      // ensureProfileForAccount call. If the snapshot's access token is
+      // stale, this rewrites the legacy file with fresh tokens so the
+      // ensured profile lands with credentials claude can actually use.
+      // Network failure is silent — we still call ensureProfileForAccount
+      // and surface needsLogin as today.
+      void (async () => {
+        try {
+          await refreshLegacySnapshotIfStale(email, accountsDirPath);
+        } catch { /* swallow — fall through to the sync path */ }
+
+        try {
+          const ensured = ensureProfileForAccount(email, accountsDirPath);
+          if (ensured.needsLogin) {
+            // Refresh-token is also expired (or never existed). Instead of
+            // dropping the user back to the menu with "go run this command
+            // separately", drive the browser login ourselves and resume
+            // the isolated launch on the other side. Single click on the
+            // user's part — they don't have to remember the second step.
+            finishLaunch({
+              kind: 'login-then-isolated',
+              email,
+              profileName: ensured.profileName,
+              profileDir: ensured.profilePath,
+            });
+            return;
+          }
+          finishLaunch({
+            kind: 'isolated',
+            email,
+            profileName: ensured.profileName,
+            profileDir: ensured.profilePath,
           });
-          return;
+        } catch (e) {
+          setError(e instanceof Error ? e.message : String(e));
+          setStep({ kind: 'home' });
         }
-        finishLaunch({
-          kind: 'isolated',
-          email,
-          profileName: ensured.profileName,
-          profileDir: ensured.profilePath,
-        });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-        setStep({ kind: 'home' });
-      }
+      })();
       return;
     }
     // import
@@ -559,6 +583,47 @@ export async function runProfilesScreen(
         nextNotice = e instanceof Error ? e.message : String(e);
       }
       // Loop back to the screen with the post-login notice.
+    }
+    if (req.kind === 'login-then-isolated') {
+      // Two-step flow we drive in one go: browser login → isolated
+      // claude session. The user picked an account whose stored tokens
+      // were unrecoverable (refresh_token also expired), so we
+      // authenticate first and continue straight into the session
+      // without bouncing back through the menu.
+      restoreBuffer();
+      process.stderr.write(
+        `🔐 Refreshing credentials for "${req.email}" — opening browser...\n\n`,
+      );
+      const login = buildSpawnArgs(
+        claudeBin, ['auth', 'login'], process.platform, { CLAUDE_CONFIG_DIR: req.profileDir },
+      );
+      spawnSync(login.command, login.args, login.options);
+
+      // Verify login actually completed before launching the session.
+      // If the user closed the browser or auth failed, claude itself
+      // would just re-prompt — better to surface that as a notice and
+      // bounce back to the menu.
+      let loggedIn = false;
+      try {
+        const info = readProfile(req.profileName);
+        loggedIn = !!info.emailAddress && info.hasLogin;
+      } catch { loggedIn = false; }
+
+      if (!loggedIn) {
+        nextNotice = `Login did not complete for "${req.profileName}". Try again from the menu.`;
+        continue;
+      }
+
+      process.stderr.write(`\n🔑 ${req.email} (isolated) — profile: ${req.profileName}\n\n`);
+      const launch = buildSpawnArgs(
+        claudeBin, [], process.platform, { CLAUDE_CONFIG_DIR: req.profileDir },
+      );
+      const result = spawnSync(launch.command, launch.args, launch.options);
+      if (result.error) {
+        process.stderr.write(`Error: could not run claude: ${result.error.message}\n`);
+        process.exit(1);
+      }
+      process.exit(result.status ?? 0);
     }
   }
 }

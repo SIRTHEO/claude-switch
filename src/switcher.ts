@@ -2,7 +2,7 @@
 import readline from 'node:readline';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import fs from 'node:fs';
-import { getCurrent, save, load, list } from './accounts.js';
+import { getCurrent, save, load, list, syncActiveSnapshotIfStale } from './accounts.js';
 import { setAlias } from './aliases.js';
 import { buildSpawnArgs } from './proxy.js';
 import { ExitError } from './errors.js';
@@ -32,6 +32,12 @@ function defaultAsk(question: string): Promise<string> {
 
 export function switchTo(targetEmail: string, claudeJsonPath: string, accountsDirPath: string): string {
   return withLock(accountsDirPath, () => {
+    // Re-save the active snapshot if claude itself rotated tokens
+    // since the last switch (typically: user did `/login` inside a
+    // claude session). Without this the next switch would capture
+    // STALE state into the file we already saved.
+    syncActiveSnapshotIfStale(claudeJsonPath, accountsDirPath);
+
     const currentEmail = getCurrent(claudeJsonPath);
 
     if (targetEmail === currentEmail) {
@@ -76,6 +82,10 @@ export function switchToAndSyncFallback(
   options: { autoFlipFallback: boolean },
 ): SwitchOutcome {
   return withLock(accountsDirPath, () => {
+    // Same drift-prevention as switchTo: capture in-flight token
+    // rotations from a `/login` issued inside a running claude session.
+    syncActiveSnapshotIfStale(claudeJsonPath, accountsDirPath);
+
     const currentEmail = getCurrent(claudeJsonPath);
 
     if (targetEmail === currentEmail) {

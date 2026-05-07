@@ -18,8 +18,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { writeJsonAtomic } from './atomic-write.js';
-import { writeKeychainAt, type KeychainData } from './keychain.js';
-import { isSafeEmail, resolvedAccountFile } from './accounts.js';
+import {
+  readKeychainForConfigDir,
+  writeKeychainForConfigDir,
+  type KeychainData,
+} from './keychain.js';
+import { isSafeEmail, resolvedAccountFile, syncActiveSnapshotIfStale } from './accounts.js';
+import { claudeJsonPath } from './paths.js';
 
 // Conservative naming rules so a profile name is never ambiguous on
 // disk, in shell completions, or in error messages. Letters, digits,
@@ -132,6 +137,23 @@ export function readProfile(name: string): ProfileInfo {
   } catch {
     // Fresh profile (no .claude.json yet) or unreadable. Leave fields null.
   }
+  // On macOS, OAuth tokens live in the Keychain — NOT in the .claude.json
+  // file. The JSON's oauthAccount block is purely descriptive, so a stale
+  // `emailAddress` can persist long after the Keychain entry has been
+  // wiped/expired/never-written. We saw this break "Open account
+  // isolated": the dispatcher trusted hasLogin=true from JSON, spawned
+  // claude in the empty profile, and claude itself fell back to its
+  // login picker. So on darwin we demote hasLogin to "JSON says yes AND
+  // a Keychain entry actually resolves at the per-config-dir service
+  // claude itself queries". The (service, account) pair is derived in
+  // keychain.ts to match claude's `My("-credentials")` / `uV()` formula.
+  if (
+    hasLogin &&
+    process.platform === 'darwin' &&
+    process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1'
+  ) {
+    if (!readKeychainForConfigDir(p)) hasLogin = false;
+  }
   return { name, path: p, userID, emailAddress, hasLogin };
 }
 
@@ -220,6 +242,68 @@ function readLegacyAccount(email: string, accountsDirPath: string): LegacyAccoun
   return parsed as LegacyAccountFile;
 }
 
+/**
+ * If the legacy account's `_keychain.claudeAiOauth` access token is
+ * expired (or about to expire), call the Anthropic OAuth refresh
+ * endpoint and rewrite the snapshot in-place. Returns true when a
+ * refresh actually happened, false otherwise (no _keychain, no
+ * refresh_token, fresh tokens, or refresh failed).
+ *
+ * Awaited by callers before they enter the sync `importProfileFromAccount`
+ * / `ensureProfileForAccount` flow, so the snapshot landing in the
+ * Keychain / per-profile JSON is fresh by construction. Without this
+ * pre-step, profiles dormant for hours/days would carry expired
+ * access tokens straight to claude, which then 401s instead of
+ * auto-refreshing (it doesn't auto-refresh in --print mode against
+ * a non-default config dir).
+ *
+ * Failure is silent: we log nothing, return false, and let the caller
+ * fall through to its existing "needsLogin" handling. Better UX than
+ * surfacing a transient network error in the Open-Account-Isolated
+ * hot path.
+ */
+export async function refreshLegacySnapshotIfStale(
+  email: string,
+  accountsDirPath: string,
+): Promise<boolean> {
+  // If the legacy snapshot is for the currently-active account AND
+  // claude.json was mutated externally (e.g. /login from inside a
+  // running claude session), capture the live state first — otherwise
+  // we'd refresh stale tokens and re-store them, losing whatever
+  // claude already rotated.
+  syncActiveSnapshotIfStale(claudeJsonPath(), accountsDirPath);
+
+  let legacy: LegacyAccountFile;
+  try {
+    legacy = readLegacyAccount(email, accountsDirPath);
+  } catch {
+    return false;
+  }
+  const oauth = legacy._keychain?.claudeAiOauth;
+  if (!oauth) return false;
+
+  const { isAccessTokenStale, refreshAccessToken } = await import('./oauth-refresh.js');
+  if (!isAccessTokenStale(oauth)) return false;
+  if (!oauth.refreshToken) return false;
+
+  const refreshed = await refreshAccessToken(oauth.refreshToken);
+  if (!refreshed) return false;
+
+  // Atomic-rewrite the legacy file with the refreshed snapshot. We
+  // preserve every other field — only `_keychain.claudeAiOauth` is
+  // replaced. Other claudeCode-specific block (`mcpOAuth` etc.) stays
+  // untouched.
+  const next: LegacyAccountFile = {
+    ...legacy,
+    _keychain: {
+      ...legacy._keychain,
+      claudeAiOauth: refreshed,
+    },
+  };
+  writeJsonAtomic(resolvedAccountFile(email, accountsDirPath), next);
+  return true;
+}
+
 export interface ImportResult {
   profileName: string;
   profilePath: string;
@@ -263,9 +347,14 @@ export function importProfileFromAccount(
   // Determine whether we can fully populate the profile with credentials,
   // or whether the user has to `profile login` afterwards. Two paths:
   //
-  //   macOS  →  if we have _keychain, write it to the Keychain under our
-  //             chosen userID and pre-populate oauthAccount in the JSON
-  //             so claude identifies as this email immediately.
+  //   macOS  →  if we have _keychain, write it to the Keychain at the
+  //             per-config-dir service Claude Code derives from the
+  //             profile path. Account field is the OS username, NOT the
+  //             userID — newer claude (v2.x) ignores the userID for
+  //             OAuth lookups and only honours
+  //             `Claude Code-credentials-<sha256(configDir)[0:8]>` /
+  //             `os.userInfo().username`. We still record userID in the
+  //             JSON for our own bookkeeping (telemetry/debug).
   //
   //   other  →  Claude Code reads tokens from .claude.json itself, so we
   //             embed accessToken/refreshToken/expiresAt directly there.
@@ -278,9 +367,17 @@ export function importProfileFromAccount(
   let wroteToKeychain = false;
   let needsLogin = false;
 
+  // CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 forces the JSON-embedding path even on
+  // darwin. Used by the test suite (so `npm test` doesn't trigger Keychain
+  // auth prompts) and by users who explicitly opt out of the Keychain
+  // backend. The mock claude binary in test/fixtures honours the same
+  // contract — JSON-embedded tokens are read directly.
+  const useKeychain = process.platform === 'darwin'
+    && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1';
+
   if (_keychain) {
-    if (process.platform === 'darwin') {
-      writeKeychainAt(userID, _keychain);
+    if (useKeychain) {
+      writeKeychainForConfigDir(dir, _keychain);
       wroteToKeychain = true;
       // Pre-populate oauthAccount so claude shows the right email even on
       // first run, before the Keychain lookup happens.
@@ -338,16 +435,41 @@ export function ensureProfileForAccount(
   email: string,
   accountsDirPath: string,
 ): EnsureProfileResult {
+  // If we land on a profile that says "needs login" but the legacy
+  // account file still carries a `_keychain` snapshot, opportunistically
+  // re-write the missing Keychain entry at the per-config-dir service
+  // claude itself queries. This rescues the "Open account isolated" UX
+  // from a state where the profile JSON survived but the Keychain
+  // entry got wiped (rotated tokens, manual deletion, machine restore,
+  // OR — most commonly until this fix — claude-switch ≤3.4.x having
+  // written the entry at the wrong service in the first place).
+  // Returns true when a recovery write happened so the caller can flip
+  // needsLogin to false.
+  const tryRecoverFromLegacy = (profileDir: string): boolean => {
+    if (process.platform !== 'darwin') return false;
+    if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1') return false;
+    try {
+      const legacy = readLegacyAccount(email, accountsDirPath);
+      if (!legacy._keychain) return false;
+      writeKeychainForConfigDir(profileDir, legacy._keychain);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   // Check all profiles for an email match (covers logged-in profiles).
   for (const name of listProfiles()) {
     try {
       const info = readProfile(name);
       if (info.emailAddress === email) {
+        let needsLogin = !info.hasLogin;
+        if (needsLogin && tryRecoverFromLegacy(info.path)) needsLogin = false;
         return {
           profileName: name,
           profilePath: info.path,
           emailAddress: email,
-          needsLogin: !info.hasLogin,
+          needsLogin,
           created: false,
         };
       }
@@ -360,11 +482,13 @@ export function ensureProfileForAccount(
   const derivedName = (email.split('@')[0] ?? email).replace(/[^A-Za-z0-9_-]/g, '_');
   if (isValidProfileName(derivedName) && profileExists(derivedName)) {
     const info = readProfile(derivedName);
+    let needsLogin = !info.hasLogin;
+    if (needsLogin && tryRecoverFromLegacy(info.path)) needsLogin = false;
     return {
       profileName: derivedName,
       profilePath: info.path,
       emailAddress: email,
-      needsLogin: !info.hasLogin,
+      needsLogin,
       created: false,
     };
   }

@@ -1,5 +1,5 @@
 // src/proxy.ts
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 
 interface SpawnOptions {
   stdio: 'inherit';
@@ -68,19 +68,3 @@ export function run(binaryPath: string, args: string[], extraEnv?: NodeJS.Proces
   return new Promise<never>(() => {}) as never;
 }
 
-// Legacy sync runner kept for callers that still rely on synchronous wait.
-export function runSync(binaryPath: string, args: string[], extraEnv?: NodeJS.ProcessEnv | null): never {
-  const { command, args: spawnArgs, options } = buildSpawnArgs(
-    binaryPath,
-    args,
-    process.platform,
-    extraEnv,
-  );
-  const result = spawnSync(command, spawnArgs, options);
-
-  if (result.error) {
-    console.error(`Error: could not run claude: ${result.error.message}`);
-    process.exit(1);
-  }
-  process.exit(result.status ?? 1);
-}

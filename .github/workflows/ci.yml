@@ -32,6 +32,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Single canonical runner audits — avoids 9 racing reports across
+      # the matrix. `--audit-level=high` blocks on HIGH/CRITICAL only;
+      # MEDIUM/LOW noise is left to Dependabot to surface as PRs instead
+      # of failing the build.
+      - name: Audit dependencies (high+critical only)
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
+        run: npm audit --audit-level=high --omit=dev
+
       - name: Typecheck
         run: npx tsc --noEmit
 
@@ -64,12 +72,18 @@ jobs:
           $files = Get-ChildItem -Path dist/test -Recurse -Filter "*.test.js" | ForEach-Object { $_.FullName }
           node --test @files
 
-      # Coverage report posted to the job summary on a single canonical runner
-      # (ubuntu + LTS node). Avoids 9 racing reports across the matrix.
-      - name: Coverage report (job summary)
+      # Coverage report posted to the job summary AND gated against a
+      # floor on a single canonical runner (ubuntu + LTS node). Avoids 9
+      # racing reports across the matrix. The floor is intentionally set
+      # ~2pp below today's measured coverage so accidental regressions
+      # turn red but the gate never blocks a no-op release. Ratchet up
+      # manually as coverage genuinely improves — never lower it without
+      # a clear deletion of dead code that justifies it.
+      - name: Coverage report + threshold gate
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
         env:
           CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1'
+          COVERAGE_FLOOR: '56'
         run: |
           set -o pipefail
           REPORT=$(node --test \
@@ -77,6 +91,10 @@ jobs:
             --test-coverage-include='dist/src/**/*.js' \
             dist/test/*.test.js dist/test/*/*.test.js 2>&1 \
             | sed -n '/start of coverage report/,/end of coverage report/p')
+
+          # Append the human-readable report to the GitHub job summary
+          # regardless of pass/fail — failure mode is "still see the
+          # numbers, plus a red gate".
           {
             echo "## Coverage report"
             echo ""
@@ -84,3 +102,23 @@ jobs:
             echo "$REPORT"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # Extract the line-coverage % for `all files` (column 2 of the
+          # pipe-delimited summary row). awk strips the leading whitespace.
+          LINE_PCT=$(echo "$REPORT" \
+            | grep -E "all files" \
+            | awk -F'|' '{ gsub(/[ ]/, "", $2); print $2 }')
+
+          if [ -z "$LINE_PCT" ]; then
+            echo "::error::could not parse line coverage from report"
+            exit 1
+          fi
+
+          echo "Line coverage: ${LINE_PCT}%  (floor: ${COVERAGE_FLOOR}%)"
+
+          # awk-based comparison so we don't need bc/python on the runner.
+          if awk -v cov="$LINE_PCT" -v floor="$COVERAGE_FLOOR" \
+                 'BEGIN { exit (cov + 0 < floor + 0) ? 0 : 1 }'; then
+            echo "::error::coverage ${LINE_PCT}% is below the ${COVERAGE_FLOOR}% floor"
+            exit 1
+          fi
