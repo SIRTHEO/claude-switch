@@ -241,6 +241,61 @@ function readLegacyAccount(email: string, accountsDirPath: string): LegacyAccoun
   return parsed as LegacyAccountFile;
 }
 
+/**
+ * If the legacy account's `_keychain.claudeAiOauth` access token is
+ * expired (or about to expire), call the Anthropic OAuth refresh
+ * endpoint and rewrite the snapshot in-place. Returns true when a
+ * refresh actually happened, false otherwise (no _keychain, no
+ * refresh_token, fresh tokens, or refresh failed).
+ *
+ * Awaited by callers before they enter the sync `importProfileFromAccount`
+ * / `ensureProfileForAccount` flow, so the snapshot landing in the
+ * Keychain / per-profile JSON is fresh by construction. Without this
+ * pre-step, profiles dormant for hours/days would carry expired
+ * access tokens straight to claude, which then 401s instead of
+ * auto-refreshing (it doesn't auto-refresh in --print mode against
+ * a non-default config dir).
+ *
+ * Failure is silent: we log nothing, return false, and let the caller
+ * fall through to its existing "needsLogin" handling. Better UX than
+ * surfacing a transient network error in the Open-Account-Isolated
+ * hot path.
+ */
+export async function refreshLegacySnapshotIfStale(
+  email: string,
+  accountsDirPath: string,
+): Promise<boolean> {
+  let legacy: LegacyAccountFile;
+  try {
+    legacy = readLegacyAccount(email, accountsDirPath);
+  } catch {
+    return false;
+  }
+  const oauth = legacy._keychain?.claudeAiOauth;
+  if (!oauth) return false;
+
+  const { isAccessTokenStale, refreshAccessToken } = await import('./oauth-refresh.js');
+  if (!isAccessTokenStale(oauth)) return false;
+  if (!oauth.refreshToken) return false;
+
+  const refreshed = await refreshAccessToken(oauth.refreshToken);
+  if (!refreshed) return false;
+
+  // Atomic-rewrite the legacy file with the refreshed snapshot. We
+  // preserve every other field — only `_keychain.claudeAiOauth` is
+  // replaced. Other claudeCode-specific block (`mcpOAuth` etc.) stays
+  // untouched.
+  const next: LegacyAccountFile = {
+    ...legacy,
+    _keychain: {
+      ...legacy._keychain,
+      claudeAiOauth: refreshed,
+    },
+  };
+  writeJsonAtomic(resolvedAccountFile(email, accountsDirPath), next);
+  return true;
+}
+
 export interface ImportResult {
   profileName: string;
   profilePath: string;

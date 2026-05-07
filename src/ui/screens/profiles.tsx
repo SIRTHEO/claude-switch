@@ -21,6 +21,7 @@ import {
   removeProfile,
   importProfileFromAccount,
   ensureProfileForAccount,
+  refreshLegacySnapshotIfStale,
   profilePath,
   isValidProfileName,
   profileExists,
@@ -239,26 +240,38 @@ export function ProfilesScreen({ accountsDirPath, initialNotice, onExit }: Scree
   const onAccountPick = (email: string): void => {
     if (step.kind !== 'pick-account') return;
     if (step.purpose === 'isolated') {
-      try {
-        const ensured = ensureProfileForAccount(email, accountsDirPath);
-        if (ensured.needsLogin) {
-          setStep({
-            kind: 'note',
-            title: 'Authentication required',
-            body: `Profile "${ensured.profileName}" needs a one-time browser login.\nRun: claude switch profile login ${ensured.profileName}`,
+      // Fire-and-await the legacy-snapshot refresh BEFORE the sync
+      // ensureProfileForAccount call. If the snapshot's access token is
+      // stale, this rewrites the legacy file with fresh tokens so the
+      // ensured profile lands with credentials claude can actually use.
+      // Network failure is silent — we still call ensureProfileForAccount
+      // and surface needsLogin as today.
+      void (async () => {
+        try {
+          await refreshLegacySnapshotIfStale(email, accountsDirPath);
+        } catch { /* swallow — fall through to the sync path */ }
+
+        try {
+          const ensured = ensureProfileForAccount(email, accountsDirPath);
+          if (ensured.needsLogin) {
+            setStep({
+              kind: 'note',
+              title: 'Authentication required',
+              body: `Profile "${ensured.profileName}" needs a one-time browser login.\nRun: claude switch profile login ${ensured.profileName}`,
+            });
+            return;
+          }
+          finishLaunch({
+            kind: 'isolated',
+            email,
+            profileName: ensured.profileName,
+            profileDir: ensured.profilePath,
           });
-          return;
+        } catch (e) {
+          setError(e instanceof Error ? e.message : String(e));
+          setStep({ kind: 'home' });
         }
-        finishLaunch({
-          kind: 'isolated',
-          email,
-          profileName: ensured.profileName,
-          profileDir: ensured.profilePath,
-        });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-        setStep({ kind: 'home' });
-      }
+      })();
       return;
     }
     // import

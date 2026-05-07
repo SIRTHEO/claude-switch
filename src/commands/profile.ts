@@ -188,7 +188,15 @@ export async function handleProfileImport(
   email: string,
   profileName: string | undefined,
 ): Promise<void> {
-  const { importProfileFromAccount } = await import('../profiles.js');
+  const { importProfileFromAccount, refreshLegacySnapshotIfStale } = await import('../profiles.js');
+
+  // Refresh the snapshot's access token if it's stale before we
+  // import — otherwise the imported profile lands with an expired
+  // token and claude 401s on first run.
+  try {
+    await refreshLegacySnapshotIfStale(email, ctx.accountsDirPath);
+  } catch { /* network failure → fall through, importProfileFromAccount may still be useful */ }
+
   let result: ReturnType<typeof importProfileFromAccount>;
   try {
     result = importProfileFromAccount(email, ctx.accountsDirPath, profileName);
