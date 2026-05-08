@@ -10,12 +10,17 @@ import { StatusMessage } from '@inkjs/ui';
 
 import { switchToAndSyncFallback } from '../../switcher.js';
 import { resolveAccountPrefs } from '../../preferences.js';
-import { useSnapshot, type AccountRow } from '../hooks/use-snapshot.js';
+import { useSnapshot } from '../hooks/use-snapshot.js';
 import { useAsyncAction } from '../hooks/use-async-action.js';
 import { ORANGE } from '../theme.js';
-import { ProgressBar } from '../components/progress-bar.js';
-import { usageGlyph } from '../components/usage-glyph.js';
 import { clearScreen } from '../screen-buffer.js';
+import { AccountList, MenuList } from './home/components.js';
+import {
+  GLOBAL_ITEMS,
+  buildAccountItems,
+  type AccountActionValue,
+  type GlobalActionValue,
+} from './home/menu-items.js';
 
 export type HomeAction =
   | 'add'
@@ -42,84 +47,6 @@ export interface HomeExit {
   };
 }
 
-interface MenuItem<V extends string> {
-  value: V;
-  label: string;
-  hotkey: string;
-  hint: string;
-}
-
-type AccountActionValue =
-  | 'switch'
-  | 'apikey'
-  | 'manage'
-  | 'fallback-toggle'
-  | 'reauth'
-  | 'remove';
-
-type GlobalActionValue =
-  | 'add'
-  | 'settings'
-  | 'profiles'
-  | 'auto-fallback'
-  | 'usage'
-  | 'setup'
-  | 'quit';
-
-const GLOBAL_ITEMS: MenuItem<GlobalActionValue>[] = [
-  { value: 'add',           label: 'Add account',         hotkey: 'a', hint: 'log in with a new email' },
-  { value: 'settings',      label: 'Settings',            hotkey: 'g', hint: 'global + per-account preferences' },
-  { value: 'profiles',      label: 'Profiles',            hotkey: 'p', hint: 'isolated per-terminal sessions' },
-  { value: 'auto-fallback', label: 'Auto-fallback',       hotkey: 'F', hint: 'thresholds for auto-engage / auto-revert' },
-  { value: 'usage',         label: 'Refresh usage',       hotkey: 'u', hint: 'force-fetch from Anthropic' },
-  { value: 'setup',         label: 'Setup wizard',        hotkey: 's', hint: 'fix claude binary / shell PATH' },
-  { value: 'quit',          label: 'Quit',                hotkey: 'q', hint: 'or press esc' },
-];
-
-function buildAccountItems(row: AccountRow | null): MenuItem<AccountActionValue>[] {
-  if (!row) return [];
-  const items: MenuItem<AccountActionValue>[] = [];
-  items.push({
-    value: 'switch',
-    label: row.active ? 'Launch claude (already active)' : 'Switch & launch claude',
-    hotkey: '↵',
-    hint: row.active ? 'open a session on this account' : 'swap then run claude',
-  });
-  items.push({
-    value: 'apikey',
-    label: row.hasApiKey ? 'Replace API key' : 'Set API key',
-    hotkey: 'k',
-    hint: row.hasApiKey ? `currently ${row.apiKeyMasked}` : 'paste an Anthropic key',
-  });
-  items.push({
-    value: 'manage',
-    label: 'Manage (alias · key · remove)',
-    hotkey: 'm',
-    hint: 'detailed account operations',
-  });
-  items.push({
-    value: 'fallback-toggle',
-    label: 'Toggle fallback',
-    hotkey: 'f',
-    hint: 'flip OAuth ↔ API key globally',
-  });
-  if (row.active) {
-    items.push({
-      value: 'reauth',
-      label: 'Re-authenticate',
-      hotkey: 'c',
-      hint: 'browser re-login (current account)',
-    });
-  }
-  items.push({
-    value: 'remove',
-    label: 'Remove account',
-    hotkey: 'd',
-    hint: 'delete saved tokens, key, aliases',
-  });
-  return items;
-}
-
 interface Props {
   claudeJsonPath: string;
   accountsDirPath: string;
@@ -132,193 +59,9 @@ type Focus = 'accounts' | 'account-actions' | 'global';
 const FOCUS_ORDER: Focus[] = ['accounts', 'account-actions', 'global'];
 
 // ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-interface SectionProps {
-  title: string;
-  subtitle?: string;
-  focused: boolean;
-  children: React.ReactNode;
-}
-
-function Section({ title, subtitle, focused, children }: SectionProps) {
-  const color = focused ? ORANGE : 'gray';
-  return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={color}
-      paddingX={1}
-      marginBottom={1}
-    >
-      <Box>
-        <Text bold color={color}>{title}</Text>
-        {subtitle && <Text color="gray">  {subtitle}</Text>}
-      </Box>
-      {children}
-    </Box>
-  );
-}
-
-interface AccountListProps {
-  rows: AccountRow[];
-  cursor: number;
-  focused: boolean;
-}
-
-interface AccountSummaryProps {
-  row: AccountRow;
-  fallbackOn: boolean;
-  tokenHealth: ReturnType<typeof import('../../token.js').getTokenHealth> | null;
-}
-
-/** Per-account detail block. Active row gets the live runtime context
- *  (fallback flag + token state) inline; idle rows show only configuration. */
-function AccountRowDetail({ row, fallbackOn, tokenHealth }: AccountSummaryProps) {
-  const authLabel = row.active
-    ? (fallbackOn && row.hasApiKey ? 'API key' : 'OAuth')
-    : (row.hasApiKey ? 'OAuth + key saved' : 'OAuth only');
-  const authColor = row.active && fallbackOn && row.hasApiKey ? 'red' : 'green';
-
-  const fiveGlyph = usageGlyph(row.usage5h);
-  const weekGlyph = usageGlyph(row.usageWeek);
-  const hasUsage = row.usage5h !== undefined || row.usageWeek !== undefined;
-
-  const tokenIcon = tokenHealth?.status === 'valid' ? '✓'
-    : tokenHealth?.status === 'expired' ? '✗'
-    : '·';
-  const tokenColor = tokenHealth?.status === 'valid' ? 'green'
-    : tokenHealth?.status === 'expired' ? 'red'
-    : 'yellow';
-
-  return (
-    <Box flexDirection="column">
-      {/* Config / runtime line. Active rows include fallback + token info
-          since they're the only place those values are meaningful. */}
-      <Box>
-        <Text color="gray">      </Text>
-        <Text color={authColor}>{authLabel}</Text>
-        {row.active && (
-          <>
-            <Text color="gray">  ·  fallback </Text>
-            {fallbackOn ? <Text color="yellow">ON</Text> : <Text color="gray">OFF</Text>}
-            {tokenHealth && (
-              <>
-                <Text color="gray">  ·  token </Text>
-                <Text color={tokenColor}>{tokenIcon} {tokenHealth.status}</Text>
-                {tokenHealth.expiresIn && (
-                  <Text color="gray"> · {tokenHealth.expiresIn}</Text>
-                )}
-              </>
-            )}
-          </>
-        )}
-        {row.hasApiKey && row.apiKeyMasked && !row.active && (
-          <Text color="gray">  ·  {row.apiKeyMasked}</Text>
-        )}
-        {row.defaultIsolated && (
-          <Text color="cyan">  ·  isolated default</Text>
-        )}
-      </Box>
-      {/* Usage line: cached numbers if any, else compact placeholder. */}
-      <Box>
-        <Text color="gray">      </Text>
-        {hasUsage ? (
-          <>
-            <Text color={fiveGlyph.color}>{fiveGlyph.glyph} 5h </Text>
-            <ProgressBar pct={row.usage5h} width={14} />
-            <Text color="gray"> {row.usage5h !== undefined ? `${row.usage5h.toFixed(0)}%` : '—'}</Text>
-            <Text color="gray">    </Text>
-            <Text color={weekGlyph.color}>{weekGlyph.glyph} 7d </Text>
-            <ProgressBar pct={row.usageWeek} width={14} />
-            <Text color="gray"> {row.usageWeek !== undefined ? `${row.usageWeek.toFixed(0)}%` : '—'}</Text>
-          </>
-        ) : (
-          <Text color="gray">no usage cached</Text>
-        )}
-      </Box>
-    </Box>
-  );
-}
-
-function AccountList({
-  rows,
-  cursor,
-  focused,
-  fallbackOn,
-  tokenHealth,
-}: AccountListProps & {
-  fallbackOn: boolean;
-  tokenHealth: ReturnType<typeof import('../../token.js').getTokenHealth> | null;
-}) {
-  return (
-    <Section title="Accounts" subtitle={`(${rows.length})`} focused={focused}>
-      {rows.length === 0 && (
-        <Text color="gray">  none — press <Text color={ORANGE}>a</Text> to add</Text>
-      )}
-      {rows.map((row, i) => {
-        const selected = focused && i === cursor;
-        const isHighlighted = i === cursor;
-        const cursorChar = selected ? '▸' : isHighlighted ? '·' : ' ';
-        const cursorColor = selected ? ORANGE : 'gray';
-        return (
-          <Box key={row.email} flexDirection="column" marginBottom={i === rows.length - 1 ? 0 : 1}>
-            <Box>
-              <Text color={cursorColor}>{cursorChar} </Text>
-              <Text bold={row.active} color={row.active ? ORANGE : undefined}>
-                {row.email}
-              </Text>
-              {row.alias && <Text color="cyan">  @{row.alias}</Text>}
-              {row.active && <Text color={ORANGE}>  ◀ active</Text>}
-            </Box>
-            <AccountRowDetail row={row} fallbackOn={fallbackOn} tokenHealth={row.active ? tokenHealth : null} />
-          </Box>
-        );
-      })}
-    </Section>
-  );
-}
-
-interface MenuRendererProps<V extends string> {
-  title: string;
-  subtitle?: string;
-  items: MenuItem<V>[];
-  cursor: number;
-  focused: boolean;
-  emptyHint?: string;
-}
-
-function MenuList<V extends string>({
-  title,
-  subtitle,
-  items,
-  cursor,
-  focused,
-  emptyHint,
-}: MenuRendererProps<V>) {
-  return (
-    <Section title={title} subtitle={subtitle} focused={focused}>
-      {items.length === 0 && emptyHint && <Text color="gray">  {emptyHint}</Text>}
-      {items.map((item, i) => {
-        const selected = focused && i === cursor;
-        const cursorChar = selected ? '▸' : ' ';
-        return (
-          <Box key={item.value}>
-            <Text color={selected ? ORANGE : 'gray'}>{cursorChar} </Text>
-            <Text color={selected ? ORANGE : 'cyan'}>[{item.hotkey}]</Text>
-            <Text> </Text>
-            <Text bold={selected}>{item.label.padEnd(34)}</Text>
-            <Text color="gray">{item.hint}</Text>
-          </Box>
-        );
-      })}
-    </Section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main screen
+// Sub-components live in `./home/components.tsx`. Static + dynamic
+// menu data lives in `./home/menu-items.ts`. This file owns the
+// state machine + dispatch + render wiring only.
 // ---------------------------------------------------------------------------
 
 export function HomeScreen({ claudeJsonPath, accountsDirPath, initialNotice, onExit }: Props) {
