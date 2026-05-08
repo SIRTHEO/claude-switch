@@ -93,6 +93,14 @@ A few non-obvious gotchas if you edit a tape:
   after a `q`. The GIF loops, and a bare shell prompt as the resting
   frame looks broken.
 
+## Architecture
+
+For an overview of the three layers (dispatcher / commands / domain),
+the proxy lifecycle, the lock-discipline invariants, and the on-read
+migration pattern, see [`docs/internal/architecture.md`](docs/internal/architecture.md).
+For error-handling patterns + the audit predicate that flags new
+silent catches, see [`docs/internal/error-handling.md`](docs/internal/error-handling.md).
+
 ## Conventions
 
 - Conventional commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`,
