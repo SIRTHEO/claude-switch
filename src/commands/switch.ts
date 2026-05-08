@@ -9,6 +9,7 @@ import { resolveAlias } from '../aliases.js';
 import { list as listAccounts } from '../accounts.js';
 import { fuzzyMatch, switchInteractive, switchToAndSyncFallback } from '../switcher.js';
 import { getSavedClaudeBin } from '../setup.js';
+import { readGlobalPrefs } from '../preferences.js';
 import { runApp } from '../ui/run-app.js';
 import type { CommandContext } from './context.js';
 
@@ -39,13 +40,25 @@ export async function handleSwitchTo(ctx: CommandContext, target: string): Promi
 
     // Bundle switch + fallback flip in one withLock so a concurrent
     // `claude switch` can't race the two writes (see switcher.ts).
+    // Honour the user's `defaultAutoFlipFallback` preference so the CLI
+    // matches the Ink dashboard — pre-3.6 the CLI hard-coded `true` and
+    // silently ignored the toggle, which silently re-enabled fallback
+    // on every `claude switch <account>` even when the user had turned
+    // auto-flip off.
+    const prefs = readGlobalPrefs(accountsDirPath);
     const outcome = switchToAndSyncFallback(matches[0]!, claudeJsonPath, accountsDirPath, {
-      autoFlipFallback: true,
+      autoFlipFallback: prefs.defaultAutoFlipFallback,
     });
     console.log(outcome.message);
-    process.stderr.write(outcome.hasApiKey
-      ? '  Fallback ON — API key active\n'
-      : '  Fallback OFF — no API key\n');
+    if (outcome.fallbackFlipped) {
+      process.stderr.write(outcome.hasApiKey
+        ? '  Fallback ON — API key active (no OAuth available for this account)\n'
+        : '  Fallback OFF — using OAuth\n');
+    } else {
+      process.stderr.write(outcome.hasApiKey
+        ? '  API key saved (manual toggle: claude switch fallback on)\n'
+        : '  Using OAuth\n');
+    }
     return;
   }
 

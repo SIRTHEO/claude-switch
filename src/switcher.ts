@@ -99,14 +99,26 @@ export function switchToAndSyncFallback(
 
     const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
     const hasApiKey = !!getApiKey(targetEmail, accountsDirPath);
+    // `keychainRestored` doubles as our "the target account has OAuth
+    // creds available" signal — `load()` only reports it when the
+    // account file carried a `_keychain` snapshot.
+    const hasOAuth = keychainRestored;
 
     let fallbackFlipped = false;
     if (options.autoFlipFallback) {
-      // Read the previous flag inside the same lock so we don't flip when
-      // the desired state already matches — keeps the operation idempotent.
+      // Auto-flip semantics: fallback should be ON only when the target
+      // account has API key AND no OAuth (key-only account — proxy has
+      // no other auth source). Accounts with OAuth + saved key should
+      // default to OAuth, with the API key kept as a manual emergency
+      // toggle. Pre-3.6 this flipped purely on `hasApiKey`, which
+      // silently routed every request through the API key (Anthropic
+      // Console billing) on accounts that had a perfectly good
+      // subscription OAuth — the exact regression that caused users to
+      // bleed credit after a routine `claude switch`.
+      const wantedFallback = hasApiKey && !hasOAuth;
       const wasOn = isFallbackEnabled(accountsDirPath);
-      if (wasOn !== hasApiKey) {
-        setFallbackEnabledInLock(accountsDirPath, hasApiKey);
+      if (wasOn !== wantedFallback) {
+        setFallbackEnabledInLock(accountsDirPath, wantedFallback);
         fallbackFlipped = true;
       }
     }
