@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.5.1](https://github.com/SIRTHEO/claude-switch/compare/v3.5.0...v3.5.1) (2026-05-08)
+
+
+### Bug Fixes
+
+* **switcher:** make auto-flip fallback OAuth-aware (Phase 11.10) ([8a6d0c3](https://github.com/SIRTHEO/claude-switch/commit/8a6d0c3e00d2dd1395ce2d88ca4ad8d7a310bf29))
+
+
+### Refactors
+
+* **errors:** introduce errMessage / errnoCode helpers, drop 22 type casts (Phase 11.7) ([23f3f4e](https://github.com/SIRTHEO/claude-switch/commit/23f3f4ea48b583b4cf089eb36bea581edb2cae9c))
+* **ui:** split home.tsx sub-components into per-file modules (Phase 11.6) ([17b2b39](https://github.com/SIRTHEO/claude-switch/commit/17b2b397cb0b7d580d3d7051a15f7445fc48b983))
+* **ui:** split profiles.tsx menu metadata + pick-list helper (Phase 11.5) ([9117ed0](https://github.com/SIRTHEO/claude-switch/commit/9117ed012fb8d66194e95434410ae30c2e239074))
+
+
+### Documentation
+
+* **internal:** architecture overview (Phase 11.8) ([66a3d9d](https://github.com/SIRTHEO/claude-switch/commit/66a3d9d978a0945d9163fa5a183711a6a3edb37c))
+* **internal:** error-handling audit + policy (Phase 11.4) ([ef466a1](https://github.com/SIRTHEO/claude-switch/commit/ef466a195071f5dabcf5197013a40f7d79606888))
+
 ## [3.5.0](https://github.com/SIRTHEO/claude-switch/compare/v3.4.1...v3.5.0) (2026-05-07)
 
 
