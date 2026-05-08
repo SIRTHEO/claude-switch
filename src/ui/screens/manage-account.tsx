@@ -21,7 +21,7 @@ type LaunchRequest =
   | { kind: 'apikey-set'; email: string }
   | { kind: 'remove-account'; email: string };
 
-type ScreenExit = { kind: 'back' } | { kind: 'launch'; req: LaunchRequest };
+export type ScreenExit = { kind: 'back' } | { kind: 'launch'; req: LaunchRequest };
 
 type Step =
   | { kind: 'pick-account' }
@@ -69,7 +69,7 @@ interface ScreenProps {
   onExit: (e: ScreenExit) => void;
 }
 
-function ManageScreen({ claudeJsonPath, accountsDirPath, initialEmail, onExit }: ScreenProps) {
+export function ManageScreen({ claudeJsonPath, accountsDirPath, initialEmail, onExit }: ScreenProps) {
   const { exit } = useApp();
   const accounts = listAccounts(accountsDirPath);
   const initial: Step = initialEmail
