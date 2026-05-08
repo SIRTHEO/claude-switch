@@ -149,6 +149,12 @@ export function list(accountsDirPath: string): string[] {
     }
     return safe;
   } catch {
+    // ENOENT (first run, accounts dir not yet created) is the most
+    // common path here, but any other readdir failure (permission,
+    // I/O) gets treated the same way: surface "no accounts saved"
+    // rather than crash a status read. The dispatcher's first-run
+    // path then guides the user into `claude switch add` instead of
+    // dumping a stack trace.
     return [];
   }
 }
@@ -204,16 +210,30 @@ export function syncActiveSnapshotIfStale(
   claudeJsonPath: string,
   accountsDirPath: string,
 ): boolean {
+  // syncActiveSnapshotIfStale is a UX nicety, not a correctness path.
+  // Every failure mode below silently no-ops because the worst-case
+  // outcome (drift on legacy file) is recoverable on the next switch,
+  // whereas a hard error here would crash flows that the user did
+  // not explicitly opt into snapshot syncing.
   let activeEmail: string;
   try {
     activeEmail = getCurrent(claudeJsonPath);
-  } catch { return false; }
+  } catch {
+    // Unreadable / corrupt claude.json — surfaced loudly by the next
+    // explicit operation (status, switch, save). Sync is best-effort.
+    return false;
+  }
   if (!activeEmail) return false;
 
   let snapshotFile: string;
   try {
     snapshotFile = resolvedAccountFile(activeEmail, accountsDirPath);
-  } catch { return false; }
+  } catch {
+    // Email contains characters that fail isSafeEmail (legacy account
+    // saved by older permissive validation). Surface the proper error
+    // when the user invokes a flow that REALLY needs the snapshot.
+    return false;
+  }
 
   const claudeJsonStat = fs.statSync(claudeJsonPath, { throwIfNoEntry: false });
   if (!claudeJsonStat) return false;
@@ -232,6 +252,11 @@ export function syncActiveSnapshotIfStale(
     save(activeEmail, claudeJsonPath, accountsDirPath);
     return true;
   } catch {
+    // save() can throw on JSON parse / Keychain write / disk-full /
+    // permission. Silent here because the next explicit save (during
+    // a real switch) will surface the same error in a context where
+    // the user is paying attention. If we threw here we'd make a
+    // best-effort sync into a hard failure of unrelated commands.
     return false;
   }
 }
