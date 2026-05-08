@@ -39,6 +39,24 @@ import { readGlobalPrefs } from '../preferences.js';
 
 type Notice = Parameters<typeof renderHome>[2];
 
+/**
+ * Internal handlers exposed for the unit-test suite. Production code
+ * calls them via `runApp()`, which wires the alt-buffer + signal
+ * lifecycle around the dispatcher loop. The tests skip that envelope
+ * and verify each handler's pure I/O contract against a tmpdir
+ * fixture. Renaming or removing any of these breaks tests but not
+ * production.
+ */
+export const _internal = {
+  refreshUsageOnEntry,
+  handleSwitched,
+  handleApikey,
+  handleFallbackToggle,
+  handleReauth,
+  handleRemove,
+  handleUsage,
+};
+
 async function refreshUsageOnEntry(claudeJsonPath: string, accountsDirPath: string): Promise<void> {
   if (!readGlobalPrefs(accountsDirPath).refreshUsageOnEntry) return;
   const current = getCurrent(claudeJsonPath);
