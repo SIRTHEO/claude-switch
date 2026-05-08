@@ -47,6 +47,10 @@ function candidateAccounts(): string[] {
 
 export function readKeychain(): KeychainData | null {
   if (process.platform !== 'darwin') return null;
+  // Honour the same disable flag the write paths use, so test fixtures
+  // that opt out of Keychain don't leak the developer's REAL tokens
+  // through this read into a test assertion.
+  if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1') return null;
 
   for (const account of candidateAccounts()) {
     try {
