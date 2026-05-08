@@ -10,7 +10,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { ExitError } from '../errors.js';
+import { ExitError, errMessage } from '../errors.js';
 import { getTokenHealth } from '../token.js';
 import { findClaude } from './_helpers.js';
 import type { CommandContext } from './context.js';
@@ -38,7 +38,7 @@ export async function handleProfileCreate(name: string): Promise<void> {
   try {
     dir = createProfile(name);
   } catch (e) {
-    throw new ExitError((e as Error).message);
+    throw new ExitError(errMessage(e));
   }
   console.log(`Created profile "${name}" at ${dir}`);
   console.log('');
@@ -54,7 +54,7 @@ export async function handleProfileStatus(name: string | undefined): Promise<voi
     try {
       info = readProfile(name);
     } catch (e) {
-      throw new ExitError((e as Error).message);
+      throw new ExitError(errMessage(e));
     }
 
     const profileClaudeJson = path.join(info.path, '.claude.json');
@@ -124,7 +124,7 @@ export async function handleProfileLogin(ctx: CommandContext, name: string): Pro
     }
     dir = profilePath(name);
   } catch (e) {
-    throw new ExitError((e as Error).message);
+    throw new ExitError(errMessage(e));
   }
   const claudeBin = findClaude(ctx.selfUrl);
   process.stderr.write(`🔐 Opening browser to authenticate profile "${name}"...\n\n`);
@@ -160,7 +160,7 @@ export async function handleProfileUse(
   try {
     info = readProfile(name);
   } catch (e) {
-    throw new ExitError((e as Error).message);
+    throw new ExitError(errMessage(e));
   }
   if (!info.hasLogin) {
     throw new ExitError(
@@ -201,7 +201,7 @@ export async function handleProfileImport(
   try {
     result = importProfileFromAccount(email, ctx.accountsDirPath, profileName);
   } catch (e) {
-    throw new ExitError((e as Error).message);
+    throw new ExitError(errMessage(e));
   }
   console.log(`✔ Imported "${result.emailAddress}" into profile "${result.profileName}"`);
   console.log(`  Path:    ${result.profilePath}`);
@@ -228,7 +228,7 @@ export async function handleProfileRemove(name: string): Promise<void> {
   try {
     result = removeProfile(name);
   } catch (e) {
-    throw new ExitError((e as Error).message);
+    throw new ExitError(errMessage(e));
   }
   console.log(`Removed profile dir: ${result.dir}`);
   if (process.platform === 'darwin') {

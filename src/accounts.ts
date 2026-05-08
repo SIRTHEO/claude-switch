@@ -3,6 +3,7 @@ import path from 'node:path';
 import { readKeychain, writeKeychain, type KeychainData } from './keychain.js';
 import { writeJsonAtomic } from './atomic-write.js';
 import { withLock } from './lock.js';
+import { errnoCode } from './errors.js';
 
 // Whitelist of characters allowed in account names. RFC 5321 email local-part
 // can contain more than this, but accepting only [A-Za-z0-9._+@-] covers ~all
@@ -37,7 +38,7 @@ export function getCurrent(claudeJsonPath: string): string {
     // Distinguish "file missing / unparseable" (legitimate empty state) from
     // "permission denied" (operator misconfiguration). The latter would be
     // misleading if reported as "no account connected".
-    if ((e as NodeJS.ErrnoException).code === 'EACCES') {
+    if (errnoCode(e) === 'EACCES') {
       throw new Error(`Permission denied reading ${claudeJsonPath}. Check file permissions.`);
     }
     return '';
@@ -117,7 +118,7 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
       accountPayload._prefs = existing._prefs;
     }
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    if (errnoCode(e) !== 'ENOENT') throw e;
     // ENOENT: first save for this account — nothing to preserve.
   }
 
@@ -164,7 +165,7 @@ export function remove(email: string, accountsDirPath: string): void {
   try {
     fs.unlinkSync(accountFile);
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (errnoCode(e) === 'ENOENT') {
       throw new Error(`No saved account for ${email}`);
     }
     throw e;

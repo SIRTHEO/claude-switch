@@ -18,6 +18,7 @@
 import fs from 'node:fs';
 import { isSafeEmail, resolvedAccountFile } from './accounts.js';
 import { writeJsonAtomic } from './atomic-write.js';
+import { errnoCode } from './errors.js';
 import {
   keychainAvailable,
   readApiKeyFromKeychain,
@@ -39,7 +40,7 @@ function readAccountFile(file: string): Record<string, unknown> | null {
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
     return parsed as Record<string, unknown>;
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    if (errnoCode(e) === 'ENOENT') return null;
     if (e instanceof SyntaxError) {
       throw new Error(`${file} contains invalid JSON. Please fix or delete it.`);
     }

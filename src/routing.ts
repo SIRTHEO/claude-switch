@@ -25,6 +25,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { errMessage } from './errors.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -195,7 +196,7 @@ export function parseClaudeSwitchFile(raw: string): ParseResult<ClaudeSwitchFile
   try {
     json = JSON.parse(raw);
   } catch (e) {
-    return { ok: false, error: `invalid JSON: ${(e as Error).message}` };
+    return { ok: false, error: `invalid JSON: ${errMessage(e)}` };
   }
   if (!isPlainObject(json)) {
     return { ok: false, error: 'top-level value must be an object' };
@@ -240,7 +241,7 @@ export function parseRoutingFile(raw: string): ParseResult<RoutingFile> {
   try {
     json = JSON.parse(raw);
   } catch (e) {
-    return { ok: false, error: `invalid JSON: ${(e as Error).message}` };
+    return { ok: false, error: `invalid JSON: ${errMessage(e)}` };
   }
   if (!isPlainObject(json)) {
     return { ok: false, error: 'top-level value must be an object' };

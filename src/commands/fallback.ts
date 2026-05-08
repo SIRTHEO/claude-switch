@@ -2,7 +2,7 @@
 // `claude switch fallback …` and `… auto-revert / auto-engage` — manage
 // the global fallback flag + the auto-fallback config.
 
-import { ExitError } from '../errors.js';
+import { ExitError, errMessage } from '../errors.js';
 import { getCurrent } from '../accounts.js';
 import { getApiKey } from '../apikey.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
@@ -121,6 +121,6 @@ export function handleFallbackAutoEngage(
       );
     }
   } catch (e) {
-    throw new ExitError((e as Error).message);
+    throw new ExitError(errMessage(e));
   }
 }
