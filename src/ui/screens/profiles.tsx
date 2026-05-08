@@ -28,8 +28,9 @@ import {
 } from '../../profiles.js';
 import { list as listAccounts } from '../../accounts.js';
 import { buildSpawnArgs } from '../../proxy.js';
-import { readGlobalPrefs } from '../../preferences.js';
 import { ORANGE } from '../theme.js';
+import { type Action, type MenuItem, buildHomeItems, profileLabel } from './profiles/menu-items.js';
+import { PickList } from './profiles/pick-list.js';
 
 // ---------------------------------------------------------------------------
 // Result shapes
@@ -53,8 +54,6 @@ export type ScreenExit =
 // Internal step machine
 // ---------------------------------------------------------------------------
 
-type Action = 'isolated' | 'list' | 'use' | 'login' | 'create' | 'import' | 'remove' | 'back';
-
 type Step =
   | { kind: 'home' }
   | { kind: 'pick-account'; purpose: 'isolated' | 'import' }
@@ -63,97 +62,9 @@ type Step =
   | { kind: 'confirm-remove'; profileName: string }
   | { kind: 'note'; title: string; body: string };
 
-interface MenuItem {
-  value: Action;
-  label: string;
-  hint?: string;
-}
-
-function buildHomeItems(accountsDirPath: string): MenuItem[] {
-  const profiles = listProfiles();
-  const accounts = listAccounts(accountsDirPath);
-  const hideManual = readGlobalPrefs(accountsDirPath).hideManualProfileOps;
-  const items: MenuItem[] = [];
-
-  if (accounts.length > 0) {
-    items.push({ value: 'isolated', label: 'Open account isolated', hint: 'pick an account → launch in its own session' });
-  }
-  if (profiles.length > 0) {
-    items.push({ value: 'use', label: 'Use saved profile', hint: 'launch claude with per-terminal isolation' });
-    items.push({ value: 'list', label: 'List profiles', hint: `${profiles.length} saved` });
-    items.push({ value: 'login', label: 'Authenticate profile', hint: 'browser login for a profile' });
-    items.push({ value: 'remove', label: 'Remove profile', hint: 'delete a profile and its state' });
-  }
-  // Manual create / import are advanced ops — hidden by default since
-  // "Open account isolated" auto-creates the matching profile on demand.
-  // Re-enable from Settings → Global → "Hide manual profile ops" off.
-  if (!hideManual) {
-    items.push({ value: 'create', label: 'Create profile', hint: 'new isolated profile directory' });
-    if (accounts.length > 0) {
-      items.push({ value: 'import', label: 'Import account as profile', hint: 'no browser re-login needed' });
-    }
-  }
-  items.push({ value: 'back', label: 'Back to main menu' });
-  return items;
-}
-
-function profileLabel(name: string): { label: string; hint: string } {
-  try {
-    const info = readProfile(name);
-    return { label: name, hint: info.emailAddress ?? '(not logged in)' };
-  } catch {
-    return { label: name, hint: '(error reading)' };
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Reusable list-pick component (used for accounts + profiles).
 // ---------------------------------------------------------------------------
-
-interface PickProps<T> {
-  title: string;
-  items: T[];
-  keyOf: (t: T) => string;
-  formatLabel: (t: T) => string;
-  formatHint?: (t: T) => string | undefined;
-  onPick: (t: T) => void;
-  onCancel: () => void;
-}
-
-function PickList<T>({ title, items, keyOf, formatLabel, formatHint, onPick, onCancel }: PickProps<T>) {
-  const [cursor, setCursor] = useState(0);
-  useInput((_input, key) => {
-    if (items.length === 0) {
-      if (key.escape || key.return) onCancel();
-      return;
-    }
-    if (key.upArrow) setCursor((c) => Math.max(0, c - 1));
-    else if (key.downArrow) setCursor((c) => Math.min(items.length - 1, c + 1));
-    else if (key.escape) onCancel();
-    else if (key.return) {
-      const t = items[cursor];
-      if (t !== undefined) onPick(t);
-    }
-  });
-  return (
-    <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1}>
-      <Text bold>{title}</Text>
-      {items.length === 0 && <Text color="gray">  (empty — esc to go back)</Text>}
-      {items.map((t, i) => {
-        const selected = i === cursor;
-        const hint = formatHint?.(t);
-        const label = formatLabel(t);
-        return (
-          <Box key={keyOf(t)}>
-            <Text color={selected ? ORANGE : undefined}>{selected ? '▸ ' : '  '}</Text>
-            <Text bold={selected}>{label}</Text>
-            {hint && <Text color="gray">  · {hint}</Text>}
-          </Box>
-        );
-      })}
-    </Box>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Main screen
