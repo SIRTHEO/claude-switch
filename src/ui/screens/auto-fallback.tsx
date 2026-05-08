@@ -101,7 +101,7 @@ interface ScreenProps {
   onDone: () => void;
 }
 
-function AutoFallbackScreen({ accountsDirPath, onDone }: ScreenProps) {
+export function AutoFallbackScreen({ accountsDirPath, onDone }: ScreenProps) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<AutoFallbackConfig>(() => getAutoFallbackConfig(accountsDirPath));
   const [cursor, setCursor] = useState(0);
