@@ -11,6 +11,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { errnoCode } from './errors.js';
 
 const STALE_LOCK_MS = 30_000;
 const ACQUIRE_TIMEOUT_MS = 5_000;
@@ -26,7 +27,7 @@ function isProcessAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'EPERM';
+    return errnoCode(e) === 'EPERM';
   }
 }
 
@@ -35,7 +36,7 @@ function tryClaim(file: string): boolean {
   try {
     fd = fs.openSync(file, 'wx', 0o600);
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    if (errnoCode(e) === 'EEXIST') return false;
     throw e;
   }
   // Ensure the fd is always closed, even if writeSync throws (ENOSPC, EIO).

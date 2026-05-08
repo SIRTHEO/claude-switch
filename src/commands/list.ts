@@ -4,6 +4,7 @@
 import { getCurrent, list as listAccounts } from '../accounts.js';
 import { getAliasesForEmail } from '../aliases.js';
 import type { CommandContext } from './context.js';
+import { errMessage } from '../errors.js';
 
 export function handleList(ctx: CommandContext): void {
   const { claudeJsonPath, accountsDirPath } = ctx;
@@ -16,7 +17,7 @@ export function handleList(ctx: CommandContext): void {
   try {
     current = getCurrent(claudeJsonPath);
   } catch (e) {
-    process.stderr.write(`Note: could not determine active account — ${(e as Error).message}\n\n`);
+    process.stderr.write(`Note: could not determine active account — ${errMessage(e)}\n\n`);
   }
 
   if (accounts.length === 0) {

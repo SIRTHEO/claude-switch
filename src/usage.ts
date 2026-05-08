@@ -18,6 +18,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readKeychain } from './keychain.js';
 import { writeJsonAtomic } from './atomic-write.js';
+import { errMessage } from './errors.js';
 
 const ENDPOINT_HOST = 'api.anthropic.com';
 const ENDPOINT_PATH = '/api/oauth/usage';
@@ -159,7 +160,7 @@ export function fetchUsage(accessToken: string): Promise<FetchUsageOutcome> {
               resolve({ ok: false, rateLimited: false, error: `unexpected response shape: ${preview}` });
             }
           } catch (e) {
-            resolve({ ok: false, rateLimited: false, error: `parse error: ${(e as Error).message}` });
+            resolve({ ok: false, rateLimited: false, error: `parse error: ${errMessage(e)}` });
           }
         });
       },

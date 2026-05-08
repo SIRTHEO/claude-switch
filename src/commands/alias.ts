@@ -1,7 +1,7 @@
 // src/commands/alias.ts
 // `claude switch alias …` — set / list / remove aliases for accounts.
 
-import { ExitError } from '../errors.js';
+import { ExitError, errMessage } from '../errors.js';
 import { setAlias, listAliases, removeAlias } from '../aliases.js';
 import type { CommandContext } from './context.js';
 
@@ -17,7 +17,7 @@ export function handleAliasSet(
     setAlias(name, email, ctx.accountsDirPath);
   } catch (e) {
     if (e instanceof ExitError) throw e;
-    throw new ExitError((e as Error).message);
+    throw new ExitError(errMessage(e));
   }
   console.log(`Alias set: ${name} → ${email}`);
 }
@@ -44,6 +44,6 @@ export function handleAliasRemove(ctx: CommandContext, name: string | undefined)
     console.log(`Alias removed: ${name}`);
   } catch (e) {
     if (e instanceof ExitError) throw e;
-    throw new ExitError((e as Error).message);
+    throw new ExitError(errMessage(e));
   }
 }

@@ -25,6 +25,7 @@ import {
 } from './keychain.js';
 import { isSafeEmail, resolvedAccountFile, syncActiveSnapshotIfStale } from './accounts.js';
 import { claudeJsonPath } from './paths.js';
+import { errMessage } from './errors.js';
 
 // Conservative naming rules so a profile name is never ambiguous on
 // disk, in shell completions, or in error messages. Letters, digits,
@@ -234,7 +235,7 @@ function readLegacyAccount(email: string, accountsDirPath: string): LegacyAccoun
   try {
     parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
   } catch (e) {
-    throw new Error(`${file} is not valid JSON: ${(e as Error).message}`);
+    throw new Error(`${file} is not valid JSON: ${errMessage(e)}`);
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(`${file} does not contain an object.`);

@@ -17,7 +17,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { ExitError } from '../errors.js';
+import { ExitError, errnoCode } from '../errors.js';
 import { writeJsonAtomic } from '../atomic-write.js';
 import { withLock } from '../lock.js';
 import { list as listAccounts, isSafeEmail } from '../accounts.js';
@@ -47,7 +47,7 @@ function readRoutingFileStrict(accountsDirPath: string): RoutingFile {
   try {
     raw = fs.readFileSync(file, 'utf-8');
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (errnoCode(e) === 'ENOENT') {
       return { version: 1, rules: [] };
     }
     throw e;

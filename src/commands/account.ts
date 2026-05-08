@@ -3,7 +3,7 @@
 // management. The interactive Ink screens own the TTY path; non-TTY pipes
 // (CI, scripts) fall through to the legacy CLI flows.
 
-import { ExitError } from '../errors.js';
+import { ExitError, errMessage } from '../errors.js';
 import { getCurrent, remove as removeAccount } from '../accounts.js';
 import { addAccount } from '../switcher.js';
 import { runAddAccountScreen } from '../ui/screens/add-account.js';
@@ -37,6 +37,6 @@ export async function handleRemove(ctx: CommandContext, email: string | undefine
     console.log(`Removed: ${email}`);
   } catch (e) {
     if (e instanceof ExitError) throw e;
-    throw new ExitError((e as Error).message);
+    throw new ExitError(errMessage(e));
   }
 }
