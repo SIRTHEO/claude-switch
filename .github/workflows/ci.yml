@@ -2,7 +2,13 @@ name: Node.js CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      # release-please PRs are created by GITHUB_TOKEN, which does NOT
+      # trigger pull_request events (GitHub security model). Running CI on
+      # the push to the release-please branch lets branch protection see
+      # the required check runs on the PR head SHA, unblocking auto-merge.
+      - 'release-please--**'
   pull_request:
     branches: [main]
 

@@ -23,6 +23,30 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # release-please PRs are opened by GITHUB_TOKEN, which means
+      # pull_request events never fire and required checks never run.
+      # ci.yml now triggers on push to release-please--** branches so
+      # the check runs are associated with the PR head SHA. This step
+      # arms auto-merge so the PR merges automatically once all checks
+      # pass — no manual --admin required.
+      #
+      # Prerequisite (one-time): enable "Allow auto-merge" in
+      # GitHub → Settings → General for this repository.
+      - name: Enable auto-merge on release PR
+        if: ${{ steps.release.outputs.pr }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR=$(gh pr list \
+            --head 'release-please--branches--main--components--claude-switch' \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+          if [ -n "$PR" ] && [ "$PR" != "null" ]; then
+            gh pr merge --auto --merge "$PR" \
+              || echo "::warning::auto-merge not available — merge PR #$PR manually once CI passes"
+          fi
+
   publish-npm:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
