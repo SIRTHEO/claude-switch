@@ -19,6 +19,7 @@ import {
 } from '../../preferences.js';
 import { ORANGE } from '../theme.js';
 import { clearScreen } from '../screen-buffer.js';
+import { awaitInkScreen } from '../utils/ink-screen.js';
 
 type Tab = 'global' | 'account';
 
@@ -225,16 +226,14 @@ export async function runSettingsScreen(
   accountsDirPath: string,
   initialAccount: string | null,
 ): Promise<void> {
-  return new Promise<void>((resolve) => {
-    clearScreen();
-    const instance = render(
-      <SettingsScreen
-        accountsDirPath={accountsDirPath}
-        initialAccount={initialAccount}
-        onDone={() => undefined}
-      />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => resolve());
-  });
+  clearScreen();
+  const instance = render(
+    <SettingsScreen
+      accountsDirPath={accountsDirPath}
+      initialAccount={initialAccount}
+      onDone={() => undefined}
+    />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => undefined);
 }

@@ -14,6 +14,7 @@ import { removeSafely as removeAccountSafely, getCurrent } from '../../accounts.
 import { getAliasesForEmail } from '../../aliases.js';
 import { getApiKey, maskApiKey } from '../../apikey.js';
 import { ORANGE } from '../theme.js';
+import { awaitInkScreen } from '../utils/ink-screen.js';
 
 export interface RemoveAccountResult {
   removed: boolean;
@@ -154,21 +155,19 @@ export async function runRemoveAccountScreen(
     return { removed: false, cancelled: true };
   }
 
-  return new Promise<RemoveAccountResult>((resolve) => {
-    let result: RemoveAccountResult = { removed: false, cancelled: true };
-    clearScreen();
-    const instance = render(
-      <RemoveAccountScreen
-        email={email}
-        claudeJsonPath={claudeJsonPath}
-        accountsDirPath={accountsDirPath}
-        initialStep={{ kind: 'confirm', preview }}
-        onDone={(r) => {
-          result = r;
-        }}
-      />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => resolve(result));
-  });
+  let result: RemoveAccountResult = { removed: false, cancelled: true };
+  clearScreen();
+  const instance = render(
+    <RemoveAccountScreen
+      email={email}
+      claudeJsonPath={claudeJsonPath}
+      accountsDirPath={accountsDirPath}
+      initialStep={{ kind: 'confirm', preview }}
+      onDone={(r) => {
+        result = r;
+      }}
+    />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => result);
 }

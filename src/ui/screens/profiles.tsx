@@ -29,6 +29,7 @@ import {
 import { list as listAccounts } from '../../accounts.js';
 import { buildSpawnArgs } from '../../proxy.js';
 import { ORANGE } from '../theme.js';
+import { awaitInkScreen } from '../utils/ink-screen.js';
 import { type Action, type MenuItem, buildHomeItems, profileLabel } from './profiles/menu-items.js';
 import { PickList } from './profiles/pick-list.js';
 
@@ -423,21 +424,19 @@ async function renderProfilesScreen(
   accountsDirPath: string,
   initialNotice: string | null,
 ): Promise<ScreenExit> {
-  return new Promise<ScreenExit>((resolve) => {
-    let result: ScreenExit = { kind: 'back' };
-    clearScreen();
-    const instance = render(
-      <ProfilesScreen
-        accountsDirPath={accountsDirPath}
-        initialNotice={initialNotice}
-        onExit={(e) => {
-          result = e;
-        }}
-      />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => resolve(result));
-  });
+  let result: ScreenExit = { kind: 'back' };
+  clearScreen();
+  const instance = render(
+    <ProfilesScreen
+      accountsDirPath={accountsDirPath}
+      initialNotice={initialNotice}
+      onExit={(e) => {
+        result = e;
+      }}
+    />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => result);
 }
 
 export async function runProfilesScreen(

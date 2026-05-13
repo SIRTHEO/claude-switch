@@ -11,6 +11,7 @@ import { clearScreen } from '../screen-buffer.js';import { Badge, ConfirmInput, 
 import { getApiKey, maskApiKey } from '../../apikey.js';
 import { saveApiKeyAndMaybeInit } from '../../auto-fallback.js';
 import { ORANGE } from '../theme.js';
+import { awaitInkScreen } from '../utils/ink-screen.js';
 
 const KEY_PREFIX = 'sk-ant-';
 
@@ -163,19 +164,17 @@ export async function runApikeyScreen(
   email: string,
   accountsDirPath: string,
 ): Promise<SetApiKeyResult> {
-  return new Promise<SetApiKeyResult>((resolve) => {
-    let result: SetApiKeyResult = { saved: false, cancelled: true, email };
-    clearScreen();
-    const instance = render(
-      <ApikeyScreen
-        email={email}
-        accountsDirPath={accountsDirPath}
-        onDone={(r) => {
-          result = r;
-        }}
-      />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => resolve(result));
-  });
+  let result: SetApiKeyResult = { saved: false, cancelled: true, email };
+  clearScreen();
+  const instance = render(
+    <ApikeyScreen
+      email={email}
+      accountsDirPath={accountsDirPath}
+      onDone={(r) => {
+        result = r;
+      }}
+    />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => result);
 }
