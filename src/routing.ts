@@ -201,7 +201,7 @@ export function parseClaudeSwitchFile(raw: string): ParseResult<ClaudeSwitchFile
   if (!isPlainObject(json)) {
     return { ok: false, error: 'top-level value must be an object' };
   }
-  const m = (json as Record<string, unknown>).match;
+  const m = json.match;
   if (m === undefined) return { ok: true, value: {} };
   const parsed = parseMatch(m);
   if (!parsed.ok) return { ok: false, error: parsed.error };
@@ -211,7 +211,7 @@ export function parseClaudeSwitchFile(raw: string): ParseResult<ClaudeSwitchFile
 function parseMatch(m: unknown): ParseResult<ClaudeSwitchMatch> {
   if (!isPlainObject(m)) return { ok: false, error: 'match must be an object' };
   const out: ClaudeSwitchMatch = {};
-  const obj = m as Record<string, unknown>;
+  const obj = m;
   if (obj.disable === true) {
     return { ok: true, value: { disable: true } };
   }
@@ -246,7 +246,7 @@ export function parseRoutingFile(raw: string): ParseResult<RoutingFile> {
   if (!isPlainObject(json)) {
     return { ok: false, error: 'top-level value must be an object' };
   }
-  const obj = json as Record<string, unknown>;
+  const obj = json;
   if (obj.version !== 1) {
     return { ok: false, error: `unsupported version: ${String(obj.version)}` };
   }
@@ -259,19 +259,19 @@ export function parseRoutingFile(raw: string): ParseResult<RoutingFile> {
     if (!isPlainObject(r)) {
       return { ok: false, error: `rules[${i}] must be an object` };
     }
-    const rec = r as Record<string, unknown>;
+    const rec = r;
     if (typeof rec.match !== 'string' || rec.match.length === 0) {
       return { ok: false, error: `rules[${i}].match must be a non-empty string` };
     }
-    const hasAccount = typeof rec.account === 'string' && rec.account.length > 0;
-    const hasAlias = typeof rec.alias === 'string' && rec.alias.length > 0;
-    if (hasAccount === hasAlias) {
+    const accountVal = typeof rec.account === 'string' && rec.account.length > 0 ? rec.account : null;
+    const aliasVal = typeof rec.alias === 'string' && rec.alias.length > 0 ? rec.alias : null;
+    if ((accountVal !== null) === (aliasVal !== null)) {
       return { ok: false, error: `rules[${i}] must specify exactly one of account or alias` };
     }
     rules.push({
       match: rec.match,
-      ...(hasAccount ? { account: rec.account as string } : {}),
-      ...(hasAlias ? { alias: rec.alias as string } : {}),
+      ...(accountVal !== null ? { account: accountVal } : {}),
+      ...(aliasVal !== null ? { alias: aliasVal } : {}),
     });
   }
   return { ok: true, value: { version: 1, rules } };

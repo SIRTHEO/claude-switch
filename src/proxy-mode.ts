@@ -100,20 +100,30 @@ export function clearProxyMode(accountsDirPath: string): void {
  * leaves a marker that the next statusline read ignores, instead of
  * sticky-displaying a wrong mode forever.
  */
+interface ProxyModeMarkerShaped {
+  mode: ProxyRuntimeMode;
+  updatedAt: number;
+  lastReason?: unknown;
+  pid?: unknown;
+}
+
+function isProxyModeMarkerShaped(v: unknown): v is ProxyModeMarkerShaped {
+  if (typeof v !== 'object' || v === null) return false;
+  const obj = v as { mode?: unknown; updatedAt?: unknown }; // safe: structural probe on unknown object
+  if (typeof obj.mode !== 'string') return false;
+  if (typeof obj.updatedAt !== 'number') return false;
+  return obj.mode === 'oauth-first' || obj.mode === 'oauth-burst' || obj.mode === 'api-first';
+}
+
 export function readProxyMode(accountsDirPath: string): ProxyModeMarker | null {
   try {
     const raw = fs.readFileSync(markerPath(accountsDirPath), 'utf-8');
     const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    const obj = parsed as Record<string, unknown>;
-    if (typeof obj.mode !== 'string') return null;
-    if (typeof obj.updatedAt !== 'number') return null;
-    const mode = obj.mode as ProxyRuntimeMode;
-    if (mode !== 'oauth-first' && mode !== 'oauth-burst' && mode !== 'api-first') return null;
-    if (Date.now() - obj.updatedAt > PROXY_MODE_STALE_MS) return null;
-    const out: ProxyModeMarker = { mode, updatedAt: obj.updatedAt };
-    if (typeof obj.lastReason === 'string') out.lastReason = obj.lastReason;
-    if (typeof obj.pid === 'number') out.pid = obj.pid;
+    if (!isProxyModeMarkerShaped(parsed)) return null;
+    if (Date.now() - parsed.updatedAt > PROXY_MODE_STALE_MS) return null;
+    const out: ProxyModeMarker = { mode: parsed.mode, updatedAt: parsed.updatedAt };
+    if (typeof parsed.lastReason === 'string') out.lastReason = parsed.lastReason;
+    if (typeof parsed.pid === 'number') out.pid = parsed.pid;
     return out;
   } catch {
     return null;

@@ -128,13 +128,23 @@ export interface StoredAccountPrefs {
   authMode?: AuthMode;
 }
 
+/**
+ * Minimal structural check: any non-null object is a valid (possibly empty)
+ * StoredAccountPrefs — all fields are optional. Unknown keys are silently
+ * ignored by the spread in `resolveAccountPrefs`, so there is no need to
+ * enumerate each field here.
+ */
+function isStoredAccountPrefs(v: unknown): v is StoredAccountPrefs {
+  return typeof v === 'object' && v !== null;
+}
+
 export function readStoredAccountPrefs(email: string, accountsDirPath: string): StoredAccountPrefs {
   try {
     const file = resolvedAccountFile(email, accountsDirPath);
     const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
     const prefs = raw?._prefs;
-    if (!prefs || typeof prefs !== 'object') return {};
-    return prefs as StoredAccountPrefs;
+    if (!isStoredAccountPrefs(prefs)) return {};
+    return prefs;
   } catch {
     return {};
   }
@@ -190,11 +200,9 @@ export function writeStoredAccountPrefs(
     } catch {
       throw new Error(`No saved account for ${email}`);
     }
-    const existing = (data._prefs && typeof data._prefs === 'object')
-      ? (data._prefs as StoredAccountPrefs)
-      : {};
+    const existing: StoredAccountPrefs = isStoredAccountPrefs(data._prefs) ? data._prefs : {};
     const merged: StoredAccountPrefs = { ...existing, ...partial };
-    for (const k of Object.keys(merged) as Array<keyof StoredAccountPrefs>) {
+    for (const k of Object.keys(merged) as Array<keyof StoredAccountPrefs>) { // safe: Object.keys widening, keys are restricted to StoredAccountPrefs by the typed variable
       if (merged[k] === undefined) delete merged[k];
     }
     data._prefs = merged;

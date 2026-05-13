@@ -34,16 +34,27 @@ function cacheFilePath(): string {
   return path.join(os.homedir(), '.claude', 'accounts', '.update-check.json');
 }
 
+/** Extract a string `version` field from an unknown JSON value without a cast. */
+function extractVersion(v: unknown): string | undefined {
+  if (typeof v !== 'object' || v === null) return undefined;
+  const ver = (v as { version?: unknown }).version; // safe: structural probe on unknown object; TS cannot narrow arbitrary field names without an intermediate cast
+  return typeof ver === 'string' ? ver : undefined;
+}
+
+function isCheckCacheShaped(v: unknown): v is CheckCache {
+  return (
+    typeof v === 'object' && v !== null &&
+    typeof (v as { checkedAt?: unknown }).checkedAt === 'number' && // safe: structural probe on unknown object
+    typeof (v as { latestVersion?: unknown }).latestVersion === 'string' // safe: structural probe on unknown object
+  );
+}
+
 function readCache(): CheckCache | null {
   try {
     const raw = fs.readFileSync(cacheFilePath(), 'utf-8');
     const parsed: unknown = JSON.parse(raw);
-    if (
-      typeof parsed === 'object' && parsed !== null &&
-      typeof (parsed as Record<string, unknown>).checkedAt === 'number' &&
-      typeof (parsed as Record<string, unknown>).latestVersion === 'string'
-    ) {
-      return parsed as CheckCache;
+    if (isCheckCacheShaped(parsed)) {
+      return parsed;
     }
   } catch { /* no cache yet */ }
   return null;
@@ -110,7 +121,7 @@ function fetchLatestVersionBackground(): void {
     });
     res.on('end', () => {
       try {
-        const version = (JSON.parse(body) as Record<string, unknown>).version;
+        const version = extractVersion(JSON.parse(body));
         if (typeof version === 'string') {
           writeCache({ checkedAt: Date.now(), latestVersion: version });
         }
@@ -138,8 +149,7 @@ export function fetchLatestVersionSync(): Promise<string | null> {
       });
       res.on('end', () => {
         try {
-          const version = (JSON.parse(body) as Record<string, unknown>).version;
-          resolve(typeof version === 'string' ? version : null);
+          resolve(extractVersion(JSON.parse(body)) ?? null);
         } catch { resolve(null); }
       });
     });

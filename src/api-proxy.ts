@@ -344,13 +344,13 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
     onResponse: (res: http.IncomingMessage) => void,
     onError: () => void,
   ): void {
-    const req = (requester as typeof https).request(
+    const req = (requester as typeof https).request( // safe: requester is either http or https; both expose .request with the same signature
       {
         hostname: upstream.hostname,
         port: upstreamPort,
         path: path ?? '/',
         method: method ?? 'GET',
-        headers: headers as OutgoingHttpHeaders,
+        headers: headers as OutgoingHttpHeaders, // safe: IncomingHttpHeaders ↔ OutgoingHttpHeaders are structurally compatible; Node typings keep them separate
       },
       onResponse,
     );
@@ -393,7 +393,7 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
         // Shared api-key fast-path callbacks (api-first + burst probe bypass).
         const onApiKeyResponse = (proxyRes: http.IncomingMessage): void => {
           recordUsageFromResponse(proxyRes);
-          res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
+          res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders); // safe: passthrough headers, Node keeps IncomingHttpHeaders ↔ OutgoingHttpHeaders separate but they're structurally the same for forward proxying
           proxyRes.pipe(res);
         };
         const onUpstreamError = (): void => {
@@ -448,7 +448,7 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
             (retryRes) => {
               if (res.headersSent) return;
               recordUsageFromResponse(retryRes);
-              res.writeHead(retryRes.statusCode!, retryRes.headers as OutgoingHttpHeaders);
+              res.writeHead(retryRes.statusCode!, retryRes.headers as OutgoingHttpHeaders); // safe: passthrough headers, structurally identical for forward proxying
               retryRes.pipe(res);
             },
             () => { if (!res.headersSent) { res.writeHead(502); res.end(); } },
@@ -485,7 +485,7 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
               // request goes straight at OAuth without probing logic.
               recordOauthSuccess();
               recordUsageFromResponse(proxyRes);
-              res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
+              res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders); // safe: passthrough headers, structurally identical for forward proxying
               for (const c of peeked) res.write(c);
               proxyRes.pipe(res);
             };
@@ -525,7 +525,7 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
 
     server.on('error', reject);
     server.listen(0, '127.0.0.1', () => {
-      const addr = server.address() as AddressInfo;
+      const addr = server.address() as AddressInfo; // safe: server is bound to a TCP address, never a pipe, so address() is always AddressInfo here
       // Phase 13.6 — emit initial runtime mode marker. `oauth-burst` is
       // only entered after threshold failures, never at startup; we
       // always boot in either `oauth-first` or `api-first`.
