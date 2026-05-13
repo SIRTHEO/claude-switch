@@ -220,6 +220,14 @@ export async function handlePassthrough(
         // proxy stats. Lets the user verify the proxy actually saw
         // traffic / fired retries instead of guessing from a banner.
         persistStatsTo: `${accountsDirPath}/.proxy-stats.json`,
+        // Phase 13.4 + 13.6 — enable realtime usage push from upstream
+        // response headers AND runtime-mode marker for the statusline.
+        // Both wired together: the marker tells the statusline what
+        // mode the proxy is in (oauth-first / oauth-burst / api-first);
+        // the header push keeps the per-account usage cache fresh
+        // without polling /api/oauth/usage.
+        accountsDirPath,
+        account: email,
       });
       process.on('exit', () => proxy.close());
 
