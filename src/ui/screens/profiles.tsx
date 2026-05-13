@@ -28,10 +28,34 @@ import {
 } from '../../profiles.js';
 import { list as listAccounts } from '../../accounts.js';
 import { buildSpawnArgs } from '../../proxy.js';
+import { ExitError } from '../../errors.js';
 import { ORANGE } from '../theme.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 import { type Action, type MenuItem, buildHomeItems, profileLabel } from './profiles/menu-items.js';
 import { PickList } from './profiles/pick-list.js';
+
+// ---------------------------------------------------------------------------
+// Spawn helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Run `claude` via spawnSync and propagate the exit status as an ExitError
+ * instead of calling process.exit() directly. This lets the caller (run-app.ts
+ * → runApp's finally block) restore the alt-buffer before the process exits.
+ *
+ * Exported for unit testing without needing to drive the Ink UI.
+ */
+export function spawnClaudeAndExit(
+  command: string,
+  args: string[],
+  options: ReturnType<typeof buildSpawnArgs>['options'],
+): never {
+  const result = spawnSync(command, args, options);
+  if (result.error) {
+    throw new ExitError(`Error: could not run claude: ${result.error.message}`, 1);
+  }
+  throw new ExitError('', result.status ?? 0);
+}
 
 // ---------------------------------------------------------------------------
 // Result shapes
@@ -457,12 +481,7 @@ export async function runProfilesScreen(
       const { command, args, options } = buildSpawnArgs(
         claudeBin, [], process.platform, { CLAUDE_CONFIG_DIR: req.profileDir },
       );
-      const result = spawnSync(command, args, options);
-      if (result.error) {
-        process.stderr.write(`Error: could not run claude: ${result.error.message}\n`);
-        process.exit(1);
-      }
-      process.exit(result.status ?? 0);
+      spawnClaudeAndExit(command, args, options);
     }
     if (req.kind === 'use-profile') {
       restoreBuffer();
@@ -470,12 +489,7 @@ export async function runProfilesScreen(
       const { command, args, options } = buildSpawnArgs(
         claudeBin, [], process.platform, { CLAUDE_CONFIG_DIR: req.profileDir },
       );
-      const result = spawnSync(command, args, options);
-      if (result.error) {
-        process.stderr.write(`Error: could not run claude: ${result.error.message}\n`);
-        process.exit(1);
-      }
-      process.exit(result.status ?? 0);
+      spawnClaudeAndExit(command, args, options);
     }
     if (req.kind === 'login-profile') {
       restoreBuffer();
@@ -528,12 +542,7 @@ export async function runProfilesScreen(
       const launch = buildSpawnArgs(
         claudeBin, [], process.platform, { CLAUDE_CONFIG_DIR: req.profileDir },
       );
-      const result = spawnSync(launch.command, launch.args, launch.options);
-      if (result.error) {
-        process.stderr.write(`Error: could not run claude: ${result.error.message}\n`);
-        process.exit(1);
-      }
-      process.exit(result.status ?? 0);
+      spawnClaudeAndExit(launch.command, launch.args, launch.options);
     }
   }
 }
