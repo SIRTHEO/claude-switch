@@ -342,12 +342,16 @@ describe('save/load — API-key acceptance leak prevention', () => {
     assert.equal(after.apiKey, undefined, 'must drop the prior account apiKey field');
   });
 
-  it('restores customApiKeyResponses + apiKey on load when target has its own snapshot', () => {
+  it('restores customApiKeyResponses + apiKey on load when claude-switch tracks an apikey for the account (Phase 14.2)', () => {
+    // Phase 14.2: restore only happens when claude-switch ALSO tracks an
+    // apikey for the target (via `_apiKey` in snapshot or Keychain entry).
+    // Here we include `_apiKey: '...'` so the tracker recognises bob's key.
     fs.writeFileSync(claudeJson, JSON.stringify({
       oauthAccount: { emailAddress: 'alice@example.com' },
     }));
     fs.writeFileSync(path.join(accDir, 'bob@example.com.json'), JSON.stringify({
       emailAddress: 'bob@example.com',
+      _apiKey: 'sk-ant-api03-bob',
       _customApiKeyResponses: { approved: ['sk-ant-api03-bob'], rejected: [] },
       _claudeJsonApiKey: 'sk-ant-api03-bob',
     }));
@@ -357,10 +361,16 @@ describe('save/load — API-key acceptance leak prevention', () => {
     assert.equal(after.apiKey, 'sk-ant-api03-bob');
   });
 
-  it('round-trip: save A, switch to B, switch back to A — A regains its own approval', () => {
+  it('round-trip: save A, switch to B, switch back to A — A regains its own approval when A tracks an apikey', () => {
+    // Setup alice WITH _apiKey so 14.2 considers her "tracked" and the
+    // approval restores on switch-back.
     fs.writeFileSync(claudeJson, JSON.stringify({
       oauthAccount: { emailAddress: 'alice@example.com' },
       customApiKeyResponses: { approved: ['sk-ant-api03-alice'], rejected: [] },
+    }));
+    fs.writeFileSync(path.join(accDir, 'alice@example.com.json'), JSON.stringify({
+      emailAddress: 'alice@example.com',
+      _apiKey: 'sk-ant-api03-alice',
     }));
     save('alice@example.com', claudeJson, accDir);
 
@@ -372,11 +382,64 @@ describe('save/load — API-key acceptance leak prevention', () => {
     const midway = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
     assert.equal(midway.customApiKeyResponses, undefined);
 
-    // Switch back to alice — restore alice’s snapshot.
+    // Switch back to alice — restore alice's snapshot (she's tracked).
     save('bob@example.com', claudeJson, accDir);
     load('alice@example.com', claudeJson, accDir);
     const restored = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
     assert.deepEqual(restored.customApiKeyResponses, { approved: ['sk-ant-api03-alice'], rejected: [] });
+  });
+
+  // ----- Phase 14.2 — silent-billing leak prevention -----
+
+  it('Phase 14.2: load() PURGES apiKey + customApiKeyResponses when claude-switch does NOT track an apikey', () => {
+    // The bug class: account file carries _claudeJsonApiKey + approval
+    // hash from a past Anthropic-side prompt acceptance, but
+    // claude-switch itself never had that key set (no _apiKey, no
+    // Keychain entry). Pre-14.2 load() resuscitated apiKey in
+    // claude.json on every switch → silent API-tier billing.
+    // 14.2: refuse to restore unless claude-switch tracks the key.
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'alice@example.com' },
+    }));
+    fs.writeFileSync(path.join(accDir, 'leak@example.com.json'), JSON.stringify({
+      emailAddress: 'leak@example.com',
+      // NO _apiKey, NO Keychain entry → claude-switch doesn't track it
+      _customApiKeyResponses: { approved: ['sk-ant-api03-leak'], rejected: [] },
+      _claudeJsonApiKey: 'sk-ant-api03-leak',
+    }));
+    load('leak@example.com', claudeJson, accDir);
+    const after = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
+    assert.equal(after.apiKey, undefined,
+      'apiKey must NOT be restored when claude-switch does not track it');
+    assert.equal(after.customApiKeyResponses, undefined,
+      'customApiKeyResponses must also be purged to prevent silent re-approval');
+  });
+
+  it('Phase 14.2: env escape CLAUDE_SWITCH_KEEP_UNTRACKED_APIKEY=1 preserves pre-14.2 behavior', () => {
+    // One-release back-compat lever: if a user relied on the silent
+    // persistence, this flag restores the old semantics so they have
+    // time to migrate (e.g., explicit `claude switch apikey set`).
+    const prev = process.env.CLAUDE_SWITCH_KEEP_UNTRACKED_APIKEY;
+    process.env.CLAUDE_SWITCH_KEEP_UNTRACKED_APIKEY = '1';
+    try {
+      fs.writeFileSync(claudeJson, JSON.stringify({
+        oauthAccount: { emailAddress: 'alice@example.com' },
+      }));
+      fs.writeFileSync(path.join(accDir, 'escape@example.com.json'), JSON.stringify({
+        emailAddress: 'escape@example.com',
+        _customApiKeyResponses: { approved: ['sk-ant-api03-escape'], rejected: [] },
+        _claudeJsonApiKey: 'sk-ant-api03-escape',
+      }));
+      load('escape@example.com', claudeJson, accDir);
+      const after = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
+      assert.equal(after.apiKey, 'sk-ant-api03-escape',
+        'env escape preserves the old restore semantics');
+      assert.deepEqual(after.customApiKeyResponses,
+        { approved: ['sk-ant-api03-escape'], rejected: [] });
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_SWITCH_KEEP_UNTRACKED_APIKEY;
+      else process.env.CLAUDE_SWITCH_KEEP_UNTRACKED_APIKEY = prev;
+    }
   });
 
   it('does not strip _customApiKeyResponses internal field into claude.json', () => {
