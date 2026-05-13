@@ -9,6 +9,7 @@ import { clearScreen } from '../screen-buffer.js';import { Badge } from '@inkjs/
 
 import { list as listAccounts } from '../../accounts.js';
 import { ORANGE } from '../theme.js';
+import { awaitInkScreen } from '../utils/ink-screen.js';
 
 interface Props {
   title: string;
@@ -70,18 +71,16 @@ export async function runPickAccount(
   accountsDirPath: string,
   exclude?: string,
 ): Promise<string | null> {
-  return new Promise<string | null>((resolve) => {
-    let result: string | null = null;
-    clearScreen();
-    const instance = render(
-      <PickAccountScreen
-        title={title}
-        accountsDirPath={accountsDirPath}
-        exclude={exclude}
-        onDone={(email) => { result = email; }}
-      />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => resolve(result));
-  });
+  let result: string | null = null;
+  clearScreen();
+  const instance = render(
+    <PickAccountScreen
+      title={title}
+      accountsDirPath={accountsDirPath}
+      exclude={exclude}
+      onDone={(email) => { result = email; }}
+    />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => result);
 }

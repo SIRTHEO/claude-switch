@@ -16,6 +16,7 @@ import {
   type AutoFallbackConfig,
 } from '../../auto-fallback.js';
 import { ORANGE } from '../theme.js';
+import { awaitInkScreen } from '../utils/ink-screen.js';
 
 type Action =
   | 'toggle-revert'
@@ -277,12 +278,10 @@ export function AutoFallbackScreen({ accountsDirPath, onDone }: ScreenProps) {
 }
 
 export async function runAutoFallbackScreen(accountsDirPath: string): Promise<void> {
-  return new Promise<void>((resolve) => {
-    clearScreen();
-    const instance = render(
-      <AutoFallbackScreen accountsDirPath={accountsDirPath} onDone={() => undefined} />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => resolve());
-  });
+  clearScreen();
+  const instance = render(
+    <AutoFallbackScreen accountsDirPath={accountsDirPath} onDone={() => undefined} />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => undefined);
 }

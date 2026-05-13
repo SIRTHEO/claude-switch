@@ -23,6 +23,7 @@ import { withLock } from '../../lock.js';
 import { setAlias } from '../../aliases.js';
 import { buildSpawnArgs } from '../../proxy.js';
 import { ORANGE } from '../theme.js';
+import { awaitInkScreen } from '../utils/ink-screen.js';
 
 export interface AddAccountResult {
   email: string | null;
@@ -80,23 +81,19 @@ function PreSpawnScreen({ onSubmit }: PreProps) {
 }
 
 async function askExpectedEmail(): Promise<string | null> {
-  return new Promise<string | null>((resolve) => {
-    let result: string | null = null;
-    let cancelled = true;
-    clearScreen();
-    const instance = render(
-      <PreSpawnScreen
-        onSubmit={(email) => {
-          result = email;
-          cancelled = false;
-        }}
-      />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => {
-      resolve(cancelled ? null : result);
-    });
-  });
+  let result: string | null = null;
+  let cancelled = true;
+  clearScreen();
+  const instance = render(
+    <PreSpawnScreen
+      onSubmit={(email) => {
+        result = email;
+        cancelled = false;
+      }}
+    />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => (cancelled ? null : result));
 }
 
 // ---------------------------------------------------------------------------
@@ -244,24 +241,22 @@ async function renderPostSpawn(
   claudeJsonPath: string,
   accountsDirPath: string,
 ): Promise<AddAccountResult> {
-  return new Promise<AddAccountResult>((resolve) => {
-    let result: AddAccountResult = { email: null, alias: null, cancelled: true };
-    clearScreen();
-    const instance = render(
-      <PostSpawnScreen
-        newEmail={newEmail}
-        expectedEmail={expectedEmail}
-        currentEmail={currentEmail}
-        claudeJsonPath={claudeJsonPath}
-        accountsDirPath={accountsDirPath}
-        onDone={(r) => {
-          result = r;
-        }}
-      />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => resolve(result));
-  });
+  let result: AddAccountResult = { email: null, alias: null, cancelled: true };
+  clearScreen();
+  const instance = render(
+    <PostSpawnScreen
+      newEmail={newEmail}
+      expectedEmail={expectedEmail}
+      currentEmail={currentEmail}
+      claudeJsonPath={claudeJsonPath}
+      accountsDirPath={accountsDirPath}
+      onDone={(r) => {
+        result = r;
+      }}
+    />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => result);
 }
 
 // ---------------------------------------------------------------------------

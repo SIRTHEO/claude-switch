@@ -25,6 +25,7 @@ import {
   CCSTATUSLINE_COMMAND,
 } from '../../statusline-install.js';
 import { ORANGE } from '../theme.js';
+import { awaitInkScreen } from '../utils/ink-screen.js';
 
 export interface SetupWizardResult {
   binPath: string | null;
@@ -416,23 +417,21 @@ export function SetupScreen({ selfPath, onDone }: Props) {
 }
 
 export async function runSetupWizardScreen(selfPath: string): Promise<SetupWizardResult> {
-  return new Promise<SetupWizardResult>((resolve) => {
-    let result: SetupWizardResult = {
-      binPath: null,
-      patchedConfigs: [],
-      statusLineInstalled: false,
-      cancelled: true,
-    };
-    clearScreen();
-    const instance = render(
-      <SetupScreen
-        selfPath={selfPath}
-        onDone={(r) => {
-          result = r;
-        }}
-      />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => resolve(result));
-  });
+  let result: SetupWizardResult = {
+    binPath: null,
+    patchedConfigs: [],
+    statusLineInstalled: false,
+    cancelled: true,
+  };
+  clearScreen();
+  const instance = render(
+    <SetupScreen
+      selfPath={selfPath}
+      onDone={(r) => {
+        result = r;
+      }}
+    />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => result);
 }

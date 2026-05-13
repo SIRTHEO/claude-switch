@@ -14,6 +14,7 @@ import { useSnapshot } from '../hooks/use-snapshot.js';
 import { useAsyncAction } from '../hooks/use-async-action.js';
 import { ORANGE } from '../theme.js';
 import { clearScreen } from '../screen-buffer.js';
+import { awaitInkScreen } from '../utils/ink-screen.js';
 import { AccountList, MenuList } from './home/components.js';
 import {
   GLOBAL_ITEMS,
@@ -313,20 +314,18 @@ export async function renderHome(
   accountsDirPath: string,
   initialNotice: HomeExit extends never ? never : Props['initialNotice'] = null,
 ): Promise<HomeExit> {
-  return new Promise<HomeExit>((resolve) => {
-    let result: HomeExit = { action: 'exit' };
-    clearScreen();
-    const instance = render(
-      <HomeScreen
-        claudeJsonPath={claudeJsonPath}
-        accountsDirPath={accountsDirPath}
-        initialNotice={initialNotice}
-        onExit={(e) => {
-          result = e;
-        }}
-      />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => resolve(result));
-  });
+  let result: HomeExit = { action: 'exit' };
+  clearScreen();
+  const instance = render(
+    <HomeScreen
+      claudeJsonPath={claudeJsonPath}
+      accountsDirPath={accountsDirPath}
+      initialNotice={initialNotice}
+      onExit={(e) => {
+        result = e;
+      }}
+    />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => result);
 }

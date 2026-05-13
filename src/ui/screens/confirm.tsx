@@ -6,6 +6,7 @@ import { Box, Text, render, useApp } from 'ink';
 import { clearScreen } from '../screen-buffer.js';import { Badge, ConfirmInput } from '@inkjs/ui';
 
 import { ORANGE } from '../theme.js';
+import { awaitInkScreen } from '../utils/ink-screen.js';
 
 interface Props {
   title: string;
@@ -45,18 +46,16 @@ export async function runConfirm(
   message: string,
   defaultYes = false,
 ): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    let result = false;
-    clearScreen();
-    const instance = render(
-      <ConfirmScreen
-        title={title}
-        message={message}
-        defaultYes={defaultYes}
-        onDone={(yes) => { result = yes; }}
-      />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => resolve(result));
-  });
+  let result = false;
+  clearScreen();
+  const instance = render(
+    <ConfirmScreen
+      title={title}
+      message={message}
+      defaultYes={defaultYes}
+      onDone={(yes) => { result = yes; }}
+    />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => result);
 }

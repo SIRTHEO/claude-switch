@@ -14,6 +14,7 @@ import { getApiKey, removeApiKey } from '../../apikey.js';
 import { getAliasesForEmail, setAlias, removeAlias } from '../../aliases.js';
 import { withLock } from '../../lock.js';
 import { ORANGE } from '../theme.js';
+import { awaitInkScreen } from '../utils/ink-screen.js';
 import { runApikeyScreen } from './set-apikey.js';
 import { runRemoveAccountScreen } from './remove-account.js';
 
@@ -323,22 +324,20 @@ async function renderManage(
   accountsDirPath: string,
   initialEmail: string | null,
 ): Promise<ScreenExit> {
-  return new Promise<ScreenExit>((resolve) => {
-    let result: ScreenExit = { kind: 'back' };
-    clearScreen();
-    const instance = render(
-      <ManageScreen
-        claudeJsonPath={claudeJsonPath}
-        accountsDirPath={accountsDirPath}
-        initialEmail={initialEmail}
-        onExit={(e) => {
-          result = e;
-        }}
-      />,
-      { exitOnCtrlC: true },
-    );
-    instance.waitUntilExit().then(() => resolve(result));
-  });
+  let result: ScreenExit = { kind: 'back' };
+  clearScreen();
+  const instance = render(
+    <ManageScreen
+      claudeJsonPath={claudeJsonPath}
+      accountsDirPath={accountsDirPath}
+      initialEmail={initialEmail}
+      onExit={(e) => {
+        result = e;
+      }}
+    />,
+    { exitOnCtrlC: true },
+  );
+  return awaitInkScreen(instance, () => result);
 }
 
 export async function runManageAccount(
