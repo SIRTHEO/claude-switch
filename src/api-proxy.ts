@@ -39,6 +39,7 @@ import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
 import { parseUsageHeadersIfPresent, updateUsageCacheFromHeaders } from './usage.js';
+import { writeProxyMode, clearProxyMode } from './proxy-mode.js';
 
 export const DEFAULT_UPSTREAM = 'https://api.anthropic.com';
 export const DEFAULT_MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
@@ -274,10 +275,18 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
       process.stderr.write(
         `\n⚡ claude-switch: OAuth failed ${consecutiveOauthFailures}× in a row — entering API-burst mode (probing OAuth every ${Math.round(burstConfig.probeIntervalMs / 60000)} min)\n\n`,
       );
+      // Phase 13.6 — runtime mode marker for the statusline. Only emit on
+      // state transitions; individual OAuth failures before the threshold
+      // don't move the marker.
+      if (opts.accountsDirPath) {
+        writeProxyMode(opts.accountsDirPath, 'oauth-burst',
+          `${consecutiveOauthFailures} consecutive OAuth failures`);
+      }
     }
   };
 
   const recordOauthSuccess = (): void => {
+    const wasInBurst = burstActive;
     if (burstActive) {
       process.stderr.write(
         '\n⚡ claude-switch: OAuth probe succeeded — exiting API-burst, back to subscription\n\n',
@@ -288,6 +297,12 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
     counters.oauthSuccesses++;
     lastOauthAttemptAt = now();
     dbg('oauth succeeded');
+    // Phase 13.6 — flip back to oauth-first only when we were actually
+    // in burst. Plain successes don't change the persisted mode.
+    if (wasInBurst && opts.accountsDirPath) {
+      writeProxyMode(opts.accountsDirPath, 'oauth-first',
+        'OAuth probe succeeded — burst exited');
+    }
   };
 
   /** Decide whether THIS request should attempt OAuth, given oauth-first
@@ -521,6 +536,13 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
     server.on('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address() as AddressInfo;
+      // Phase 13.6 — emit initial runtime mode marker. `oauth-burst` is
+      // only entered after threshold failures, never at startup; we
+      // always boot in either `oauth-first` or `api-first`.
+      if (opts.accountsDirPath) {
+        const initialMode = mode === 'api-first' ? 'api-first' : 'oauth-first';
+        writeProxyMode(opts.accountsDirPath, initialMode, `proxy started in ${mode} mode`);
+      }
       const persistStats = (): void => {
         if (!opts.persistStatsTo) return;
         try {
@@ -541,6 +563,10 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
         port: addr.port,
         close: (cb) => {
           persistStats();
+          // Phase 13.6 — clear the runtime mode marker on clean shutdown
+          // so the next statusline read falls back to the persistent flag
+          // instead of sticky-displaying a stale mode.
+          if (opts.accountsDirPath) clearProxyMode(opts.accountsDirPath);
           server.close(cb);
         },
         state: () => ({

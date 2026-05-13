@@ -21,6 +21,7 @@ import {
   triggerBackgroundUsageRefresh,
 } from '../usage.js';
 import { profilesDir } from '../profiles.js';
+import { readProxyMode } from '../proxy-mode.js';
 import type { CommandContext } from './context.js';
 
 // --------------------------------------------------------------------------
@@ -116,9 +117,35 @@ function renderStatusline(
   })();
 
   const autoEngaged = isFallbackAutoEngaged(accountsDirPath);
-  const modeLabel = usingApiKey
-    ? yellow(autoEngaged ? 'API auto' : 'API')
-    : green('OAuth');
+
+  // Phase 13.6 — effective runtime mode. When the proxy is alive it writes
+  // its current state to `.proxy-mode.json` on every transition; we read it
+  // and reflect the *actual* per-request routing instead of the boot-time
+  // flag. When the marker is missing or stale (proxy not running / crashed),
+  // fall back to the persistent flag — back-compat with the pre-13.6 label.
+  const runtimeMarker = readProxyMode(accountsDirPath);
+  type EffectiveMode = 'oauth' | 'oauth-burst' | 'api-auto' | 'api';
+  const effectiveMode: EffectiveMode = (() => {
+    if (runtimeMarker) {
+      if (runtimeMarker.mode === 'oauth-first') return 'oauth';
+      if (runtimeMarker.mode === 'oauth-burst') return 'oauth-burst';
+      if (runtimeMarker.mode === 'api-first') return autoEngaged ? 'api-auto' : 'api';
+    }
+    if (usingApiKey) return autoEngaged ? 'api-auto' : 'api';
+    return 'oauth';
+  })();
+  const modeLabel = (() => {
+    switch (effectiveMode) {
+      case 'oauth': return green('OAuth');
+      // Burst: OAuth was the intent but we're temporarily routing through
+      // API key. Distinct label so the user knows they're being billed to
+      // API credits right now, not subscription. Dim yellow signals
+      // "temporary unhealthy state" without being alarming.
+      case 'oauth-burst': return yellow('OAuth↻API');
+      case 'api-auto': return yellow('API auto');
+      case 'api': return red('API');
+    }
+  })();
   const usageBadge = (() => {
     if (fivePct === undefined) return '';
     const pctStr = `${fivePct.toFixed(0)}%`;
@@ -132,7 +159,12 @@ function renderStatusline(
     const json = {
       email,
       shortName,
+      // `mode` stays binary for back-compat with any consumer that
+      // already parses it. `effectiveMode` is the new 4-state field
+      // for clients that want the runtime distinction.
       mode: usingApiKey ? 'api' : 'oauth',
+      effectiveMode,
+      proxyRuntimeMode: runtimeMarker?.mode ?? null,
       fallback: fallbackOn,
       fallbackAutoEngaged: autoEngaged,
       hasApiKey: !!apiKey,

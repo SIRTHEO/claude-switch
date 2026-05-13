@@ -870,3 +870,111 @@ describe('startFallbackProxy — usage header push (Phase 13.4)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 13.6 — proxy writes runtime-mode marker on lifecycle events
+// ---------------------------------------------------------------------------
+
+describe('startFallbackProxy — runtime mode marker (Phase 13.6)', () => {
+  let tmpDir: string;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-proxy-mode-')); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  const markerPath = (): string => path.join(tmpDir, '.proxy-mode.json');
+
+  it('writes oauth-first marker on startup, clears it on close', async () => {
+    const upstream = await createUpstream((_req: IncomingMessage, res: ServerResponse) => {
+      res.writeHead(200); res.end('ok');
+    });
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key',
+      mode: 'oauth-first',
+      upstreamBase: upstream.url,
+      accountsDirPath: tmpDir,
+    });
+    try {
+      // Startup: marker should exist and report oauth-first.
+      const after = JSON.parse(fs.readFileSync(markerPath(), 'utf-8'));
+      assert.strictEqual(after.mode, 'oauth-first');
+    } finally {
+      await new Promise<void>((r) => proxy.close(() => r()));
+      await upstream.close();
+    }
+    // Clean shutdown: marker is removed so a stale read can't mislead
+    // the next statusline render.
+    assert.ok(!fs.existsSync(markerPath()), 'marker should be cleared on close');
+  });
+
+  it('writes api-first marker when proxy starts in api-first mode', async () => {
+    const upstream = await createUpstream((_req: IncomingMessage, res: ServerResponse) => {
+      res.writeHead(200); res.end('ok');
+    });
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key',
+      mode: 'api-first',
+      upstreamBase: upstream.url,
+      accountsDirPath: tmpDir,
+    });
+    try {
+      const marker = JSON.parse(fs.readFileSync(markerPath(), 'utf-8'));
+      assert.strictEqual(marker.mode, 'api-first');
+    } finally {
+      await new Promise<void>((r) => proxy.close(() => r()));
+      await upstream.close();
+    }
+  });
+
+  it('does not write any marker when accountsDirPath is unset (back-compat)', async () => {
+    const upstream = await createUpstream((_req: IncomingMessage, res: ServerResponse) => {
+      res.writeHead(200); res.end('ok');
+    });
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key',
+      mode: 'oauth-first',
+      upstreamBase: upstream.url,
+      // No accountsDirPath — old callers / tests must keep working.
+    });
+    try {
+      assert.ok(!fs.existsSync(markerPath()), 'no marker should be written');
+    } finally {
+      await new Promise<void>((r) => proxy.close(() => r()));
+      await upstream.close();
+    }
+  });
+
+  it('transitions to oauth-burst marker after threshold consecutive OAuth failures', async () => {
+    // Upstream always returns 429 → forces proxy into burst after 3 failures.
+    const upstream = await createUpstream((req: IncomingMessage, res: ServerResponse) => {
+      const isOauthAttempt = (req.headers['authorization'] as string ?? '').startsWith('Bearer ');
+      if (isOauthAttempt) {
+        // Force the 429 path on the OAuth attempt; the retry comes back
+        // with x-api-key which we accept normally.
+        res.writeHead(429); res.end('rate limited');
+      } else {
+        res.writeHead(200); res.end('ok');
+      }
+    });
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key',
+      mode: 'oauth-first',
+      upstreamBase: upstream.url,
+      accountsDirPath: tmpDir,
+      burstConfig: { failureThreshold: 2, probeIntervalMs: 60_000 },
+    });
+    try {
+      // Make 3 requests so we cross the threshold (=2).
+      for (let i = 0; i < 3; i++) {
+        await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+          headers: { authorization: 'Bearer tok' }, body: '{}',
+        });
+      }
+      await new Promise((r) => setTimeout(r, 30));
+      const marker = JSON.parse(fs.readFileSync(markerPath(), 'utf-8'));
+      assert.strictEqual(marker.mode, 'oauth-burst',
+        'marker should be oauth-burst after threshold failures');
+    } finally {
+      await new Promise<void>((r) => proxy.close(() => r()));
+      await upstream.close();
+    }
+  });
+});
