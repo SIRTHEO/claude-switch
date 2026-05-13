@@ -3,13 +3,11 @@
 
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { resolve } from '../src/resolver.js';
 import { checkPendingRestore } from '../src/switcher.js';
 import { claudeJsonPath, accountsDir } from '../src/paths.js';
 import { VERSION } from '../src/version.js';
 import { ExitError } from '../src/errors.js';
-import { getSavedClaudeBin, } from '../src/setup.js';
-import { checkForUpdate, performUpdate, } from '../src/update-check.js';
+import { checkForUpdate, performUpdate } from '../src/update-check.js';
 import { runApp } from '../src/ui/run-app.js';
 import { handleHelp } from '../src/commands/help.js';
 import { handleVersion } from '../src/commands/version.js';
@@ -48,6 +46,7 @@ import {
   handleRouteTest,
 } from '../src/commands/route.js';
 import { handlePassthrough } from '../src/commands/passthrough.js';
+import { askYN } from '../src/commands/_helpers.js';
 import type { CommandContext } from '../src/commands/context.js';
 
 export type Command =
@@ -240,39 +239,9 @@ export function parseCommand(args: string[]): Command {
   }
 }
 
-function _findClaude(): string {
-  const saved = getSavedClaudeBin();
-  if (saved) return saved;
-
-  const selfPath = fileURLToPath(import.meta.url);
-  const bin = resolve({
-    envBin: process.env.CLAUDE_SWITCH_BIN || '',
-    selfPath,
-    pathEnv: process.env.PATH || '',
-  });
-  if (!bin) {
-    console.error('Error: could not find the real claude binary. Run: claude switch setup');
-    process.exit(1);
-  }
-  return bin;
-}
-
-// `promptSecret` and `resolveTargetEmail` moved to src/commands/_helpers.ts
-// so per-command handlers can share them without dragging cli.ts as a
-// dependency. cli.ts only retains helpers still used by the inline
-// dispatcher (statusline + update prompt).
-
-/** Prompt for y/n on stderr and return true if the user typed y or Y. */
-async function askYN(question: string): Promise<boolean> {
-  const readline = await import('node:readline');
-  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
-  return new Promise(resolve => {
-    rl.question(question, (answer: string) => {
-      rl.close();
-      resolve(answer.trim().toLowerCase() === 'y');
-    });
-  });
-}
+// `_findClaude`, `promptSecret`, `resolveTargetEmail`, and `askYN` moved to
+// src/commands/_helpers.ts so per-command handlers can share them without
+// dragging cli.ts as a dependency. cli.ts imports `askYN` directly from there.
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
