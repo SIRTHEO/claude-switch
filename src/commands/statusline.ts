@@ -15,7 +15,7 @@ import { isFallbackEnabled, isFallbackAutoEngaged } from '../fallback.js';
 import { getApiKey } from '../apikey.js';
 import { getAliasesForEmail } from '../aliases.js';
 import {
-  readUsageCache,
+  readUsageCacheForAccount,
   readUsageCacheFor,
   isUsageCacheStale,
   triggerBackgroundUsageRefresh,
@@ -36,6 +36,28 @@ export function handleStatusline(ctx: CommandContext, options: StatuslineOptions
   renderStatusline(options.format, options.color, ctx.claudeJsonPath, ctx.accountsDirPath);
 }
 
+/**
+ * Resolve the `.claude.json` path that reflects the actual identity of
+ * THIS shell. When `CLAUDE_CONFIG_DIR` is set to a profile dir, the
+ * spawned claude session uses the profile's local `.claude.json` for
+ * everything — but the statusline was reading from the global one,
+ * silently showing the main account's email/usage while the session
+ * actually ran as a different account. Phase 13.1 fix: route the
+ * lookup through CCD when it points into the profiles tree.
+ *
+ * Non-profile CCDs (custom config dirs the user set for their own
+ * reasons) fall through to the global path. The profile-tree guard
+ * keeps the override scoped to identities claude-switch owns —
+ * matching the `activeProfile` badge derivation below.
+ */
+function effectiveClaudeJsonPath(globalPath: string): string {
+  const ccd = process.env.CLAUDE_CONFIG_DIR;
+  if (!ccd) return globalPath;
+  const base = profilesDir() + path.sep;
+  if (!ccd.startsWith(base)) return globalPath;
+  return path.join(ccd, '.claude.json');
+}
+
 function renderStatusline(
   format: 'compact' | 'full' | 'json',
   useColor: boolean,
@@ -49,9 +71,10 @@ function renderStatusline(
   const red = (s: string): string => c('31', s);
   const cyan = (s: string): string => c('36', s);
 
+  const identityPath = effectiveClaudeJsonPath(claudeJsonPathStr);
   let email: string;
   try {
-    email = getCurrent(claudeJsonPathStr);
+    email = getCurrent(identityPath);
   } catch {
     email = '';
   }
@@ -73,7 +96,7 @@ function renderStatusline(
   // Quasi-live: if the cache is stale or for a different account, kick off
   // a detached background fetch. The current call returns immediately; the
   // next statusline redraw picks up the fresh value.
-  if (isUsageCacheStale(readUsageCache(accountsDirPath), email)) {
+  if (isUsageCacheStale(readUsageCacheForAccount(accountsDirPath, email), email)) {
     triggerBackgroundUsageRefresh();
   }
 

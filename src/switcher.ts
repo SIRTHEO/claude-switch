@@ -10,6 +10,7 @@ import { withLock } from './lock.js';
 import { getApiKey } from './apikey.js';
 import { isFallbackEnabled, setFallbackEnabledInLock } from './fallback.js';
 import { updateState, updateStateInLock } from './state-store.js';
+import { shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh } from './usage.js';
 
 export interface SwitcherDeps {
   spawnSyncFn?: (command: string, args: string[], options: object) => SpawnSyncReturns<Buffer>;
@@ -49,6 +50,15 @@ export function switchTo(targetEmail: string, claudeJsonPath: string, accountsDi
     }
 
     const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
+
+    // Phase 13.3 — pre-fetch usage for the target so the next statusline
+    // redraw doesn't show "no badge" while the in-band stale check spawns
+    // its own refresh. Cheap detached spawn; only fires when the target
+    // account's per-account cache is missing or stale.
+    if (shouldTriggerUsageRefreshAfterSwitch(accountsDirPath, targetEmail)) {
+      triggerBackgroundUsageRefresh();
+    }
+
     const warning = keychainRestored
       ? ''
       : '\nWarning: no saved credentials for this account — API tokens may be wrong.\nRun: claude switch add (to re-authenticate and capture tokens)';
@@ -121,6 +131,14 @@ export function switchToAndSyncFallback(
         setFallbackEnabledInLock(accountsDirPath, wantedFallback);
         fallbackFlipped = true;
       }
+    }
+
+    // Phase 13.3 — pre-fetch usage for the new account (same pattern as
+    // switchTo above). Fires only when the target's per-account cache is
+    // stale so back-to-back switches between two fresh-cached accounts
+    // don't waste network calls.
+    if (shouldTriggerUsageRefreshAfterSwitch(accountsDirPath, targetEmail)) {
+      triggerBackgroundUsageRefresh();
     }
 
     const warning = keychainRestored

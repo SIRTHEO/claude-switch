@@ -27,7 +27,7 @@ import {
   maybeInitSmartFallback,
 } from '../auto-fallback.js';
 import {
-  readUsageCache,
+  readUsageCacheForAccount,
   isUsageCacheStale,
   fetchUsageCached,
   getAccessTokenFromKeychain,
@@ -178,7 +178,7 @@ export async function handlePassthrough(
     // limit and smart fallback isn't enabled (no config + key exists),
     // remind the user to save an API key to unlock auto-switching.
     // Never fetches — only consults whatever the user already cached.
-    const cache = readUsageCache(accountsDirPath);
+    const cache = readUsageCacheForAccount(accountsDirPath, email);
     if (cache?.payload && cache.payload.five_hour.utilization >= 85 && getApiKey(email, accountsDirPath)) {
       process.stderr.write(
         `⚠ subscription 5h window at ${cache.payload.five_hour.utilization.toFixed(0)}%. ` +
@@ -387,7 +387,7 @@ async function preWarmUsageForAutoEngage(
   // Cache fresh enough — let the existing path read it as-is. We
   // intentionally use the same `isUsageCacheStale` predicate the
   // statusline uses, so behaviour is consistent across surfaces.
-  const cache = readUsageCache(accountsDirPath);
+  const cache = readUsageCacheForAccount(accountsDirPath, email);
   if (!isUsageCacheStale(cache, email)) return;
 
   // We need to force-fetch. Requires an OAuth access token —
