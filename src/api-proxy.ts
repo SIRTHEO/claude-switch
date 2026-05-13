@@ -390,22 +390,23 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
         counters.totalRequests++;
         dbg(`→ ${req.method ?? 'GET'} ${req.url ?? '/'} (body=${body.length}B, mode=${mode}, burstActive=${burstActive})`);
 
+        // Shared api-key fast-path callbacks (api-first + burst probe bypass).
+        const onApiKeyResponse = (proxyRes: http.IncomingMessage): void => {
+          recordUsageFromResponse(proxyRes);
+          res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
+          proxyRes.pipe(res);
+        };
+        const onUpstreamError = (): void => {
+          counters.upstreamErrors++;
+          dbg('upstream connection error → 502 to claude');
+          if (!res.headersSent) { res.writeHead(502); res.end(); }
+        };
+
         // Pure API-first mode: never attempt OAuth, never probe.
         if (mode === 'api-first') {
           counters.apiKeyDirectRequests++;
           const headers = buildApiKeyHeaders(req.headers, apiKey);
-          forward(headers, req.method, req.url, body,
-            (proxyRes) => {
-              recordUsageFromResponse(proxyRes);
-              res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
-              proxyRes.pipe(res);
-            },
-            () => {
-              counters.upstreamErrors++;
-              dbg('upstream connection error → 502 to claude');
-              if (!res.headersSent) { res.writeHead(502); res.end(); }
-            },
-          );
+          forward(headers, req.method, req.url, body, onApiKeyResponse, onUpstreamError);
           return;
         }
 
@@ -425,18 +426,7 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
           counters.apiKeyDirectRequests++;
           dbg('skipping OAuth (in burst, probe interval not elapsed)');
           const headers = buildApiKeyHeaders(req.headers, apiKey);
-          forward(headers, req.method, req.url, body,
-            (proxyRes) => {
-              recordUsageFromResponse(proxyRes);
-              res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
-              proxyRes.pipe(res);
-            },
-            () => {
-              counters.upstreamErrors++;
-              dbg('upstream connection error → 502 to claude');
-              if (!res.headersSent) { res.writeHead(502); res.end(); }
-            },
-          );
+          forward(headers, req.method, req.url, body, onApiKeyResponse, onUpstreamError);
           return;
         }
 
