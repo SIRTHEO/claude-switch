@@ -10,6 +10,7 @@
 import { spawnSync } from 'node:child_process';
 
 import { getCurrent } from '../accounts.js';
+import { ExitError } from '../errors.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
 import { getApiKey } from '../apikey.js';
 import {
@@ -320,6 +321,7 @@ export async function runApp(claudeJsonPath: string, accountsDirPath: string): P
           break;
       }
     } catch (e) {
+      if (e instanceof ExitError) throw e;  // let finally restore buffer, then handleError exits
       notice = { kind: 'error', text: e instanceof Error ? e.message : String(e) };
     }
   }

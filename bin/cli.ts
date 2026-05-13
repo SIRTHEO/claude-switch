@@ -503,7 +503,7 @@ if (invoked) {
 
 function handleError(e: unknown): void {
   if (e instanceof ExitError) {
-    console.error(e.message);
+    if (e.message) console.error(e.message);
     process.exit(e.code);
   }
   // Anything else is an unexpected internal error. Print the message

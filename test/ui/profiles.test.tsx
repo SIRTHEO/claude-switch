@@ -139,3 +139,58 @@ describe('ProfilesScreen — navigation', () => {
     assert.match(frame, /welcome to profiles/, `expected initialNotice in frame — got:\n${frame}`);
   });
 });
+
+// ---------------------------------------------------------------------------
+// spawnClaudeAndExit — unit tests (no Ink involved)
+// ---------------------------------------------------------------------------
+import { spawnClaudeAndExit } from '../../src/ui/screens/profiles.js';
+import { ExitError } from '../../src/errors.js';
+
+describe('spawnClaudeAndExit', () => {
+  it('throws ExitError with code 1 when the binary does not exist', () => {
+    assert.throws(
+      () => spawnClaudeAndExit('/nonexistent-claude-binary-12345', [], { stdio: 'inherit' }),
+      (err: unknown) => {
+        assert.ok(err instanceof ExitError, `expected ExitError, got ${String(err)}`);
+        assert.equal(err.code, 1);
+        assert.match(err.message, /could not run claude/);
+        return true;
+      },
+    );
+  });
+
+  it('throws ExitError with code 0 when the subprocess exits cleanly', () => {
+    assert.throws(
+      () => spawnClaudeAndExit(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'inherit' }),
+      (err: unknown) => {
+        assert.ok(err instanceof ExitError, `expected ExitError, got ${String(err)}`);
+        assert.equal(err.code, 0);
+        return true;
+      },
+    );
+  });
+
+  it('throws ExitError with code 42 when the subprocess exits with code 42', () => {
+    assert.throws(
+      () => spawnClaudeAndExit(process.execPath, ['-e', 'process.exit(42)'], { stdio: 'inherit' }),
+      (err: unknown) => {
+        assert.ok(err instanceof ExitError, `expected ExitError, got ${String(err)}`);
+        assert.equal(err.code, 42);
+        return true;
+      },
+    );
+  });
+
+  it('never calls process.exit directly — spawnClaudeAndExit is pure throw', () => {
+    // Guard: if this test throws anything other than ExitError, we'd get
+    // a test failure. If it called process.exit, the test runner would die.
+    let threw = false;
+    try {
+      spawnClaudeAndExit('/nonexistent-claude-binary-12345', [], { stdio: 'inherit' });
+    } catch (err) {
+      threw = true;
+      assert.ok(err instanceof ExitError);
+    }
+    assert.ok(threw, 'expected spawnClaudeAndExit to throw');
+  });
+});
