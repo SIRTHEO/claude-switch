@@ -84,7 +84,7 @@ export function writeKeychain(data: KeychainData): void {
  * Returns null on non-macOS, on missing/locked entries, or when the
  * stored value isn't valid JSON.
  */
-export function readKeychainAt(account: string): KeychainData | null {
+function readKeychainAt(account: string): KeychainData | null {
   return readKeychainAtService(SERVICE, account);
 }
 
@@ -96,7 +96,7 @@ export function readKeychainAt(account: string): KeychainData | null {
  * On non-darwin platforms this is a no-op (tokens live in the JSON file
  * there, no Keychain involved).
  */
-export function writeKeychainAt(account: string, data: KeychainData): void {
+function writeKeychainAt(account: string, data: KeychainData): void {
   writeKeychainAtService(SERVICE, account, data);
 }
 

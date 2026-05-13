@@ -11,7 +11,7 @@ import { errnoCode } from './errors.js';
 // real-world emails and blocks shell metacharacters ($, `, (, ), ;, &, |,
 // space, newline, etc.) that would otherwise allow command injection through
 // downstream consumers like shell completions (compgen -W).
-export const SAFE_EMAIL_CHARS = /^[A-Za-z0-9._+@-]+$/;
+const SAFE_EMAIL_CHARS = /^[A-Za-z0-9._+@-]+$/;
 
 export function isSafeEmail(email: string): boolean {
   return SAFE_EMAIL_CHARS.test(email);

@@ -11,7 +11,7 @@
 
 export const ALT_BUFFER_ENTER = '\x1b[?1049h';
 export const ALT_BUFFER_EXIT = '\x1b[?1049l';
-export const CLEAR_AND_HOME = '\x1b[2J\x1b[H';
+const CLEAR_AND_HOME = '\x1b[2J\x1b[H';
 
 export function altBufferSupported(): boolean {
   if (process.env.NO_ALT_SCREEN === '1') return false;

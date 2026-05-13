@@ -24,7 +24,7 @@ interface SectionProps {
   children: React.ReactNode;
 }
 
-export function Section({ title, subtitle, focused, children }: SectionProps) {
+function Section({ title, subtitle, focused, children }: SectionProps) {
   const color = focused ? ORANGE : 'gray';
   return (
     <Box
@@ -55,7 +55,7 @@ interface AccountSummaryProps {
 
 /** Per-account detail block. Active row gets the live runtime context
  *  (fallback flag + token state) inline; idle rows show only configuration. */
-export function AccountRowDetail({ row, fallbackOn, tokenHealth }: AccountSummaryProps) {
+function AccountRowDetail({ row, fallbackOn, tokenHealth }: AccountSummaryProps) {
   const authLabel = row.active
     ? (fallbackOn && row.hasApiKey ? 'API key' : 'OAuth')
     : (row.hasApiKey ? 'OAuth + key saved' : 'OAuth only');
