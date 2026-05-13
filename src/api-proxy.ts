@@ -41,10 +41,10 @@ import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
 import { parseUsageHeadersIfPresent, updateUsageCacheFromHeaders } from './usage.js';
 import { writeProxyMode, clearProxyMode } from './proxy-mode.js';
 
-export const DEFAULT_UPSTREAM = 'https://api.anthropic.com';
-export const DEFAULT_MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
-export const DEFAULT_BURST_FAILURE_THRESHOLD = 3;
-export const DEFAULT_BURST_PROBE_INTERVAL_MS = 5 * 60 * 1000;
+const DEFAULT_UPSTREAM = 'https://api.anthropic.com';
+const DEFAULT_MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
+const DEFAULT_BURST_FAILURE_THRESHOLD = 3;
+const DEFAULT_BURST_PROBE_INTERVAL_MS = 5 * 60 * 1000;
 
 /** Modes externally chosen by the caller (per-account `authMode`).
  *  `oauth-only` is not a proxy mode — when there's no API key the caller

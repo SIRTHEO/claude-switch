@@ -198,7 +198,7 @@ export function savePendingRestore(email: string, accountsDirPath: string): void
 }
 
 /** Save a pending-restore marker INSIDE an existing `withLock`. */
-export function savePendingRestoreInLock(email: string, accountsDirPath: string): void {
+function savePendingRestoreInLock(email: string, accountsDirPath: string): void {
   fs.mkdirSync(accountsDirPath, { recursive: true });
   updateStateInLock(accountsDirPath, (state) => ({ ...state, pendingRestore: email }));
 }
