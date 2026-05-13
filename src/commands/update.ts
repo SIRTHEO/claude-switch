@@ -13,10 +13,17 @@ import {
 } from '../update-check.js';
 import { askYN } from './_helpers.js';
 
-export async function handleUpdate(): Promise<void> {
+// Deps injection point for testing — callers pass `{ fetch }` to avoid
+// live HTTPS requests in unit tests. The default is the real registry fetch.
+interface UpdateDeps {
+  fetch?: () => Promise<string | null>;
+}
+
+export async function handleUpdate(deps: UpdateDeps = {}): Promise<void> {
+  const fetchFn = deps.fetch ?? fetchLatestVersionSync;
   console.log(`Current version: ${VERSION}`);
   process.stdout.write('Checking for updates...');
-  const latest = await fetchLatestVersionSync();
+  const latest = await fetchFn();
   process.stdout.write(`\r${' '.repeat(30)}\r`); // clear line
 
   if (!latest) {

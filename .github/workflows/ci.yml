@@ -89,7 +89,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
         env:
           CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1'
-          COVERAGE_FLOOR: '60'
+          COVERAGE_FLOOR: '62'
         run: |
           set -o pipefail
           REPORT=$(node --test \
