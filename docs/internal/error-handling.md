@@ -104,6 +104,73 @@ recoverable on the next explicit operation. Examples:
    attention to (CLI command output, snapshot writes during
    `claude switch`). Use pattern 1 or 2 there.
 
+## Ink screen reject path
+
+Every Ink screen that calls `render(...)` + `waitUntilExit()` must propagate
+rejections to the caller. The naive pattern below is dangerous because
+`Promise.prototype.then` with no rejection handler creates an unhandled
+rejection — Node discards it silently (or crashes in `--unhandled-rejections=throw`).
+
+**No** — unhandled rejection, silently swallowed:
+
+```ts
+// ❌ do not do this
+return new Promise<ScreenExit>((resolve) => {
+  const instance = render(<MyScreen onExit={(e) => { result = e; }} />);
+  instance.waitUntilExit().then(resolve); // rejection path missing
+});
+```
+
+**Yes** — use `awaitInkScreen` from `src/ui/utils/ink-screen.ts`:
+
+```ts
+// ✓ correct
+import { awaitInkScreen } from '../utils/ink-screen.js';
+
+const instance = render(<MyScreen onExit={(e) => { result = e; }} />);
+return awaitInkScreen(instance, () => result);
+// awaitInkScreen does: await instance.waitUntilExit(); return getResult();
+```
+
+**Rule**: always use `awaitInkScreen` whenever you write a function that
+renders an Ink component and awaits its exit. Do not write inline
+`.then(resolve)` chains without a matching `.catch` / `await`.
+
+## process.exit() inside Ink render path
+
+Calling `process.exit()` from within an Ink event handler or render
+function is fragile: Ink's TTY restore and the caller's `finally` blocks
+do not run, leaving the terminal in raw/alternate-buffer mode.
+
+**No** — raw `process.exit` inside an Ink handler:
+
+```ts
+// ❌ do not do this
+function onLaunch() {
+  const result = spawnSync(cmd, args, opts);
+  process.exit(result.status ?? 1); // TTY restore skipped, finally blocks skipped
+}
+```
+
+**Yes** — throw `ExitError`, caught by `handleError` in `bin/cli.ts`:
+
+```ts
+// ✓ correct — use spawnClaudeAndExit from src/ui/screens/profiles.tsx
+import { spawnClaudeAndExit } from './screens/profiles.js';
+
+// inside runProfilesScreen (outside Ink render, after unmount):
+spawnClaudeAndExit(command, args, options);
+// spawnClaudeAndExit runs spawnSync then throws new ExitError('', exitCode)
+// ExitError propagates up through run-app.ts → bin/cli.ts → handleError
+// handleError prints the message (if any) and calls process.exit(code)
+```
+
+**Rule**: never call `process.exit()` directly inside an Ink screen
+component or its event handlers. Return or throw to the nearest
+non-Ink boundary. Use `ExitError` for clean exits; use `spawnClaudeAndExit`
+when you need to transfer process control to a subprocess. The caller's
+`finally` block (TTY buffer restore) runs correctly either way.
+
 ## Anti-patterns to avoid
 
 These do not appear in the codebase as of the audit. If you find one
