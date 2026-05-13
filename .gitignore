@@ -3,8 +3,10 @@ dist/
 
 # Harness / Claude Code dev tooling — local-only, not part of the product
 .harness/
+.harness-mem/
 .claude/
 .claude-plugin/
+.understand-anything/
 hooks/
 !src/ui/hooks/
 harness.toml
