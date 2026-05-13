@@ -24,11 +24,17 @@ import { errMessage } from './errors.js';
 const ENDPOINT_HOST = 'api.anthropic.com';
 const ENDPOINT_PATH = '/api/oauth/usage';
 const BETA_HEADER = 'oauth-2025-04-20';
-const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min — endpoint is aggressively throttled
+// Cache TTL. Used to be 15 min when /api/oauth/usage was the only refresh
+// path; lowered to 10 min in Phase 13.5 once 13.2 (per-account caches —
+// each account decays independently, no churn from A↔B switches) and
+// 13.4 (header push from proxy — most refreshes happen for free as a
+// side effect of regular API traffic) reduced endpoint pressure.
+const CACHE_TTL_MS = 10 * 60 * 1000;
 // How stale the cache can get before the statusline kicks off a background
-// refresh. Slightly tighter than CACHE_TTL_MS so the user sees fresher numbers
-// while still respecting the endpoint's rate limit.
-const STATUSLINE_REFRESH_AFTER_MS = 10 * 60 * 1000;
+// refresh. Slightly tighter than CACHE_TTL_MS so the user sees fresher
+// numbers while still respecting the endpoint's rate limit. Was 10 min;
+// Phase 13.5 dropped to 5 min for the same reasons as above.
+const STATUSLINE_REFRESH_AFTER_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 5_000;
 const MAX_BODY_BYTES = 16 * 1024;
 
