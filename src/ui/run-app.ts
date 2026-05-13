@@ -98,7 +98,14 @@ async function handleSwitched(
   let extraEnv: NodeJS.ProcessEnv | undefined;
   if (payload.defaultIsolated) {
     try {
-      const { ensureProfileForAccount } = await import('../profiles.js');
+      const { ensureProfileForAccount, refreshLegacySnapshotIfStale } = await import('../profiles.js');
+      // Refresh the legacy snapshot's access_token if stale BEFORE we ensure
+      // the profile — otherwise a stale snapshot lands in the profile Keychain
+      // and claude 401s on first request. Mirror the Ink "Open isolated" path
+      // (src/ui/screens/profiles.tsx) which already does this; the default-
+      // isolated auto-flow was missing the call.
+      try { await refreshLegacySnapshotIfStale(payload.switchedTo, accountsDirPath); }
+      catch { /* network failure → fall through, ensureProfile may still succeed via live-capture or existing entry */ }
       const ensured = ensureProfileForAccount(payload.switchedTo, accountsDirPath);
       if (ensured.needsLogin) {
         return {
