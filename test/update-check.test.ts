@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { isNewer, detectInstallCommand } from '../src/update-check.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { isNewer, detectInstallCommand, checkForUpdate, writeUpdateCache } from '../src/update-check.js';
 
 describe('isNewer', () => {
   it('returns true when latest is a higher patch', () => {
@@ -51,6 +54,61 @@ describe('isNewer', () => {
   it('treats missing patch component as 0', () => {
     assert.strictEqual(isNewer('2.3', '2.3.1'), true);
     assert.strictEqual(isNewer('2.3.0', '2.3'), false);
+  });
+});
+
+describe('checkForUpdate / writeUpdateCache — type guard coverage', () => {
+  // The type guards (isCheckCacheShaped, extractVersion) are private, but
+  // they're exercised by checkForUpdate which reads the cache file at a fixed
+  // path.  We use a temp HOME to isolate from the real cache.
+  function withTempHome(fn: (home: string) => void): void {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
+    const orig = process.env.HOME;
+    try {
+      process.env.HOME = tmp;
+      fn(tmp);
+    } finally {
+      process.env.HOME = orig;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  const cachePath = path.join(os.homedir(), '.claude', 'accounts', '.update-check.json');
+
+  it('returns null when no cache file exists (isCheckCacheShaped: null path)', () => {
+    withTempHome(() => {
+      const result = checkForUpdate('1.0.0');
+      assert.strictEqual(result, null);
+    });
+  });
+
+  it('returns null when cache JSON is malformed (isCheckCacheShaped: invalid JSON)', () => {
+    withTempHome((home) => {
+      const p = path.join(home, '.claude', 'accounts', '.update-check.json');
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, 'not-json');
+      const result = checkForUpdate('1.0.0');
+      assert.strictEqual(result, null);
+    });
+  });
+
+  it('returns null when cache is missing checkedAt (isCheckCacheShaped: wrong shape)', () => {
+    withTempHome((home) => {
+      const p = path.join(home, '.claude', 'accounts', '.update-check.json');
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, JSON.stringify({ latestVersion: '9.9.9' }));
+      const result = checkForUpdate('1.0.0');
+      assert.strictEqual(result, null); // stale cache, no update info returned without valid checkedAt
+    });
+  });
+
+  it('writeUpdateCache + checkForUpdate round-trip (happy path)', () => {
+    withTempHome(() => {
+      writeUpdateCache('9.9.9');
+      const result = checkForUpdate('1.0.0');
+      assert.ok(result !== null, 'expected an update to be detected');
+      assert.strictEqual(result.latestVersion, '9.9.9');
+    });
   });
 });
 

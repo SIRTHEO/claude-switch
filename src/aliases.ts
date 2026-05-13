@@ -19,9 +19,11 @@ function readAliases(accountsDirPath: string): Record<string, string> {
   try {
     const raw: unknown = JSON.parse(fs.readFileSync(aliasesPath(accountsDirPath), 'utf-8'));
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
-    // Use null-prototype object to prevent prototype pollution
-    const result: Record<string, string> = Object.create(null) as Record<string, string>;
-    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    // Use null-prototype object to prevent prototype pollution.
+    // Object.create(null) returns `any`; the explicit type annotation suffices — no cast needed.
+    // Object.entries accepts any object; raw is narrowed to object above.
+    const result: Record<string, string> = Object.create(null);
+    for (const [k, v] of Object.entries(raw)) {
       if (k && typeof v === 'string' && v) result[k] = v;
     }
     return result;

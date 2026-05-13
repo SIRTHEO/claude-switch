@@ -94,6 +94,29 @@ export function parseRetryAfter(header: string | string[] | undefined): number {
 }
 
 /**
+ * Minimal structural check for a stored usage cache object.
+ * Only validates the required `fetchedAt` discriminant — optional fields
+ * (payload, rateLimitedUntil, account) are checked lazily by callers.
+ */
+function isUsageCacheShaped(v: unknown): v is UsageCache {
+  if (typeof v !== 'object' || v === null) return false;
+  return typeof (v as { fetchedAt?: unknown }).fetchedAt === 'number'; // safe: structural probe on unknown object; TS cannot narrow arbitrary field names without an intermediate cast
+}
+
+/** Type predicate for `UsageWindow` — checks the `utilization: number` discriminant. */
+function isUsageWindow(v: unknown): v is UsageWindow {
+  if (typeof v !== 'object' || v === null) return false;
+  return typeof (v as { utilization?: unknown }).utilization === 'number'; // safe: structural probe on unknown object
+}
+
+/** Type predicate for `UsagePayload` — validates both mandatory window fields. */
+function isUsagePayloadShaped(v: unknown): v is UsagePayload {
+  if (typeof v !== 'object' || v === null) return false;
+  const obj = v as Record<string, unknown>; // safe: narrowed to object above; cast needed to index by string field name
+  return isUsageWindow(obj.five_hour) && isUsageWindow(obj.seven_day);
+}
+
+/**
  * Read the legacy global cache file. Kept for back-compat — new callers
  * should prefer `readUsageCacheForAccount(dir, email)` which checks the
  * per-account file first.
@@ -102,8 +125,8 @@ export function readUsageCache(accountsDirPath: string): UsageCache | null {
   try {
     const raw = fs.readFileSync(cachePathLegacy(accountsDirPath), 'utf-8');
     const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed === 'object' && parsed !== null && typeof (parsed as { fetchedAt?: unknown }).fetchedAt === 'number') {
-      return parsed as UsageCache;
+    if (isUsageCacheShaped(parsed)) {
+      return parsed;
     }
   } catch { /* no cache */ }
   return null;
@@ -123,20 +146,15 @@ export function readUsageCacheForAccount(
   try {
     const raw = fs.readFileSync(cachePathFor(accountsDirPath, email), 'utf-8');
     const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed === 'object' && parsed !== null && typeof (parsed as { fetchedAt?: unknown }).fetchedAt === 'number') {
-      return parsed as UsageCache;
+    if (isUsageCacheShaped(parsed)) {
+      return parsed;
     }
   } catch { /* per-account miss → try legacy */ }
   try {
     const raw = fs.readFileSync(cachePathLegacy(accountsDirPath), 'utf-8');
     const parsed: unknown = JSON.parse(raw);
-    if (
-      typeof parsed === 'object'
-      && parsed !== null
-      && typeof (parsed as { fetchedAt?: unknown }).fetchedAt === 'number'
-      && (parsed as { account?: unknown }).account === email
-    ) {
-      return parsed as UsageCache;
+    if (isUsageCacheShaped(parsed) && parsed.account === email) {
+      return parsed;
     }
   } catch { /* legacy miss too */ }
   return null;
@@ -214,15 +232,8 @@ export function fetchUsage(accessToken: string): Promise<FetchUsageOutcome> {
           }
           try {
             const parsed: unknown = JSON.parse(body);
-            const isWindow = (v: unknown): v is UsageWindow =>
-              typeof v === 'object' && v !== null &&
-              typeof (v as Record<string, unknown>).utilization === 'number';
-            if (
-              typeof parsed === 'object' && parsed !== null &&
-              isWindow((parsed as Record<string, unknown>).five_hour) &&
-              isWindow((parsed as Record<string, unknown>).seven_day)
-            ) {
-              resolve({ ok: true, payload: parsed as UsagePayload });
+            if (isUsagePayloadShaped(parsed)) {
+              resolve({ ok: true, payload: parsed });
             } else {
               const preview = body.slice(0, 300).replace(/[\r\n]+/g, ' ');
               resolve({ ok: false, rateLimited: false, error: `unexpected response shape: ${preview}` });
@@ -313,8 +324,8 @@ export function getAccessTokenFromKeychain(claudeJsonPathStr?: string): string |
 
   if (process.platform !== 'darwin' && claudeJsonPathStr) {
     try {
-      const raw = JSON.parse(fs.readFileSync(claudeJsonPathStr, 'utf-8')) as Record<string, unknown>;
-      const oauth = raw?.oauthAccount as Record<string, unknown> | undefined;
+      const raw = JSON.parse(fs.readFileSync(claudeJsonPathStr, 'utf-8')) as Record<string, unknown>; // safe: JSON.parse returns unknown; shape validated by accessor below
+      const oauth = raw?.oauthAccount as Record<string, unknown> | undefined; // safe: nested unknown field, type narrowed before use
       const t = oauth?.accessToken;
       return typeof t === 'string' && t ? t : null;
     } catch { return null; }
