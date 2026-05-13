@@ -38,6 +38,7 @@ import https from 'node:https';
 import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
+import { parseUsageHeadersIfPresent, updateUsageCacheFromHeaders } from './usage.js';
 
 export const DEFAULT_UPSTREAM = 'https://api.anthropic.com';
 export const DEFAULT_MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
@@ -196,6 +197,17 @@ export interface StartFallbackProxyOptions {
    *  `close()` so the next `claude switch status` can render the
    *  most recent session's counters. */
   persistStatsTo?: string;
+  /** Phase 13.4 — enables realtime usage tracking from upstream response
+   *  headers. When BOTH fields are set, the proxy parses
+   *  `anthropic-ratelimit-{five-hour,seven-day}-percent-used` (and
+   *  documented aliases) from every 2xx upstream response and merges the
+   *  values into the per-account cache at `<accountsDirPath>/.usage-cache.<hash>.json`.
+   *  Either field unset → header parsing is a no-op (proxy still works
+   *  unchanged for callers that don't care about usage). */
+  accountsDirPath?: string;
+  /** Email of the account whose token authorises this proxy session.
+   *  Used as the cache key when `accountsDirPath` is also set. */
+  account?: string;
 }
 
 /**
@@ -291,6 +303,24 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
     : isHttps ? 443 : 80;
   const requester = isHttps ? https : http;
 
+  // Phase 13.4 — realtime usage update from upstream response headers.
+  // Only fires when the caller wired both accountsDirPath + account at
+  // proxy startup. Best-effort: parse failures, missing headers, and
+  // cache write errors are all swallowed inside updateUsageCacheFromHeaders.
+  const recordUsageFromResponse = (proxyRes: http.IncomingMessage): void => {
+    if (!opts.accountsDirPath || !opts.account) return;
+    const status = proxyRes.statusCode ?? 0;
+    if (status < 200 || status >= 300) return;
+    const parsed = parseUsageHeadersIfPresent(proxyRes.headers);
+    if (!parsed) return;
+    updateUsageCacheFromHeaders(
+      opts.accountsDirPath,
+      opts.account,
+      parsed.fiveHourPct,
+      parsed.sevenDayPct,
+    );
+  };
+
   function forward(
     headers: IncomingHttpHeaders,
     method: string | undefined,
@@ -351,6 +381,7 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
           const headers = buildApiKeyHeaders(req.headers, apiKey);
           forward(headers, req.method, req.url, body,
             (proxyRes) => {
+              recordUsageFromResponse(proxyRes);
               res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
               proxyRes.pipe(res);
             },
@@ -381,6 +412,7 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
           const headers = buildApiKeyHeaders(req.headers, apiKey);
           forward(headers, req.method, req.url, body,
             (proxyRes) => {
+              recordUsageFromResponse(proxyRes);
               res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
               proxyRes.pipe(res);
             },
@@ -410,6 +442,7 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
           forward(keyHeaders, req.method, req.url, body,
             (retryRes) => {
               if (res.headersSent) return;
+              recordUsageFromResponse(retryRes);
               res.writeHead(retryRes.statusCode!, retryRes.headers as OutgoingHttpHeaders);
               retryRes.pipe(res);
             },
@@ -446,6 +479,7 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
               // subscription is healthy. Reset the burst state so the next
               // request goes straight at OAuth without probing logic.
               recordOauthSuccess();
+              recordUsageFromResponse(proxyRes);
               res.writeHead(proxyRes.statusCode!, proxyRes.headers as OutgoingHttpHeaders);
               for (const c of peeked) res.write(c);
               proxyRes.pipe(res);

@@ -1,6 +1,10 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
@@ -751,6 +755,115 @@ describe('startFallbackProxy — oauth-first burst transitions (live OAuth ↔ A
       assert.equal(oauthCalls, 0, 'api-first must not attempt OAuth');
       assert.equal(proxy.state().burstActive, false);
       assert.equal(proxy.state().mode, 'api-first');
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 13.4 — usage cache update from upstream rate-limit headers
+// ---------------------------------------------------------------------------
+
+describe('startFallbackProxy — usage header push (Phase 13.4)', () => {
+  let tmpDir: string;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-proxy-usage-')); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  const cachePathFor = (email: string): string => {
+    const hash = createHash('sha256').update(email).digest('hex').slice(0, 16);
+    return path.join(tmpDir, `.usage-cache.${hash}.json`);
+  };
+
+  it('updates the per-account cache when the response carries rate-limit headers', async () => {
+    const upstream = await createUpstream((_req: IncomingMessage, res: ServerResponse) => {
+      // Mocked Anthropic response with the usage headers documented in 13.4.
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'anthropic-ratelimit-five-hour-percent-used': '73',
+        'anthropic-ratelimit-seven-day-percent-used': '28',
+      });
+      res.end('{"ok":true}');
+    });
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key',
+      mode: 'oauth-first',
+      upstreamBase: upstream.url,
+      accountsDirPath: tmpDir,
+      account: 'pushed@x.com',
+    });
+    try {
+      await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        headers: { authorization: 'Bearer tok', 'content-type': 'application/json' },
+        body: '{"model":"claude-3"}',
+      });
+      // Allow the fire-and-forget update to settle before reading the cache.
+      await new Promise((r) => setTimeout(r, 20));
+      const cachePath = cachePathFor('pushed@x.com');
+      assert.ok(fs.existsSync(cachePath), 'per-account cache file should be written');
+      const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+      assert.strictEqual(cache.account, 'pushed@x.com');
+      assert.strictEqual(cache.payload?.five_hour?.utilization, 73);
+      assert.strictEqual(cache.payload?.seven_day?.utilization, 28);
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+
+  it('does NOT touch the cache when the response has no usage headers', async () => {
+    const upstream = await createUpstream((_req: IncomingMessage, res: ServerResponse) => {
+      // No usage headers — just a normal OK response.
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+    });
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key',
+      mode: 'oauth-first',
+      upstreamBase: upstream.url,
+      accountsDirPath: tmpDir,
+      account: 'silent@x.com',
+    });
+    try {
+      await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        headers: { authorization: 'Bearer tok' },
+        body: '{}',
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      assert.ok(!fs.existsSync(cachePathFor('silent@x.com')),
+        'no cache file should be created when headers are absent');
+    } finally {
+      proxy.close();
+      await upstream.close();
+    }
+  });
+
+  it('is a no-op when accountsDirPath/account are not configured (back-compat)', async () => {
+    // Callers that don't wire the usage fields keep the historic behaviour:
+    // proxy works, headers are passed through to claude, no cache is written.
+    const upstream = await createUpstream((_req: IncomingMessage, res: ServerResponse) => {
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'anthropic-ratelimit-five-hour-percent-used': '99',
+      });
+      res.end('{"ok":true}');
+    });
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key',
+      mode: 'oauth-first',
+      upstreamBase: upstream.url,
+      // No accountsDirPath / account on purpose
+    });
+    try {
+      const { status } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        headers: { authorization: 'Bearer tok' },
+        body: '{}',
+      });
+      assert.strictEqual(status, 200, 'proxy still forwards normally');
+      // No cache directory writes should happen — but we don't have a place
+      // to check directly here. The asymmetric "doesn't touch tmpDir" check
+      // is implicit: the proxy isn't given a path to write to.
     } finally {
       proxy.close();
       await upstream.close();
