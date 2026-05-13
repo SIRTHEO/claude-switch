@@ -344,4 +344,72 @@ describe('ensureProfileForAccount', () => {
     assert.strictEqual(result.created, false);
     assert.strictEqual(result.profileName, 'ready');
   });
+
+  // Phase 12.2 regressions — live-Keychain capture for the active-account
+  // isolated path. All tests below run with CLAUDE_SWITCH_DISABLE_KEYCHAIN=1
+  // (the npm-test default), so the live-capture helper is a no-op by
+  // contract. We assert that:
+  //   1. the helper does NOT crash or short-circuit unrelated logic
+  //      when the disable flag is on,
+  //   2. the legacy-snapshot path keeps working unchanged,
+  //   3. the helper does NOT manufacture a needsLogin=false when the
+  //      legacy path can't recover (no _keychain) and Keychain is disabled.
+  // The actual live capture on darwin is exercised manually — the same
+  // policy already in place for tryRecoverFromLegacy since v3.5.
+
+  it('live capture is a no-op when CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 (active email, no snapshot)', () => {
+    // Simulate: active account is "active@x.com", no legacy snapshot file
+    // exists. Without Keychain access, the helper cannot fabricate
+    // credentials. Result: needsLogin=true (the honest answer).
+    const claudeJsonPath = path.join(tmpHome, '.claude.json');
+    fs.mkdirSync(path.dirname(claudeJsonPath), { recursive: true });
+    fs.writeFileSync(claudeJsonPath, JSON.stringify({
+      oauthAccount: { emailAddress: 'active@x.com' },
+    }));
+    // No accounts file → import path → must throw (no legacy snapshot to import).
+    assert.throws(
+      () => ensureProfileForAccount('active@x.com', accountsDir),
+      /No saved account for active@x\.com/,
+    );
+  });
+
+  it('live capture is a no-op for non-active email (legacy path still authoritative)', () => {
+    // Pre-condition: active account is "other@x.com", but we're opening
+    // isolated for "target@x.com". The live-capture branch must NOT fire
+    // (email mismatch) — fall through to the existing logic.
+    const claudeJsonPath = path.join(tmpHome, '.claude.json');
+    fs.mkdirSync(path.dirname(claudeJsonPath), { recursive: true });
+    fs.writeFileSync(claudeJsonPath, JSON.stringify({
+      oauthAccount: { emailAddress: 'other@x.com' },
+    }));
+    fs.writeFileSync(path.join(accountsDir, 'target@x.com.json'), JSON.stringify({
+      emailAddress: 'target@x.com',
+    }));
+    const result = ensureProfileForAccount('target@x.com', accountsDir);
+    assert.strictEqual(result.created, true);
+    assert.strictEqual(result.needsLogin, true,
+      'no _keychain snapshot + non-active email + Keychain disabled → genuine login required');
+  });
+
+  it('existing-profile reuse with active email + disable flag stays on legacy logic', () => {
+    // Profile exists and has a hasLogin signal in JSON. With disable flag
+    // on, hasLogin is NOT demoted by Keychain absence (the v3.5 darwin
+    // check is gated by the same flag), so needsLogin stays false.
+    // The live-capture helper short-circuits on the disable flag —
+    // confirms we didn't break this path by adding the new code.
+    const claudeJsonPath = path.join(tmpHome, '.claude.json');
+    fs.mkdirSync(path.dirname(claudeJsonPath), { recursive: true });
+    fs.writeFileSync(claudeJsonPath, JSON.stringify({
+      oauthAccount: { emailAddress: 'active@x.com' },
+    }));
+    const dir = createProfile('active');
+    fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({
+      userID: 'b'.repeat(64),
+      oauthAccount: { emailAddress: 'active@x.com' },
+    }));
+    const result = ensureProfileForAccount('active@x.com', accountsDir);
+    assert.strictEqual(result.profileName, 'active');
+    assert.strictEqual(result.created, false);
+    assert.strictEqual(result.needsLogin, false);
+  });
 });

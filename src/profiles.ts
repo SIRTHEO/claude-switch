@@ -19,11 +19,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { writeJsonAtomic } from './atomic-write.js';
 import {
+  readKeychain,
   readKeychainForConfigDir,
   writeKeychainForConfigDir,
   type KeychainData,
 } from './keychain.js';
-import { isSafeEmail, resolvedAccountFile, syncActiveSnapshotIfStale } from './accounts.js';
+import { getCurrent, isSafeEmail, resolvedAccountFile, syncActiveSnapshotIfStale } from './accounts.js';
 import { claudeJsonPath } from './paths.js';
 import { errMessage } from './errors.js';
 
@@ -401,6 +402,18 @@ export function importProfileFromAccount(
 
   writeJsonAtomic(path.join(dir, '.claude.json'), claudeJson);
 
+  // If the imported email is the currently-active account, overwrite
+  // the Keychain entry we just wrote (from the legacy snapshot, which
+  // may already be stale) with the live blob from the default Keychain.
+  // No-op on non-darwin / disable flag / non-active email. Crucially
+  // also fixes the case where the legacy snapshot had no `_keychain`
+  // block at all — needsLogin was true above, but live capture makes
+  // it false retroactively.
+  if (captureLiveCredentialsForActiveAccount(email, dir)) {
+    wroteToKeychain = true;
+    needsLogin = false;
+  }
+
   return {
     profileName: finalName,
     profilePath: dir,
@@ -409,6 +422,71 @@ export function importProfileFromAccount(
     wroteToKeychain,
     needsLogin,
   };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Live-credential capture for the currently-active account
+//
+// Backstory: claude binary refreshes its OAuth tokens in-process and
+// writes the rotated blob to the default macOS Keychain entry
+// (`Claude Code-credentials` keyed by username). The legacy snapshot
+// at `~/.claude/accounts/<email>.json._keychain` is only updated when
+// `claude switch save` runs explicitly OR when `syncActiveSnapshotIfStale`
+// observes that `~/.claude.json` has been touched after the snapshot
+// (the latter is fragile because token rotation doesn't always rewrite
+// claude.json). Result: for an account that's currently active, the
+// default Keychain is the source of truth and the legacy snapshot is
+// a delayed copy that drifts over hours of use.
+//
+// When the user opens isolated on the active email, copy the live
+// blob from the default Keychain directly into the profile's per-
+// config-dir Keychain entry. Bypasses the legacy snapshot entirely
+// for this case. Non-active emails still go through the snapshot —
+// it's the only source of truth there.
+//
+// No-op on non-darwin (tokens live in JSON on those platforms — the
+// legacy snapshot's `_keychain` block is already the live source) and
+// when `CLAUDE_SWITCH_DISABLE_KEYCHAIN=1` is set (tests + opt-out).
+// ───────────────────────────────────────────────────────────────────────────
+
+function captureLiveCredentialsForActiveAccount(
+  email: string,
+  profileDir: string,
+): boolean {
+  if (process.platform !== 'darwin') return false;
+  if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1') return false;
+
+  let activeEmail = '';
+  try {
+    activeEmail = getCurrent(claudeJsonPath());
+  } catch {
+    // claude.json unreadable — silent return; ensureProfileForAccount
+    // falls through to the legacy-snapshot path, which has its own
+    // error surface. No reason to bubble here.
+    return false;
+  }
+  if (!activeEmail || activeEmail !== email) return false;
+
+  const live = readKeychain();
+  if (!live?.claudeAiOauth?.accessToken) return false;
+
+  // Skip the write if the profile's entry already matches the live blob —
+  // avoids a fork+exec to `security` on every isolated open. Comparing by
+  // accessToken is sufficient: rotation always changes it.
+  const existing = readKeychainForConfigDir(profileDir);
+  if (existing?.claudeAiOauth?.accessToken === live.claudeAiOauth.accessToken) {
+    return true;
+  }
+
+  try {
+    writeKeychainForConfigDir(profileDir, live);
+    return true;
+  } catch {
+    // Keychain write can fail if the user dismissed the auth dialog
+    // (first-time use under a fresh `node` invocation). Fall back to
+    // the legacy path — better than crashing the isolated open.
+    return false;
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -464,11 +542,20 @@ export function ensureProfileForAccount(
     try {
       const info = readProfile(name);
       if (info.emailAddress === email) {
-        let needsLogin = !info.hasLogin;
-        if (needsLogin && tryRecoverFromLegacy(info.path)) needsLogin = false;
+        // Live-capture fast path: when the email coincides with the active
+        // account, refresh the profile's Keychain entry from the default
+        // Keychain. Handles the drift case where the profile entry was
+        // valid at recovery time but has since gone stale (claude rotates
+        // the default Keychain in-process). No-op on non-darwin / when
+        // Keychain disabled / when email != active / when already in sync.
+        captureLiveCredentialsForActiveAccount(email, info.path);
+        // Re-read so hasLogin reflects any freshly-written entry.
+        const fresh = readProfile(name);
+        let needsLogin = !fresh.hasLogin;
+        if (needsLogin && tryRecoverFromLegacy(fresh.path)) needsLogin = false;
         return {
           profileName: name,
-          profilePath: info.path,
+          profilePath: fresh.path,
           emailAddress: email,
           needsLogin,
           created: false,
@@ -482,6 +569,7 @@ export function ensureProfileForAccount(
   // would derive — if that profile already exists, treat it as ours.
   const derivedName = (email.split('@')[0] ?? email).replace(/[^A-Za-z0-9_-]/g, '_');
   if (isValidProfileName(derivedName) && profileExists(derivedName)) {
+    captureLiveCredentialsForActiveAccount(email, profilePath(derivedName));
     const info = readProfile(derivedName);
     let needsLogin = !info.hasLogin;
     if (needsLogin && tryRecoverFromLegacy(info.path)) needsLogin = false;
