@@ -150,6 +150,38 @@ case "$cmd" in
     paths=$(echo "$row" \
       | grep -oE '(src|test|docs|scripts|bin|\.github)/[A-Za-z0-9_./-]+\.(ts|tsx|js|mjs|md|sh|yml|json)' \
       | sort -u || true)
+
+    # Fallback: bare filenames in backticks (e.g. `api-proxy.ts`, `usage.ts`).
+    # Resolve them against the graph by matching any node whose filePath
+    # endsWith the bare name. Skips collisions (multiple matches → drop).
+    if [[ -z "$paths" ]]; then
+      bare=$(echo "$row" \
+        | grep -oE '`[A-Za-z0-9_./-]+\.(ts|tsx|js|mjs|md|sh|yml|json)`' \
+        | tr -d '`' \
+        | sort -u || true)
+      if [[ -n "$bare" ]]; then
+        resolved=""
+        while IFS= read -r bn; do
+          [[ -z "$bn" ]] && continue
+          # Skip if already a full path (would've matched the first regex)
+          [[ "$bn" == */* ]] && continue
+          matches=$(jq -r --arg n "$bn" '
+            .nodes[]
+            | select(.filePath != null)
+            | select(.filePath | endswith("/" + $n))
+            | .filePath
+          ' "$GRAPH" | sort -u)
+          count=$(echo -n "$matches" | grep -c . || true)
+          if [[ "$count" == "1" ]]; then
+            resolved="${resolved}${matches}"$'\n'
+          elif [[ "$count" -gt 1 ]]; then
+            echo "_(skipped ambiguous \`$bn\` — $count candidates in graph: $(echo "$matches" | tr '\n' ',' | sed 's/,$//'))_" >&2
+          fi
+        done <<< "$bare"
+        paths=$(echo "$resolved" | grep -v '^$' | sort -u || true)
+      fi
+    fi
+
     if [[ -z "$paths" ]]; then
       echo "## Files mentioned in task"
       echo ""
