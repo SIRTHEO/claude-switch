@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readKeychain, writeKeychain, type KeychainData } from './keychain.js';
+import { keychainAvailable, readApiKeyFromKeychain } from './apikey-keychain.js';
 import { writeJsonAtomic } from './atomic-write.js';
 import { withLock } from './lock.js';
 import { errnoCode } from './errors.js';
@@ -287,13 +288,54 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   // Strip internal fields so they never leak into ~/.claude.json.
   const {
     _keychain,
-    _apiKey: _ignored,
+    _apiKey: _apiKeyLegacy,
     _prefs: _ignoredPrefs,
     _customApiKeyResponses,
     _claudeJsonApiKey,
     ...oauthAccount
   } = accountData;
   const keychainRestored = !!(_keychain && typeof _keychain === 'object');
+
+  // Phase 14.2 — silent-billing leak prevention.
+  //
+  // Two snapshot fields can resuscitate an API-key authorization that
+  // claude-switch doesn't track:
+  //   - `_claudeJsonApiKey` — the actual key, written by claude binary
+  //     into ~/.claude.json.apiKey when the user accepts "Use this API
+  //     key? [Y/n]" and captured by save() on the next snapshot
+  //   - `_customApiKeyResponses` — the hash of an approved key; claude
+  //     binary uses it to skip the prompt if a matching key shows up
+  //     via env or another path
+  //
+  // Both were originally snapshotted to prevent CROSS-account leak
+  // (account A's approval surviving a switch to B). But once captured,
+  // they survive forever — including the case where the user never
+  // intentionally configured an API key via claude-switch and just
+  // happened to once have ANTHROPIC_API_KEY exported. Subsequent
+  // switches to that account silently re-inject the key into
+  // claude.json and claude binary uses it, billing the API tier
+  // instead of the subscription. claude-switch CLI has no visibility
+  // because getApiKey() reads from a different storage.
+  //
+  // Defense: if claude-switch ITSELF doesn't track an apikey for this
+  // account (no `_apiKey` in snapshot AND no entry in
+  // claude-switch-apikey Keychain), discard both fields on restore.
+  // The next time the user wants the key, they get the standard
+  // "Use this API key? [Y/n]" prompt — same UX as a fresh setup,
+  // explicit consent restored.
+  //
+  // Env escape: CLAUDE_SWITCH_KEEP_UNTRACKED_APIKEY=1 preserves the
+  // pre-14.2 behavior for one release cycle in case a user discovers
+  // they relied on the silent persistence.
+  const claudeSwitchTracksApiKey = (() => {
+    if (typeof _apiKeyLegacy === 'string' && _apiKeyLegacy) return true;
+    if (keychainAvailable() && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1') {
+      return readApiKeyFromKeychain(email) !== null;
+    }
+    return false;
+  })();
+  const purgeUntracked = !claudeSwitchTracksApiKey
+    && process.env.CLAUDE_SWITCH_KEEP_UNTRACKED_APIKEY !== '1';
 
   let data: Record<string, unknown>;
   try {
@@ -315,12 +357,19 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   // would silently use it instead of OAuth, billing the wrong account.
   // The user gets re-prompted "Use this API key? [Y/n]" on first use of
   // a key under the new account — that's the correct UX after a switch.
-  if (_customApiKeyResponses && typeof _customApiKeyResponses === 'object') {
+  //
+  // Phase 14.2: in addition to the cross-account leak prevention above,
+  // we ALSO refuse to restore snapshot api-key state for accounts where
+  // claude-switch doesn't track a key (see `purgeUntracked` derivation
+  // above). Prevents the silent-billing class where a one-time
+  // ANTHROPIC_API_KEY env approval becomes permanent for the account
+  // without the user's continued consent.
+  if (_customApiKeyResponses && typeof _customApiKeyResponses === 'object' && !purgeUntracked) {
     data.customApiKeyResponses = _customApiKeyResponses;
   } else {
     delete data.customApiKeyResponses;
   }
-  if (typeof _claudeJsonApiKey === 'string' && _claudeJsonApiKey) {
+  if (typeof _claudeJsonApiKey === 'string' && _claudeJsonApiKey && !purgeUntracked) {
     data.apiKey = _claudeJsonApiKey;
   } else {
     delete data.apiKey;
