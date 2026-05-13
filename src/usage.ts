@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { readKeychain } from './keychain.js';
 import { writeJsonAtomic } from './atomic-write.js';
 import { errMessage } from './errors.js';
@@ -54,8 +55,25 @@ export interface UsageCache {
   rateLimitedUntil?: number;
 }
 
-function cachePath(accountsDirPath: string): string {
+/**
+ * Legacy global cache path. Kept readable for one release cycle so users
+ * upgrading from pre-13.2 don't lose their last cached values during the
+ * first post-upgrade switch. New writes always go through `cachePathFor`.
+ */
+function cachePathLegacy(accountsDirPath: string): string {
   return path.join(accountsDirPath, '.usage-cache.json');
+}
+
+/**
+ * Per-account cache path. Email is hashed (sha256[:16] = 64 bits, ~4B
+ * birthday bound) so the filename is never user-controlled — the email
+ * itself isn't safe to interpolate into a path (`..`, `/`, OS reserved
+ * chars). Different accounts get independent files, so switching A→B→A
+ * doesn't churn a single shared file and force re-fetches.
+ */
+function cachePathFor(accountsDirPath: string, email: string): string {
+  const hash = createHash('sha256').update(email).digest('hex').slice(0, 16);
+  return path.join(accountsDirPath, `.usage-cache.${hash}.json`);
 }
 
 /**
@@ -69,9 +87,14 @@ export function parseRetryAfter(header: string | string[] | undefined): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 300;
 }
 
+/**
+ * Read the legacy global cache file. Kept for back-compat — new callers
+ * should prefer `readUsageCacheForAccount(dir, email)` which checks the
+ * per-account file first.
+ */
 export function readUsageCache(accountsDirPath: string): UsageCache | null {
   try {
-    const raw = fs.readFileSync(cachePath(accountsDirPath), 'utf-8');
+    const raw = fs.readFileSync(cachePathLegacy(accountsDirPath), 'utf-8');
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed === 'object' && parsed !== null && typeof (parsed as { fetchedAt?: unknown }).fetchedAt === 'number') {
       return parsed as UsageCache;
@@ -80,9 +103,48 @@ export function readUsageCache(accountsDirPath: string): UsageCache | null {
   return null;
 }
 
+/**
+ * Read the per-account cache for the given email. Falls back to the
+ * legacy global cache ONLY when (a) the per-account file doesn't exist
+ * AND (b) the legacy file's `account` field matches the requested
+ * email — preserves cached numbers across the v3.7 upgrade without
+ * leaking another account's cache.
+ */
+export function readUsageCacheForAccount(
+  accountsDirPath: string,
+  email: string,
+): UsageCache | null {
+  try {
+    const raw = fs.readFileSync(cachePathFor(accountsDirPath, email), 'utf-8');
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === 'object' && parsed !== null && typeof (parsed as { fetchedAt?: unknown }).fetchedAt === 'number') {
+      return parsed as UsageCache;
+    }
+  } catch { /* per-account miss → try legacy */ }
+  try {
+    const raw = fs.readFileSync(cachePathLegacy(accountsDirPath), 'utf-8');
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === 'object'
+      && parsed !== null
+      && typeof (parsed as { fetchedAt?: unknown }).fetchedAt === 'number'
+      && (parsed as { account?: unknown }).account === email
+    ) {
+      return parsed as UsageCache;
+    }
+  } catch { /* legacy miss too */ }
+  return null;
+}
+
 function writeUsageCache(accountsDirPath: string, cache: UsageCache): void {
   try {
-    const file = cachePath(accountsDirPath);
+    // Write to the per-account path when account is set (the normal case
+    // since the cache shape gained `account` in pre-3.x). Fall back to
+    // the legacy path only when account is unknown — defensive; current
+    // call sites always set `cache.account`.
+    const file = cache.account
+      ? cachePathFor(accountsDirPath, cache.account)
+      : cachePathLegacy(accountsDirPath);
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     // indent=0 keeps the cache compact (writes happen on every fetch).
     writeJsonAtomic(file, cache, 0);
@@ -184,7 +246,9 @@ export async function fetchUsageCached(
   accessToken: string,
   opts: { force?: boolean; account?: string } = {},
 ): Promise<UsageCache> {
-  const cache = readUsageCache(accountsDirPath);
+  const cache = opts.account
+    ? readUsageCacheForAccount(accountsDirPath, opts.account)
+    : readUsageCache(accountsDirPath);
   const now = Date.now();
   // A cache without `account` is from a pre-account-aware version. We can't
   // tell which account it belonged to, so treat it as a different account
@@ -276,13 +340,29 @@ export function readUsageCacheFor(
   accountsDirPath: string,
   account: string,
 ): UsageCache | null {
-  const cache = readUsageCache(accountsDirPath);
+  // Path-keyed by account hash; legacy fallback covered inside the helper.
+  // The defensive account-match below catches the (rare) case where a
+  // legacy file happens to have a matching account field but came from
+  // a buggy older write — we never display the wrong account's quota.
+  const cache = readUsageCacheForAccount(accountsDirPath, account);
   if (!cache) return null;
-  // Older caches (pre-account-aware) have no `account` field — treat as a
-  // cache miss so we refetch with the current account context attached.
   if (!cache.account) return null;
   if (cache.account !== account) return null;
   return cache;
+}
+
+/**
+ * Decision helper for the "pre-fetch on switch" path (Phase 13.3): returns
+ * true when the target account's cache is missing or stale, false when it
+ * is fresh enough that an immediate refresh would be wasted. Kept as a
+ * pure predicate so switcher.ts can call it without pulling in the
+ * spawn/IO side effects.
+ */
+export function shouldTriggerUsageRefreshAfterSwitch(
+  accountsDirPath: string,
+  email: string,
+): boolean {
+  return isUsageCacheStale(readUsageCacheForAccount(accountsDirPath, email), email);
 }
 
 /**

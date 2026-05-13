@@ -3,7 +3,8 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readUsageCache, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter, readUsageCacheFor, isUsageCacheStale, triggerBackgroundUsageRefresh } from '../src/usage.js';
+import { readUsageCache, readUsageCacheForAccount, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter, readUsageCacheFor, isUsageCacheStale, shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh } from '../src/usage.js';
+import { createHash } from 'node:crypto';
 
 describe('readUsageCache', () => {
   let dir: string;
@@ -301,5 +302,133 @@ describe('triggerBackgroundUsageRefresh', () => {
       // The function swallows errors internally — should never throw.
     }
     assert.strictEqual(returned, true);
+  });
+});
+
+// ----- Phase 13.2 — per-account usage cache -----
+
+describe('readUsageCacheForAccount — per-account hashed path', () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-usage-perc-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  // Reproduce the path the implementation derives. If the production formula
+  // ever changes, this helper is the canary that makes the divergence visible.
+  const perAccountPath = (email: string): string => {
+    const hash = createHash('sha256').update(email).digest('hex').slice(0, 16);
+    return path.join(dir, `.usage-cache.${hash}.json`);
+  };
+
+  it('reads the per-account cache file when present', () => {
+    const cache = {
+      fetchedAt: Date.now(),
+      account: 'first@x.com',
+      payload: { five_hour: { utilization: 42 }, seven_day: { utilization: 10 } },
+    };
+    fs.writeFileSync(perAccountPath('first@x.com'), JSON.stringify(cache));
+    const got = readUsageCacheForAccount(dir, 'first@x.com');
+    assert.deepStrictEqual(got, cache);
+  });
+
+  it('returns null for a non-existent account even when another account has a cache', () => {
+    fs.writeFileSync(perAccountPath('first@x.com'), JSON.stringify({
+      fetchedAt: Date.now(),
+      account: 'first@x.com',
+      payload: { five_hour: { utilization: 99 }, seven_day: { utilization: 99 } },
+    }));
+    // Second account has no cache file → never leak the first account's quota.
+    assert.strictEqual(readUsageCacheForAccount(dir, 'second@x.com'), null);
+  });
+
+  it('falls back to the legacy global cache when (a) per-account missing AND (b) legacy account field matches', () => {
+    // Upgrade scenario: user had a cache from pre-13.2 (legacy global file).
+    // First read for the matching account should pick it up so we don't
+    // force an unnecessary re-fetch the first time after upgrade.
+    fs.writeFileSync(path.join(dir, '.usage-cache.json'), JSON.stringify({
+      fetchedAt: Date.now(),
+      account: 'legacy@x.com',
+      payload: { five_hour: { utilization: 55 }, seven_day: { utilization: 22 } },
+    }));
+    const got = readUsageCacheForAccount(dir, 'legacy@x.com');
+    assert.ok(got);
+    assert.strictEqual(got?.account, 'legacy@x.com');
+    assert.strictEqual(got?.payload?.five_hour?.utilization, 55);
+  });
+
+  it('does NOT fall back to a legacy cache whose account differs from the request', () => {
+    // Critical safety: legacy file belongs to A, but we're asking for B.
+    // Returning A's cache for B would leak quota across accounts — must
+    // refuse and return null.
+    fs.writeFileSync(path.join(dir, '.usage-cache.json'), JSON.stringify({
+      fetchedAt: Date.now(),
+      account: 'a@x.com',
+      payload: { five_hour: { utilization: 99 }, seven_day: { utilization: 99 } },
+    }));
+    assert.strictEqual(readUsageCacheForAccount(dir, 'b@x.com'), null);
+  });
+
+  it('prefers the per-account file over the legacy file when both exist', () => {
+    // Mid-migration state: per-account has the fresh value, legacy is stale
+    // from before the upgrade. Always prefer per-account — that's the post-
+    // upgrade write path.
+    fs.writeFileSync(path.join(dir, '.usage-cache.json'), JSON.stringify({
+      fetchedAt: Date.now() - 60_000,
+      account: 'pref@x.com',
+      payload: { five_hour: { utilization: 10 }, seven_day: { utilization: 5 } },
+    }));
+    fs.writeFileSync(perAccountPath('pref@x.com'), JSON.stringify({
+      fetchedAt: Date.now(),
+      account: 'pref@x.com',
+      payload: { five_hour: { utilization: 80 }, seven_day: { utilization: 40 } },
+    }));
+    const got = readUsageCacheForAccount(dir, 'pref@x.com');
+    assert.strictEqual(got?.payload?.five_hour?.utilization, 80,
+      'per-account file should win over legacy when both present');
+  });
+});
+
+describe('shouldTriggerUsageRefreshAfterSwitch — Phase 13.3 predicate', () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-usage-trigger-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  const perAccountPath = (email: string): string => {
+    const hash = createHash('sha256').update(email).digest('hex').slice(0, 16);
+    return path.join(dir, `.usage-cache.${hash}.json`);
+  };
+
+  it('returns true when no cache exists for the target account', () => {
+    assert.strictEqual(shouldTriggerUsageRefreshAfterSwitch(dir, 'cold@x.com'), true);
+  });
+
+  it('returns false when the target account has a fresh cache', () => {
+    fs.writeFileSync(perAccountPath('warm@x.com'), JSON.stringify({
+      fetchedAt: Date.now(),
+      account: 'warm@x.com',
+      payload: { five_hour: { utilization: 30 }, seven_day: { utilization: 10 } },
+    }));
+    assert.strictEqual(shouldTriggerUsageRefreshAfterSwitch(dir, 'warm@x.com'), false);
+  });
+
+  it('returns true when the target account has a stale cache (>10 min old)', () => {
+    fs.writeFileSync(perAccountPath('stale@x.com'), JSON.stringify({
+      fetchedAt: Date.now() - 16 * 60 * 1000,
+      account: 'stale@x.com',
+      payload: { five_hour: { utilization: 30 }, seven_day: { utilization: 10 } },
+    }));
+    assert.strictEqual(shouldTriggerUsageRefreshAfterSwitch(dir, 'stale@x.com'), true);
+  });
+
+  it('returns true for account B when only account A has a fresh cache (A→B→A scenario)', () => {
+    // Switch A→B: A's per-account cache exists, B's does not. After switch
+    // to B, predicate must report stale (B has no cache yet) so the caller
+    // triggers a background refresh. Crucially the predicate does NOT
+    // consult A's cache for B's freshness.
+    fs.writeFileSync(perAccountPath('a@x.com'), JSON.stringify({
+      fetchedAt: Date.now(),
+      account: 'a@x.com',
+      payload: { five_hour: { utilization: 30 }, seven_day: { utilization: 10 } },
+    }));
+    assert.strictEqual(shouldTriggerUsageRefreshAfterSwitch(dir, 'b@x.com'), true);
   });
 });

@@ -13,7 +13,7 @@ import { getCurrent } from '../accounts.js';
 import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
 import { getApiKey } from '../apikey.js';
 import {
-  readUsageCache,
+  readUsageCacheForAccount,
   isUsageCacheStale,
   fetchUsageCached,
   getAccessTokenFromKeychain,
@@ -61,7 +61,7 @@ async function refreshUsageOnEntry(claudeJsonPath: string, accountsDirPath: stri
   if (!readGlobalPrefs(accountsDirPath).refreshUsageOnEntry) return;
   const current = getCurrent(claudeJsonPath);
   if (!current) return;
-  if (!isUsageCacheStale(readUsageCache(accountsDirPath), current)) return;
+  if (!isUsageCacheStale(readUsageCacheForAccount(accountsDirPath, current), current)) return;
   const token = getAccessTokenFromKeychain(claudeJsonPath);
   if (!token) return;
   try {
