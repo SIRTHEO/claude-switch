@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readUsageCache, readUsageCacheForAccount, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter, readUsageCacheFor, isUsageCacheStale, shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh } from '../src/usage.js';
+import { readUsageCache, readUsageCacheForAccount, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter, readUsageCacheFor, isUsageCacheStale, shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh, parseUsageHeadersIfPresent, updateUsageCacheFromHeaders } from '../src/usage.js';
 import { createHash } from 'node:crypto';
 
 describe('readUsageCache', () => {
@@ -430,5 +430,138 @@ describe('shouldTriggerUsageRefreshAfterSwitch — Phase 13.3 predicate', () => 
       payload: { five_hour: { utilization: 30 }, seven_day: { utilization: 10 } },
     }));
     assert.strictEqual(shouldTriggerUsageRefreshAfterSwitch(dir, 'b@x.com'), true);
+  });
+});
+
+// ----- Phase 13.4 — realtime push from response headers -----
+
+describe('parseUsageHeadersIfPresent', () => {
+  it('returns null when neither header is present', () => {
+    assert.strictEqual(parseUsageHeadersIfPresent({}), null);
+    assert.strictEqual(parseUsageHeadersIfPresent({ 'content-type': 'application/json' }), null);
+  });
+
+  it('parses five-hour percent header (canonical name)', () => {
+    const got = parseUsageHeadersIfPresent({
+      'anthropic-ratelimit-five-hour-percent-used': '42',
+    });
+    assert.deepStrictEqual(got, { fiveHourPct: 42, sevenDayPct: undefined });
+  });
+
+  it('parses seven-day percent header (canonical name)', () => {
+    const got = parseUsageHeadersIfPresent({
+      'anthropic-ratelimit-seven-day-percent-used': '15.5',
+    });
+    assert.deepStrictEqual(got, { fiveHourPct: undefined, sevenDayPct: 15.5 });
+  });
+
+  it('parses both headers together', () => {
+    const got = parseUsageHeadersIfPresent({
+      'anthropic-ratelimit-five-hour-percent-used': '80',
+      'anthropic-ratelimit-seven-day-percent-used': '35',
+    });
+    assert.deepStrictEqual(got, { fiveHourPct: 80, sevenDayPct: 35 });
+  });
+
+  it('accepts the priority-* alias header names', () => {
+    // Defensive: header naming convention might evolve. We probe multiple
+    // candidates so a rename doesn't silently kill the feature.
+    const got = parseUsageHeadersIfPresent({
+      'anthropic-priority-five-hour-percent-used': '12',
+      'anthropic-priority-seven-day-percent-used': '7',
+    });
+    assert.deepStrictEqual(got, { fiveHourPct: 12, sevenDayPct: 7 });
+  });
+
+  it('strips trailing % sign', () => {
+    const got = parseUsageHeadersIfPresent({
+      'anthropic-ratelimit-five-hour-percent-used': '67%',
+    });
+    assert.strictEqual(got?.fiveHourPct, 67);
+  });
+
+  it('rejects out-of-range and non-numeric values', () => {
+    assert.strictEqual(parseUsageHeadersIfPresent({
+      'anthropic-ratelimit-five-hour-percent-used': '150',
+    }), null);
+    assert.strictEqual(parseUsageHeadersIfPresent({
+      'anthropic-ratelimit-five-hour-percent-used': 'not-a-number',
+    }), null);
+    assert.strictEqual(parseUsageHeadersIfPresent({
+      'anthropic-ratelimit-five-hour-percent-used': '-5',
+    }), null);
+  });
+
+  it('handles array-valued headers (Node passes them this way for repeats)', () => {
+    const got = parseUsageHeadersIfPresent({
+      'anthropic-ratelimit-five-hour-percent-used': ['42', '50'],
+    });
+    // First value wins — Node delivers headers in order.
+    assert.strictEqual(got?.fiveHourPct, 42);
+  });
+});
+
+describe('updateUsageCacheFromHeaders', () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-usage-hdr-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  const perAccountPath = (email: string): string => {
+    const hash = createHash('sha256').update(email).digest('hex').slice(0, 16);
+    return path.join(dir, `.usage-cache.${hash}.json`);
+  };
+
+  it('writes a fresh cache entry when both percentages are provided', () => {
+    updateUsageCacheFromHeaders(dir, 'new@x.com', 42, 18);
+    const cache = readUsageCacheForAccount(dir, 'new@x.com');
+    assert.strictEqual(cache?.account, 'new@x.com');
+    assert.strictEqual(cache?.payload?.five_hour?.utilization, 42);
+    assert.strictEqual(cache?.payload?.seven_day?.utilization, 18);
+  });
+
+  it('preserves the prior seven-day value when only five-hour is observed', () => {
+    // Pre-condition: cache already has both windows. New observation only
+    // includes the 5h header (e.g. proxy intercepted a response that
+    // happened to include only that header).
+    fs.writeFileSync(perAccountPath('warm@x.com'), JSON.stringify({
+      fetchedAt: Date.now() - 60_000,
+      account: 'warm@x.com',
+      payload: {
+        five_hour: { utilization: 30 },
+        seven_day: { utilization: 12, resets_at: '2026-05-20T00:00:00Z' },
+      },
+    }));
+    updateUsageCacheFromHeaders(dir, 'warm@x.com', 55, undefined);
+    const cache = readUsageCacheForAccount(dir, 'warm@x.com');
+    assert.strictEqual(cache?.payload?.five_hour?.utilization, 55, '5h updated');
+    assert.strictEqual(cache?.payload?.seven_day?.utilization, 12, '7d preserved from prior cache');
+  });
+
+  it('preserves an active rate-limit back-off across header updates', () => {
+    // Headers reflect subscription quota. A 429 back-off lives on a
+    // separate dimension (request rate) and must survive a header-driven
+    // refresh.
+    const future = Date.now() + 5 * 60 * 1000;
+    fs.writeFileSync(perAccountPath('rl@x.com'), JSON.stringify({
+      fetchedAt: Date.now() - 10_000,
+      account: 'rl@x.com',
+      rateLimitedUntil: future,
+      payload: { five_hour: { utilization: 0 }, seven_day: { utilization: 0 } },
+    }));
+    updateUsageCacheFromHeaders(dir, 'rl@x.com', 88, 22);
+    const cache = readUsageCacheForAccount(dir, 'rl@x.com');
+    assert.strictEqual(cache?.rateLimitedUntil, future);
+  });
+
+  it('is a no-op when both inputs are undefined', () => {
+    updateUsageCacheFromHeaders(dir, 'none@x.com', undefined, undefined);
+    assert.strictEqual(readUsageCacheForAccount(dir, 'none@x.com'), null,
+      'no cache file should be created');
+  });
+
+  it('is a no-op when email is empty (defensive — never write a global file)', () => {
+    updateUsageCacheFromHeaders(dir, '', 50, 20);
+    // No per-account file (we have no email to derive the path from)
+    assert.strictEqual(readUsageCacheForAccount(dir, 'placeholder@x.com'), null);
   });
 });
