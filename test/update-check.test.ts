@@ -73,8 +73,6 @@ describe('checkForUpdate / writeUpdateCache — type guard coverage', () => {
     }
   }
 
-  const cachePath = path.join(os.homedir(), '.claude', 'accounts', '.update-check.json');
-
   it('returns null when no cache file exists (isCheckCacheShaped: null path)', () => {
     withTempHome(() => {
       const result = checkForUpdate('1.0.0');
