@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # verify-release-readiness.sh — pre-push smoke suite for claude-switch.
 #
 # Runs 5 checks and prints a GO / NO-GO summary.
@@ -100,8 +100,7 @@ fi
 
 printf "[4/5] %-28s" "lint..."
 if npm run lint > "$LOG_DIR/4.log" 2>&1; then
-  WARN_COUNT="$(grep -cE 'WARN|warning|!' "$LOG_DIR/4.log" 2>/dev/null || echo 0)"
-  # Try biome's own summary line first
+  # Use biome's own summary line for warning count
   BIOME_WARN="$(grep -oE 'Found [0-9]+ warning' "$LOG_DIR/4.log" | grep -oE '[0-9]+' | head -1 || true)"
   if [ -n "$BIOME_WARN" ] && [ "$BIOME_WARN" != "0" ]; then
     printf " ${PASS}  (%s warning(s))\n" "$BIOME_WARN"
@@ -161,7 +160,7 @@ if [ "$FAILED" -eq 0 ]; then
       "$CURRENT_VER" "$RELEASE_AS" "$RELEASE_AS_COMMIT"
   else
     HAS_BREAKING="$(git log "$RANGE" --format='%s' 2>/dev/null | \
-      grep -E '(\([^)]+\))?!:' || true)"
+      grep -E '^(feat|fix)(\([^)]+\))?!:' || true)"
     HAS_FEAT="$(git log "$RANGE" --format='%s' 2>/dev/null | \
       grep -E '^feat(\([^)]+\))?:' || true)"
     HAS_FIX="$(git log "$RANGE" --format='%s' 2>/dev/null | \
