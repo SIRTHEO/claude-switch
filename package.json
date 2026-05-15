@@ -23,6 +23,7 @@
     "graph:file": "bash scripts/graph-query.sh file",
     "graph:dependents": "bash scripts/graph-query.sh dependents",
     "install-hooks": "bash scripts/install-git-hooks.sh",
+    "verify-release": "bash scripts/verify-release-readiness.sh",
     "prepublishOnly": "npm test"
   },
   "keywords": [

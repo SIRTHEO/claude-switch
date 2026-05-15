@@ -57,6 +57,31 @@ ls -la .git/hooks/pre-push
 policy, no push reaches `main` without explicit maintainer approval — skipping
 the hook increases the risk that a broken commit slips through.
 
+## Release readiness check
+
+Before pushing to `main`, run the release readiness script to verify all
+gates in one shot:
+
+```bash
+npm run verify-release
+```
+
+This runs five checks:
+
+| # | Check | Pass condition |
+|---|-------|----------------|
+| 1 | `npm run build` | TypeScript compiles without errors |
+| 2 | `npm test` | 0 failing tests |
+| 3 | `npx knip` | No unused files or devDependencies |
+| 4 | `npm run lint` | No lint errors (warnings allowed) |
+| 5 | Conventional commits | All commits since last tag match `<type>: description` |
+
+Exit 0 = `🟢 GO` (safe to push). Exit 1 = `🔴 NO-GO` with per-check details.
+
+The script also prints an informative bump estimate (minor/patch/major) based
+on commit types since the last tag, or the explicit `Release-As:` footer if
+present.
+
 ## Pre-release smoke (manual, macOS only)
 
 For releases that touch `src/profiles.ts`, `src/keychain.ts`, or any of
