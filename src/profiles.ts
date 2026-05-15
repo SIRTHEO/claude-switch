@@ -26,7 +26,7 @@ import {
 } from './keychain.js';
 import { getCurrent, isSafeEmail, resolvedAccountFile, syncActiveSnapshotIfStale } from './accounts.js';
 import { claudeJsonPath } from './paths.js';
-import { errMessage } from './errors.js';
+import { errMessage, debugProfiles } from './errors.js';
 
 // Conservative naming rules so a profile name is never ambiguous on
 // disk, in shell completions, or in error messages. Letters, digits,
@@ -377,14 +377,23 @@ export function importProfileFromAccount(
   const useKeychain = process.platform === 'darwin'
     && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1';
 
+  debugProfiles(`importProfileFromAccount legacyKeychain=${Boolean(_keychain)} useKeychain=${useKeychain} profileDir=${dir}`);
+
   if (_keychain) {
     if (useKeychain) {
-      writeKeychainForConfigDir(dir, _keychain);
-      wroteToKeychain = true;
+      try {
+        writeKeychainForConfigDir(dir, _keychain);
+        wroteToKeychain = true;
+        debugProfiles(`keychainWrite=success service=per-config-dir account=${dir} (import from snapshot)`);
+      } catch (writeErr) {
+        debugProfiles(`keychainWrite=failed service=per-config-dir account=${dir} err=${errMessage(writeErr)}`);
+      }
       // Pre-populate oauthAccount so claude shows the right email even on
       // first run, before the Keychain lookup happens.
       claudeJson.oauthAccount = { ...oauthFields, emailAddress: email };
     } else if (_keychain.claudeAiOauth) {
+      // Linux/Windows: embed tokens directly in JSON.
+      debugProfiles(`keychainWrite=skipped service=per-config-dir (non-darwin or disable-flag) writing to JSON`);
       claudeJson.oauthAccount = {
         ...oauthFields,
         emailAddress: email,
@@ -394,9 +403,11 @@ export function importProfileFromAccount(
       };
     } else {
       // _keychain present but missing claudeAiOauth — treat as login-required.
+      debugProfiles(`keychainWrite=skipped legacyKeychain=true but no claudeAiOauth — needsLogin=true`);
       needsLogin = true;
     }
   } else {
+    debugProfiles(`keychainWrite=skipped legacyKeychain=false — needsLogin=true`);
     needsLogin = true;
   }
 
@@ -465,7 +476,9 @@ function captureLiveCredentialsForActiveAccount(
     // error surface. No reason to bubble here.
     return false;
   }
-  if (!activeEmail || activeEmail !== email) return false;
+  const emailMatchActive = Boolean(activeEmail) && activeEmail === email;
+  debugProfiles(`captureLive emailMatchActive=${emailMatchActive} profileDir=${profileDir}`);
+  if (!emailMatchActive) return false;
 
   const live = readKeychain();
   if (!live?.claudeAiOauth?.accessToken) return false;
@@ -475,16 +488,19 @@ function captureLiveCredentialsForActiveAccount(
   // accessToken is sufficient: rotation always changes it.
   const existing = readKeychainForConfigDir(profileDir);
   if (existing?.claudeAiOauth?.accessToken === live.claudeAiOauth.accessToken) {
+    debugProfiles(`keychainWrite=skipped service=per-config-dir account=${profileDir} (already in sync)`);
     return true;
   }
 
   try {
     writeKeychainForConfigDir(profileDir, live);
+    debugProfiles(`keychainWrite=success service=per-config-dir account=${profileDir} (live capture)`);
     return true;
-  } catch {
+  } catch (writeErr) {
     // Keychain write can fail if the user dismissed the auth dialog
     // (first-time use under a fresh `node` invocation). Fall back to
     // the legacy path — better than crashing the isolated open.
+    debugProfiles(`keychainWrite=failed service=per-config-dir account=${profileDir} err=${errMessage(writeErr)}`);
     return false;
   }
 }
@@ -529,19 +545,41 @@ export function ensureProfileForAccount(
     if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1') return false;
     try {
       const legacy = readLegacyAccount(email, accountsDirPath);
+      const hasKeychain = Boolean(legacy._keychain);
+      // Detect whether the snapshot tokens are stale (expired) so the
+      // maintainer can distinguish H2 from H4 in the debug output.
+      // We do a simple synchronous expiresAt check — the async
+      // refreshLegacySnapshotIfStale is called upstream by the UI before
+      // ensureProfileForAccount, so if we reach here with stale tokens the
+      // refresh either failed or wasn't attempted.
+      const oauthExp = legacy._keychain?.claudeAiOauth?.expiresAt;
+      const isStale = oauthExp !== undefined && Date.now() >= Number(oauthExp);
+      const hasLoginReason = isStale ? 'snapshot-stale' : (hasKeychain ? 'json-ok' : 'keychain-miss');
+      debugProfiles(`recoveryAttempted=true legacyKeychain=${hasKeychain} reason=${hasLoginReason} profileDir=${profileDir}`);
       if (!legacy._keychain) return false;
-      writeKeychainForConfigDir(profileDir, legacy._keychain);
-      return true;
+      try {
+        writeKeychainForConfigDir(profileDir, legacy._keychain);
+        debugProfiles(`keychainWrite=success service=per-config-dir account=${profileDir}`);
+        return true;
+      } catch (writeErr) {
+        debugProfiles(`keychainWrite=failed service=per-config-dir account=${profileDir} err=${errMessage(writeErr)}`);
+        return false;
+      }
     } catch {
+      debugProfiles(`recoveryAttempted=true legacyKeychain=false profileDir=${profileDir} (readLegacyAccount failed)`);
       return false;
     }
   };
+
+  debugProfiles(`ensureProfileForAccount email=<email> disableKeychain=${process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1'}`);
 
   // Check all profiles for an email match (covers logged-in profiles).
   for (const name of listProfiles()) {
     try {
       const info = readProfile(name);
-      if (info.emailAddress === email) {
+      const emailMatch = info.emailAddress === email;
+      if (emailMatch) {
+        debugProfiles(`emailMatch=true profileFound=true path=${info.path}`);
         // Live-capture fast path: when the email coincides with the active
         // account, refresh the profile's Keychain entry from the default
         // Keychain. Handles the drift case where the profile entry was
@@ -552,6 +590,18 @@ export function ensureProfileForAccount(
         // Re-read so hasLogin reflects any freshly-written entry.
         const fresh = readProfile(name);
         let needsLogin = !fresh.hasLogin;
+
+        // Determine hasLogin reason for diagnostics.
+        let hasLoginReason: string;
+        if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1') {
+          hasLoginReason = 'disable-flag';
+        } else if (process.platform === 'darwin' && !fresh.hasLogin) {
+          hasLoginReason = 'keychain-miss';
+        } else {
+          hasLoginReason = 'json-ok';
+        }
+        debugProfiles(`hasLogin=${fresh.hasLogin} reason=${hasLoginReason}`);
+
         if (needsLogin && tryRecoverFromLegacy(fresh.path)) needsLogin = false;
         return {
           profileName: name,
@@ -569,9 +619,21 @@ export function ensureProfileForAccount(
   // would derive — if that profile already exists, treat it as ours.
   const derivedName = (email.split('@')[0] ?? email).replace(/[^A-Za-z0-9_-]/g, '_');
   if (isValidProfileName(derivedName) && profileExists(derivedName)) {
+    debugProfiles(`emailMatch=false profileFound=true path=${profilePath(derivedName)} (derivedName fallback)`);
     captureLiveCredentialsForActiveAccount(email, profilePath(derivedName));
     const info = readProfile(derivedName);
     let needsLogin = !info.hasLogin;
+
+    let hasLoginReason: string;
+    if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1') {
+      hasLoginReason = 'disable-flag';
+    } else if (process.platform === 'darwin' && !info.hasLogin) {
+      hasLoginReason = 'keychain-miss';
+    } else {
+      hasLoginReason = 'json-ok';
+    }
+    debugProfiles(`hasLogin=${info.hasLogin} reason=${hasLoginReason}`);
+
     if (needsLogin && tryRecoverFromLegacy(info.path)) needsLogin = false;
     return {
       profileName: derivedName,
@@ -582,7 +644,9 @@ export function ensureProfileForAccount(
     };
   }
 
+  debugProfiles(`emailMatch=false profileFound=false importing from legacy account`);
   const result = importProfileFromAccount(email, accountsDirPath);
+  debugProfiles(`profileFound=true path=${result.profilePath} needsLogin=${result.needsLogin} created=true`);
   return {
     profileName: result.profileName,
     profilePath: result.profilePath,

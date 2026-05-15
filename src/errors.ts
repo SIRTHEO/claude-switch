@@ -41,3 +41,19 @@ export function errnoCode(e: unknown): string | undefined {
   }
   return undefined;
 }
+
+/**
+ * Diagnostic logger for the profiles subsystem.
+ *
+ * Writes a single line to stderr only when `CLAUDE_SWITCH_DEBUG_PROFILES=1`.
+ * Used by `ensureProfileForAccount` and related helpers to expose the
+ * decision path that determines whether a profile has valid credentials.
+ *
+ * Enable at the shell:
+ *   CLAUDE_SWITCH_DEBUG_PROFILES=1 claude switch <email>
+ */
+export function debugProfiles(...args: unknown[]): void {
+  if (process.env.CLAUDE_SWITCH_DEBUG_PROFILES === '1') {
+    process.stderr.write(`[claude-switch:profiles] ${args.map(String).join(' ')}\n`);
+  }
+}
