@@ -1,5 +1,8 @@
 # Changelog
 
+<!-- Phase 14.3 note: the untracked-apiKey warning added in this release is
+     transitional and will be removed in the next minor release. -->
+
 ## [3.5.1](https://github.com/SIRTHEO/claude-switch/compare/v3.5.0...v3.5.1) (2026-05-08)
 
 

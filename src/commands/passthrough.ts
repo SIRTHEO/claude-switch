@@ -12,6 +12,7 @@
 //    - spawn claude directly with `extraEnv` (legacy ANTHROPIC_API_KEY
 //      injection for accounts without saved keys).
 
+import fs from 'node:fs';
 import { withLock } from '../lock.js';
 import { ExitError } from '../errors.js';
 import { VERSION } from '../version.js';
@@ -41,6 +42,68 @@ import { getAlias } from '../aliases.js';
 import { findClaude } from './_helpers.js';
 import type { CommandContext } from './context.js';
 
+// Phase 14.3 — transitional warning for API keys in ~/.claude.json that are
+// NOT tracked by claude-switch. One banner per process; suppressed in tests.
+//
+// Background: Phase 14.2 added purge logic in accounts.load() that removes
+// data.apiKey from ~/.claude.json when claude-switch has no record of that
+// key. Before purging, this banner informs the user so they are not surprised
+// by the key disappearing on the next account switch.
+//
+// This warning will be removed in the next minor release once users have had
+// time to acknowledge the transition.
+let _warnedUntrackedApiKey = false;
+
+/** Reset internal one-shot guard — exported for tests only. */
+export function __resetWarnedOnceForTests(): void {
+  _warnedUntrackedApiKey = false;
+}
+
+/**
+ * Emit a one-time stderr banner when ~/.claude.json carries an apiKey that
+ * claude-switch does not track. The banner fires BEFORE the key is purged
+ * by accounts.load() on the next switch.
+ *
+ * Suppressed when NODE_ENV=test or CLAUDE_SWITCH_TESTING=1.
+ */
+export function warnUntrackedApiKeyIfNeeded(
+  claudeJsonPath: string,
+  accountsDirPath: string,
+): void {
+  if (_warnedUntrackedApiKey) return;
+  if (process.env.NODE_ENV === 'test' || process.env.CLAUDE_SWITCH_TESTING === '1') return;
+
+  let data: Record<string, unknown>;
+  try {
+    const raw = fs.readFileSync(claudeJsonPath, 'utf-8');
+    data = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return; // unreadable / missing file — no-op
+  }
+
+  if (typeof data.apiKey !== 'string' || !data.apiKey) return;
+
+  // Identify the active account so we can check whether claude-switch
+  // tracks a key for it.
+  const email = (data.oauthAccount as Record<string, unknown> | undefined)?.emailAddress;
+  if (typeof email !== 'string' || !email) return;
+
+  let tracked: string | null;
+  try {
+    tracked = getApiKey(email, accountsDirPath);
+  } catch {
+    return; // best-effort: don't crash passthrough on warning failure (e.g. unsafe email)
+  }
+  if (tracked !== null) return; // tracked — no warning
+
+  _warnedUntrackedApiKey = true;
+  process.stderr.write(
+    '⚠ claude-switch: ~/.claude.json carries an API key NOT tracked by claude-switch.\n' +
+    '  This will be removed on next account switch to prevent silent API billing.\n' +
+    '  See: https://github.com/sirtheo/claude-switch (Security Advisory).\n\n',
+  );
+}
+
 export async function handlePassthrough(
   ctx: CommandContext,
   passthroughArgs: string[],
@@ -51,6 +114,9 @@ export async function handlePassthrough(
   if (restored) {
     console.log(`Restored account: ${restored} (from interrupted --as)\n`);
   }
+
+  // Phase 14.3: warn BEFORE any load() call that may purge the key.
+  warnUntrackedApiKeyIfNeeded(claudeJsonPath, accountsDirPath);
 
   const claudeBin = findClaude(ctx.selfUrl);
 
