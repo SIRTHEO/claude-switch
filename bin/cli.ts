@@ -46,6 +46,7 @@ import {
   handleRouteTest,
 } from '../src/commands/route.js';
 import { handlePassthrough } from '../src/commands/passthrough.js';
+import { handleCacheHealth } from '../src/commands/cache-health.js';
 import { askYN } from '../src/commands/_helpers.js';
 import type { CommandContext } from '../src/commands/context.js';
 
@@ -88,7 +89,8 @@ export type Command =
   | { action: 'route-list' }
   | { action: 'route-remove'; pattern: string | undefined }
   | { action: 'route-test'; cwd: string | undefined }
-  | { action: 'dashboard' };
+  | { action: 'dashboard' }
+  | { action: 'cache-health'; sessionPath: string | undefined; json: boolean };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -235,6 +237,13 @@ export function parseCommand(args: string[]): Command {
         return { action: 'route-test', cwd: args[3] };
       }
       throw new ExitError('Usage: claude switch route <add|list|remove|test> [args]');
+    }
+    case 'cache-health': {
+      const rest = args.slice(2);
+      const json = rest.includes('--json');
+      const sessionIdx = rest.indexOf('--session');
+      const sessionPath = sessionIdx >= 0 ? rest[sessionIdx + 1] : undefined;
+      return { action: 'cache-health', sessionPath, json };
     }
     default: return { action: 'switch-to', target: sub };
   }
@@ -451,6 +460,10 @@ async function main(): Promise<void> {
 
     case 'update':
       await handleUpdate();
+      break;
+
+    case 'cache-health':
+      handleCacheHealth({ sessionPath: cmd.sessionPath, json: cmd.json });
       break;
 
     case 'passthrough':

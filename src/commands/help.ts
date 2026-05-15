@@ -24,6 +24,10 @@ Usage:
   claude switch fallback auto-engage     auto-ON fallback when 5h or 7d cross threshold
     on|off|status                        opts: --threshold <1-100> (default 95)
   claude switch usage [--force]          Show subscription usage % (5h, 7d)
+  claude switch cache-health             Show cache hit ratio, flush count and
+    [--session <path>] [--json]          effective token cost for active session
+                                         opts: --session <path> (specific JSONL)
+                                               --json (machine-readable output)
   claude switch statusline [opts]        One-line account/mode for shell prompt
                                          opts: --full | --json | --no-color
   claude switch statusline install       Add badge to Claude Code status bar

@@ -94,6 +94,34 @@ describe('parseCommand', () => {
       { action: 'temporary-switch', target: undefined, args: [] });
   });
 
+  it('parses "switch cache-health" with no flags', () => {
+    assert.deepEqual(
+      parseCommand(['switch', 'cache-health']),
+      { action: 'cache-health', sessionPath: undefined, json: false },
+    );
+  });
+
+  it('parses "switch cache-health --json"', () => {
+    assert.deepEqual(
+      parseCommand(['switch', 'cache-health', '--json']),
+      { action: 'cache-health', sessionPath: undefined, json: true },
+    );
+  });
+
+  it('parses "switch cache-health --session /path/to/session.jsonl"', () => {
+    assert.deepEqual(
+      parseCommand(['switch', 'cache-health', '--session', '/path/to/session.jsonl']),
+      { action: 'cache-health', sessionPath: '/path/to/session.jsonl', json: false },
+    );
+  });
+
+  it('parses "switch cache-health --json --session /path"', () => {
+    assert.deepEqual(
+      parseCommand(['switch', 'cache-health', '--json', '--session', '/path']),
+      { action: 'cache-health', sessionPath: '/path', json: true },
+    );
+  });
+
   it('parses "switch setup"', () => {
     assert.deepEqual(parseCommand(['switch', 'setup']), { action: 'setup' });
   });
