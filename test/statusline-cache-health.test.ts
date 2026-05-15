@@ -145,8 +145,8 @@ describe('statusline cache-health — Scenario D: JSONL present → cacheHealth 
   });
 
   after(() => {
-    fs.rmSync(tmpHome, { recursive: true, force: true });
-    fs.rmSync(projectCwd, { recursive: true, force: true });
+    fs.rmSync(tmpHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    fs.rmSync(projectCwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it('exposes cacheHealth with the 4 required fields', () => {
@@ -192,8 +192,8 @@ describe('statusline cache-health — Scenario E: JSONL absent → no cacheHealt
   });
 
   after(() => {
-    fs.rmSync(tmpHome, { recursive: true, force: true });
-    fs.rmSync(projectCwd, { recursive: true, force: true });
+    fs.rmSync(tmpHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    fs.rmSync(projectCwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it('omits cacheHealth entirely when no JSONL file exists', () => {
@@ -221,8 +221,8 @@ describe('statusline cache-health — Scenario F: --no-cache-health suppresses b
   });
 
   after(() => {
-    fs.rmSync(tmpHome, { recursive: true, force: true });
-    fs.rmSync(projectCwd, { recursive: true, force: true });
+    fs.rmSync(tmpHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    fs.rmSync(projectCwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it('omits cacheHealth from JSON output when --no-cache-health is passed', () => {

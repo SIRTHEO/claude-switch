@@ -67,7 +67,7 @@ describe('statusline — profile-aware identity (Phase 13.1)', () => {
   });
 
   after(() => {
-    fs.rmSync(tmpHome, { recursive: true, force: true });
+    fs.rmSync(tmpHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it('without CLAUDE_CONFIG_DIR — reads the global email', () => {
@@ -100,7 +100,7 @@ describe('statusline — profile-aware identity (Phase 13.1)', () => {
       assert.strictEqual(got.email, 'global@x.com');
       assert.strictEqual(got.profile, null);
     } finally {
-      fs.rmSync(customDir, { recursive: true, force: true });
+      fs.rmSync(customDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   });
 });
@@ -123,7 +123,7 @@ describe('statusline — proxy runtime mode (Phase 13.6)', () => {
   });
 
   after(() => {
-    fs.rmSync(tmpHome, { recursive: true, force: true });
+    fs.rmSync(tmpHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   afterEach(() => {

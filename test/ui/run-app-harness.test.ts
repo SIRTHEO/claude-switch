@@ -54,6 +54,13 @@ describe('makeRunAppHarness — fixture bootstrap', () => {
   it('creates a fake claude binary that is executable and exits 0', () => {
     assert.ok(fs.existsSync(h.claudeBinFake), 'claudeBinFake must exist');
 
+    // The fake claude binary is a POSIX shell script (chmod 755 + #!/usr/bin/env sh).
+    // Windows does not honor the executable bit and cannot directly spawn shell
+    // scripts without an interpreter. The production code spawns via `node`
+    // or via the user's real claude binary, not this fixture, so the executable
+    // assertion is POSIX-only. Skip on win32.
+    if (process.platform === 'win32') return;
+
     const result = spawnSync(h.claudeBinFake, [], { encoding: 'utf-8' });
     assert.equal(result.status, 0, 'fake claude binary must exit 0');
   });
