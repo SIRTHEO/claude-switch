@@ -393,7 +393,8 @@ If `cache-health` reports a high flush count (more than 2–3 flushes in a short
 
 ## 📦 What's new
 
-- **v3.5.x** *(upcoming)* — 🎯 **Project-aware routing.** `.claude-switch` per-repo + `claude switch route` global rules pick the right account from `cwd`.
+- **v3.7.x** *(upcoming)* — 💾 **Cache-health monitor.** Live `💾 N% 🚨X` badge in the statusline + `claude switch cache-health [--session] [--json]` CLI to diagnose Anthropic billing bugs (cache flush, `--resume` invalidation). Plus realtime per-account usage cache, profile-aware statusline identity, `OAuth↻API` burst indicator, and silent-API-key billing leak fix.
+- **v3.5.x** — 🎯 **Project-aware routing.** `.claude-switch` per-repo + `claude switch route` global rules pick the right account from `cwd`.
 - **v3.4.x** — 🔐 **API keys in macOS Keychain.** Plus unified ephemeral state with on-read migration.
 - **v3.3.x** — 🔁 **Live OAuth ↔ API transitions.** Per-account `authMode`, swap modes without re-launching.
 - **v3.2.x** — 🪶 **`auto-revert`** renamed from `fallback auto` (legacy alias preserved).

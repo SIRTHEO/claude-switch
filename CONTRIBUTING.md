@@ -84,85 +84,88 @@ present.
 
 ## Release cadence policy
 
-Questa sezione codifica le regole operative per decidere quando e come rilasciare
-una nuova versione su `main`. Completa le sezioni precedenti su hook (Phase 17.1),
-snapshot security (Phase 17.2) e release readiness check (Phase 17.3).
+This section codifies the operational rules for when and how to release a new
+version to `main`. It complements the earlier sections on pre-push hook
+(Phase 17.1), conventional commits CI (Phase 17.2) and release readiness check
+(Phase 17.3).
 
-### Soglia "troppi commit non rilasciati"
+### Threshold: "too many unreleased commits"
 
-Se il numero di commit su `main` non ancora coperti da un tag supera **5**, la
-release è urgente. Verifica con:
+If the number of commits on `main` not yet covered by a tag exceeds **5**, the
+release is urgent. Check with:
 
 ```bash
 git log $(git describe --tags --abbrev=0)..HEAD --oneline | wc -l
 ```
 
-Un numero ≥ 5 è il segnale che il batch è abbastanza grande da giustificare un
-release-coordination commit immediato.
+A count ≥ 5 is the signal that the batch is large enough to warrant an
+immediate release-coordination commit.
 
-### Ogni Phase chiusa = 1 release-coordination commit
+### Every closed Phase = 1 release-coordination commit
 
-Al termine di ogni milestone (Phase), aggiungere un commit con il footer
-`Release-As:` per forzare il bump scelto invece di lasciare che release-please
-inferisca da soli i commit:
+At the end of every milestone (Phase), add a commit with the `Release-As:`
+footer to force the chosen bump rather than letting release-please infer it
+from the commit log alone:
 
 ```
 chore(release): coordinate Phase N release
 
-<riepilogo breve dei task inclusi>
+<short summary of included tasks>
 
 Release-As: X.Y.Z
 ```
 
-Il footer `Release-As: X.Y.Z` è l'unico modo garantito per sovrascrivere il bump
-automatico. Usarlo solo per bundle di milestone — non per singoli commit.
+The `Release-As: X.Y.Z` footer is the only guaranteed way to override the
+automatic bump. Use it only for milestone bundles — never for individual
+commits.
 
 ### Bump decision matrix
 
-| Tipo commit dominante | Bump automatico | Esempio |
-|-----------------------|-----------------|---------|
+| Dominant commit type | Automatic bump | Example |
+|----------------------|----------------|---------|
 | `feat:` | minor (x.Y.0) | 3.6.0 → 3.7.0 |
 | `fix:` | patch (x.y.Z) | 3.6.0 → 3.6.1 |
 | `feat!:` / `fix!:` | major (X.0.0) | 3.6.0 → 4.0.0 |
-| `refactor:`, `docs:`, `test:`, `chore:` | nessuno (bloccato) | — |
+| `refactor:`, `docs:`, `test:`, `chore:` | none (blocked) | — |
 
-Override via `Release-As:` footer — raro, riservato a bundle milestone. Per la
-corrispondenza `<type>` → bump vedere la sezione **Conventional commits** sopra.
+Override via `Release-As:` footer — rare, reserved for milestone bundles. For
+the full `<type>` → bump mapping see the **Conventional commits** section
+above.
 
-### Pre-push checklist obbligatoria
+### Mandatory pre-push checklist
 
-Prima di ogni push a `main`, verificare nell'ordine:
+Before every push to `main`, verify in order:
 
-1. `npm run verify-release` (Phase 17.3) restituisce `🟢 GO`
-2. Working tree pulito (`git status` → nothing to commit)
-3. Nessun task `cc:WIP` non-spike rimasto aperto in Plans.md
-4. `npm run install-hooks` eseguito almeno una volta nel clone (Phase 17.1)
+1. `npm run verify-release` (Phase 17.3) returns `🟢 GO`
+2. Working tree clean (`git status` → nothing to commit)
+3. No non-spike `cc:WIP` tasks left open in Plans.md
+4. `npm run install-hooks` executed at least once in the clone (Phase 17.1)
 
 ```bash
-# Verifica readiness in un colpo solo
+# Single-command readiness check
 npm run verify-release
 
-# Output GO → pronti per push (dopo OK esplicito del maintainer)
+# GO output → ready to push (only after explicit maintainer OK)
 git push origin main
 
-# release-please apre la PR entro 1-2 minuti — visualizzala con:
+# release-please opens the PR within 1-2 minutes — list with:
 gh pr list --label autorelease:pending
 ```
 
-### Push solo dopo OK esplicito del maintainer
+### Push only after explicit maintainer OK
 
-Per policy (vedi `CLAUDE.md` sezione "Release"), **nessun push a `main` senza
-approvazione esplicita**. Anche con `🟢 GO` da `verify-release`, il push va
-atteso fino alla conferma. La violazione bypassa release-please e può pubblicare
-su npm versioni non esaminate.
+By policy (see `CLAUDE.md` section "Release"), **no push to `main` without
+explicit approval**. Even with `🟢 GO` from `verify-release`, push must wait
+until confirmation. Skipping this bypasses release-please and may publish
+unreviewed versions to npm.
 
-### Cosa succede dopo il push
+### What happens after the push
 
-1. release-please apre automaticamente una PR `chore(main): release X.Y.Z`
-   con CHANGELOG completo ricalcolato dai commit.
-2. La PR rimane aperta fino al merge manuale del maintainer.
-3. Al merge: tag `vX.Y.Z` automatico → `npm publish` (se il workflow è
-   configurato).
+1. release-please automatically opens a `chore(main): release X.Y.Z` PR with
+   the full CHANGELOG recomputed from the commits.
+2. The PR stays open until manual maintainer merge.
+3. On merge: automatic `vX.Y.Z` tag → `npm publish` (if the workflow is
+   configured).
 
 ## Pre-release smoke (manual, macOS only)
 

@@ -11,6 +11,8 @@
 //   --json:  structured JSON with summary + sessionPath + flushes array.
 
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { ExitError } from '../errors.js';
 import {
   loadActiveSessionHealth,
@@ -71,8 +73,12 @@ export function handleCacheHealth(opts: CacheHealthOptions): void {
   } else {
     // Default: resolve active session for process.cwd().
     // We need the raw path for extractFlushTurns; resolve it separately.
+    // os.homedir() never returns "~" — it expands the real home or returns
+    // empty string. Using a literal "~" fallback would silently look up a dir
+    // named "~" in cwd, which never exists. Match the resolution used by
+    // loadActiveSessionHealth() in src/cache-health.ts to avoid divergence.
     const jsonlPath = findActiveSessionJsonl(
-      process.env.CLAUDE_PROJECTS_DIR ?? `${process.env.HOME ?? '~'}/.claude/projects`,
+      process.env.CLAUDE_PROJECTS_DIR ?? path.join(os.homedir(), '.claude', 'projects'),
       process.cwd(),
     );
     if (jsonlPath === null) {

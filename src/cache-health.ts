@@ -307,6 +307,19 @@ export function loadActiveSessionHealth(opts?: LoadHealthOptions): CacheHealthSu
  *     - any other non-alphanum-non-hyphen (spaces, braces, quotes, …) → `-`
  *   The leading `/` therefore produces the leading `-` that all entries share.
  *
+ * Known limitation — collisions for non-alphanum-non-hyphen chars:
+ *   The aggressive `[^a-zA-Z0-9-]` collapse means paths that differ only by
+ *   `.` vs `_` vs `-` vs ` ` vs `/` map to the same encoded directory. For
+ *   example `my-project`, `my_project`, `my.project` all encode identically.
+ *   In that case `findActiveSessionJsonl` returns the latest JSONL across all
+ *   colliding projects — the cache-health badge could show data from a
+ *   sibling project rather than the current cwd. This was deemed acceptable
+ *   because (a) the encoding matches Claude Code's own observed behavior on
+ *   real `~/.claude/projects/` dirs and (b) the cache-health surfaces are
+ *   diagnostic, not part of the auth/billing critical path. If Claude Code
+ *   ever changes its encoding (preserving `_` for example), update both this
+ *   regex and the verifying tests in `test/cache-health.test.ts`.
+ *
  * @example
  * encodeProjectPath('/foo/bar')      // '-foo-bar'
  * encodeProjectPath('/Users/me/.x') // '-Users-me--x'
