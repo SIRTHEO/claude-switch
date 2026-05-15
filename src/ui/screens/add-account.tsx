@@ -39,7 +39,7 @@ interface PreProps {
   onSubmit: (email: string) => void;
 }
 
-function PreSpawnScreen({ onSubmit }: PreProps) {
+export function PreSpawnScreen({ onSubmit }: PreProps) {
   const { exit } = useApp();
   const [error, setError] = useState<string | null>(null);
 
@@ -116,7 +116,7 @@ interface PostProps {
   onDone: (result: AddAccountResult) => void;
 }
 
-function PostSpawnScreen({
+export function PostSpawnScreen({
   newEmail,
   expectedEmail,
   currentEmail,
