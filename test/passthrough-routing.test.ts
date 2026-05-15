@@ -16,6 +16,7 @@ import {
 } from '../src/commands/passthrough.js';
 import { getCurrent, save } from '../src/accounts.js';
 import { writeStoredAccountPrefs } from '../src/preferences.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 const ROOT = path.join(os.tmpdir(), 'cs-passthrough-routing');
 
@@ -77,7 +78,8 @@ function baseInput(f: Fixture, email: string | null, saved: string[]): RoutingFo
   };
 }
 
-const ORIGINAL_HOME = process.env.HOME;
+// Capture initial env state at module load time so after() can restore it.
+const savedHomeInitial: SavedHome = { HOME: process.env['HOME'], USERPROFILE: process.env['USERPROFILE'] };
 const ORIGINAL_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
 const ORIGINAL_SWITCH_ACCOUNT = process.env.CLAUDE_SWITCH_ACCOUNT;
 
@@ -93,7 +95,7 @@ describe('resolveRoutingForPassthrough', () => {
 
   after(() => {
     cleanup();
-    if (ORIGINAL_HOME !== undefined) process.env.HOME = ORIGINAL_HOME;
+    restoreFakeHome(savedHomeInitial);
     if (ORIGINAL_CONFIG_DIR !== undefined) process.env.CLAUDE_CONFIG_DIR = ORIGINAL_CONFIG_DIR;
     if (ORIGINAL_SWITCH_ACCOUNT !== undefined) process.env.CLAUDE_SWITCH_ACCOUNT = ORIGINAL_SWITCH_ACCOUNT;
   });
@@ -103,7 +105,7 @@ describe('resolveRoutingForPassthrough', () => {
       activeEmail: 'a@gmail.com',
       savedEmails: ['a@gmail.com'],
     });
-    process.env.HOME = f.home;
+    setFakeHome(f.home);
     const r = resolveRoutingForPassthrough(baseInput(f, 'a@gmail.com', ['a@gmail.com']));
     assert.equal(r.decision, null);
     assert.equal(r.flipped, false);
@@ -114,7 +116,7 @@ describe('resolveRoutingForPassthrough', () => {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com', 'theo@acme.com'],
     });
-    process.env.HOME = f.home;
+    setFakeHome(f.home);
     writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
 
     const r = resolveRoutingForPassthrough(
@@ -131,7 +133,7 @@ describe('resolveRoutingForPassthrough', () => {
       activeEmail: 'theo@acme.com',
       savedEmails: ['theo@acme.com'],
     });
-    process.env.HOME = f.home;
+    setFakeHome(f.home);
     writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
 
     const r = resolveRoutingForPassthrough(
@@ -148,7 +150,7 @@ describe('resolveRoutingForPassthrough', () => {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com'],
     });
-    process.env.HOME = f.home;
+    setFakeHome(f.home);
     writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
 
     const r = resolveRoutingForPassthrough(
@@ -164,7 +166,7 @@ describe('resolveRoutingForPassthrough', () => {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com', 'theo@acme.com'],
     });
-    process.env.HOME = f.home;
+    setFakeHome(f.home);
     process.env.CLAUDE_CONFIG_DIR = '/some/profile/dir';
     writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
 
@@ -181,7 +183,7 @@ describe('resolveRoutingForPassthrough', () => {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com', 'theo@acme.com'],
     });
-    process.env.HOME = f.home;
+    setFakeHome(f.home);
     writeStoredAccountPrefs('theo@acme.com', f.accountsDir, { defaultIsolated: true });
     writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
 
@@ -199,7 +201,7 @@ describe('resolveRoutingForPassthrough', () => {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com', 'alice@acme.com', 'bob@other.com'],
     });
-    process.env.HOME = f.home;
+    setFakeHome(f.home);
     process.env.CLAUDE_SWITCH_ACCOUNT = 'bob@other.com';
     writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
 
@@ -216,7 +218,7 @@ describe('resolveRoutingForPassthrough', () => {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com', 'alice@acme.com', 'bob@acme.com'],
     });
-    process.env.HOME = f.home;
+    setFakeHome(f.home);
     writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
 
     // First call: N-match with no lastUsed → picks alphabetical first.

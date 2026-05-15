@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { findClaudeBinary } from '../src/find-claude.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 // findClaudeBinary resolves via:
 //   1. getSavedClaudeBin() — reads ~/.claude/accounts/.claude-bin
@@ -16,7 +17,7 @@ import { findClaudeBinary } from '../src/find-claude.js';
 
 describe('findClaudeBinary', () => {
   let tmpHome: string;
-  let originalHome: string | undefined;
+  let savedHome: SavedHome;
   let originalPath: string | undefined;
   let originalEnvBin: string | undefined;
 
@@ -26,18 +27,16 @@ describe('findClaudeBinary', () => {
 
   beforeEach(() => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-find-'));
-    originalHome = process.env.HOME;
+    savedHome = setFakeHome(tmpHome);
     originalPath = process.env.PATH;
     originalEnvBin = process.env.CLAUDE_SWITCH_BIN;
-    process.env.HOME = tmpHome;
     // Empty PATH so resolve() can't accidentally find a real claude.
     process.env.PATH = '';
     delete process.env.CLAUDE_SWITCH_BIN;
   });
 
   afterEach(() => {
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
+    restoreFakeHome(savedHome);
     if (originalPath !== undefined) process.env.PATH = originalPath;
     else delete process.env.PATH;
     if (originalEnvBin !== undefined) process.env.CLAUDE_SWITCH_BIN = originalEnvBin;

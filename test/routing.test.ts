@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 import {
   expandPattern,
@@ -303,6 +304,7 @@ describe('resolveRouting — .claude-switch in repo', () => {
   let home: string;
   let repo: string;
   let accountsDir: string;
+  let savedHome: SavedHome;
 
   before(() => {
     mkdir(FAKE_HOME_PARENT);
@@ -312,12 +314,12 @@ describe('resolveRouting — .claude-switch in repo', () => {
     accountsDir = mkdir(path.join(home, '.claude', 'accounts'));
     writeFile(path.join(repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
     // Pretend HOME so findClaudeSwitchFile uses it.
-    process.env.HOME = home;
+    savedHome = setFakeHome(home);
   });
 
   after(() => {
+    restoreFakeHome(savedHome);
     fs.rmSync(FAKE_HOME_PARENT, { recursive: true, force: true });
-    delete process.env.HOME;
   });
 
   beforeEach(() => {
@@ -425,6 +427,7 @@ describe('resolveRouting — global rules', skipOnWindows, () => {
   let home: string;
   let workDir: string;
   let accountsDir: string;
+  let savedHome: SavedHome;
 
   before(() => {
     mkdir(FAKE_HOME_PARENT);
@@ -440,12 +443,12 @@ describe('resolveRouting — global rules', skipOnWindows, () => {
         ],
       }),
     );
-    process.env.HOME = home;
+    savedHome = setFakeHome(home);
   });
 
   after(() => {
+    restoreFakeHome(savedHome);
     fs.rmSync(FAKE_HOME_PARENT, { recursive: true, force: true });
-    delete process.env.HOME;
   });
 
   it('matches a glob and routes', () => {
@@ -517,6 +520,7 @@ describe('resolveRouting — precedence (env > .claude-switch > global)', () => 
   let home: string;
   let workDir: string;
   let accountsDir: string;
+  let savedHome: SavedHome;
 
   before(() => {
     mkdir(FAKE_HOME_PARENT);
@@ -535,12 +539,12 @@ describe('resolveRouting — precedence (env > .claude-switch > global)', () => 
         rules: [{ match: '~/work/**', account: 'global@example.com' }],
       }),
     );
-    process.env.HOME = home;
+    savedHome = setFakeHome(home);
   });
 
   after(() => {
+    restoreFakeHome(savedHome);
     fs.rmSync(FAKE_HOME_PARENT, { recursive: true, force: true });
-    delete process.env.HOME;
   });
 
   it('env beats both file and global', () => {

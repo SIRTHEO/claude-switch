@@ -24,6 +24,7 @@ import {
 } from '../src/update-check.js';
 import { handleUpdate } from '../src/commands/update.js';
 import { VERSION } from '../src/version.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 // ---------------------------------------------------------------------------
 // isNewer — pure function, no I/O
@@ -103,20 +104,15 @@ describe('detectInstallCommand', () => {
 
 describe('writeUpdateCache / checkForUpdate', () => {
   let tmpDir: string;
-  let origHome: string | undefined;
+  let savedHome: SavedHome;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-upd-'));
-    origHome = process.env['HOME'];
-    process.env['HOME'] = tmpDir;
+    savedHome = setFakeHome(tmpDir);
   });
 
   afterEach(() => {
-    if (origHome !== undefined) {
-      process.env['HOME'] = origHome;
-    } else {
-      delete process.env['HOME'];
-    }
+    restoreFakeHome(savedHome);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -180,12 +176,11 @@ describe('handleUpdate — fetch returns current version (already up to date)', 
   let restoreLog: () => void;
   let restoreStdoutWrite: () => void;
   let tmpDir: string;
-  let origHome: string | undefined;
+  let savedHome: SavedHome;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-upd2-'));
-    origHome = process.env['HOME'];
-    process.env['HOME'] = tmpDir;
+    savedHome = setFakeHome(tmpDir);
     stdout.length = 0;
     const origLog = console.log;
     restoreLog = () => { console.log = origLog; };
@@ -198,11 +193,7 @@ describe('handleUpdate — fetch returns current version (already up to date)', 
   afterEach(() => {
     restoreLog();
     restoreStdoutWrite();
-    if (origHome !== undefined) {
-      process.env['HOME'] = origHome;
-    } else {
-      delete process.env['HOME'];
-    }
+    restoreFakeHome(savedHome);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -218,14 +209,13 @@ describe('handleUpdate — fetch returns newer version, non-TTY', () => {
   let restoreLog: () => void;
   let restoreStdoutWrite: () => void;
   let tmpDir: string;
-  let origHome: string | undefined;
+  let savedHome: SavedHome;
   let origStdinIsTTY: boolean;
   let origStdoutIsTTY: boolean;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-upd3-'));
-    origHome = process.env['HOME'];
-    process.env['HOME'] = tmpDir;
+    savedHome = setFakeHome(tmpDir);
     stdout.length = 0;
     const origLog = console.log;
     restoreLog = () => { console.log = origLog; };
@@ -245,11 +235,7 @@ describe('handleUpdate — fetch returns newer version, non-TTY', () => {
     restoreStdoutWrite();
     (process.stdin as { isTTY: boolean }).isTTY = origStdinIsTTY;
     (process.stdout as { isTTY: boolean }).isTTY = origStdoutIsTTY;
-    if (origHome !== undefined) {
-      process.env['HOME'] = origHome;
-    } else {
-      delete process.env['HOME'];
-    }
+    restoreFakeHome(savedHome);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 

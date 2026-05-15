@@ -34,6 +34,7 @@ import {
   removeProfile,
   type ProfileInfo,
 } from '../src/profiles.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 const macAndEnabled =
   process.platform === 'darwin' && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1';
@@ -47,17 +48,15 @@ function freshUserID(suffix: string): string {
 
 describe('profile Keychain integration — readProfile', { skip: !macAndEnabled }, () => {
   let tmpHome: string;
-  let origHome: string | undefined;
+  let savedHome: SavedHome;
 
   beforeEach(() => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-prof-kc-'));
-    origHome = process.env.HOME;
-    process.env.HOME = tmpHome;
+    savedHome = setFakeHome(tmpHome);
   });
 
   afterEach(() => {
-    if (origHome === undefined) delete process.env.HOME;
-    else process.env.HOME = origHome;
+    restoreFakeHome(savedHome);
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
@@ -96,17 +95,15 @@ describe('profile Keychain integration — readProfile', { skip: !macAndEnabled 
 
 describe('profile Keychain integration — ensureProfileForAccount', { skip: !macAndEnabled }, () => {
   let tmpHome: string;
-  let origHome: string | undefined;
+  let savedHome: SavedHome;
 
   beforeEach(() => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-prof-kc-ensure-'));
-    origHome = process.env.HOME;
-    process.env.HOME = tmpHome;
+    savedHome = setFakeHome(tmpHome);
   });
 
   afterEach(() => {
-    if (origHome === undefined) delete process.env.HOME;
-    else process.env.HOME = origHome;
+    restoreFakeHome(savedHome);
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 

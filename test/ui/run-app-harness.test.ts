@@ -60,28 +60,21 @@ describe('makeRunAppHarness — fixture bootstrap', () => {
 
   it('cleanup removes tmpDir and restores HOME', () => {
     const tmpPath = h.tmpDir;
-    const prevHome = process.env.HOME;
 
     // During the test HOME is overridden to tmpDir.
+    // Harness sets HOME on all platforms (and USERPROFILE on Windows).
     assert.equal(process.env.HOME, tmpPath, 'HOME must point to tmpDir while harness is live');
 
     h.cleanup();
 
     assert.ok(!fs.existsSync(tmpPath), 'tmpDir must be removed after cleanup()');
-    // HOME is restored to whatever it was before makeRunAppHarness().
-    // prevHome is the value set BY the harness (= tmpPath), so after cleanup
-    // it should be the value from the enclosing beforeEach scope — but the
-    // harness restores the value that existed BEFORE it was called. Since
-    // beforeEach calls makeRunAppHarness() at top level, the restored value
-    // is whatever HOME was before this test file started (the real home dir,
-    // likely /Users/… on macOS). We just check it's different from tmpPath.
+    // HOME is restored to whatever it was before makeRunAppHarness() ran
+    // (the real home dir on this machine). We just check it no longer
+    // points at the deleted tmpDir.
     assert.notEqual(process.env.HOME, tmpPath, 'HOME must not still point to the deleted tmpDir');
 
     // Calling cleanup() twice must be idempotent (no throw).
     assert.doesNotThrow(() => h.cleanup());
-
-    // Restore state so afterEach() doesn't double-clean or error.
-    process.env.HOME = prevHome;
   });
 });
 

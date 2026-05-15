@@ -21,6 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ReactElement } from 'react';
 import { render } from 'ink-testing-library';
+import { setFakeHome, restoreFakeHome, type SavedHome } from '../_helpers/fake-home.js';
 
 // ---------------------------------------------------------------------------
 // Structural type for ink-testing-library Instance (not exported by the lib).
@@ -107,8 +108,8 @@ export function makeRunAppHarness(opts: RunAppHarnessOptions = {}): RunAppHarnes
   // ── HOME override ─────────────────────────────────────────────────────────
   // Some domain modules read from os.homedir() / HOME to locate prefs.
   // Redirect to tmpDir so the test is hermetic.
-  const prevHome = process.env.HOME;
-  process.env.HOME = tmpDir;
+  // On Windows, os.homedir() reads USERPROFILE instead of HOME — set both.
+  const savedHome: SavedHome = setFakeHome(tmpDir);
 
   // ── Ink instance tracking ─────────────────────────────────────────────────
   const activeInstances: InkInstance[] = [];
@@ -136,12 +137,8 @@ export function makeRunAppHarness(opts: RunAppHarnessOptions = {}): RunAppHarnes
     }
     activeInstances.length = 0;
 
-    // Restore HOME before removing tmpDir (some OSes lock open dirs).
-    if (prevHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = prevHome;
-    }
+    // Restore HOME (and USERPROFILE on Windows) before removing tmpDir.
+    restoreFakeHome(savedHome);
 
     // Remove tmp tree.
     fs.rmSync(tmpDir, { recursive: true, force: true });
