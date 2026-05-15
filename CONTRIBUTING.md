@@ -28,6 +28,35 @@ npm audit --audit-level=high --omit=dev
 CI also enforces a 56% line-coverage floor (current ~58%). New code
 without tests will likely drag the number under the floor and fail.
 
+## Pre-push validation
+
+A shell-based git hook (`scripts/git-hooks/pre-push`) runs `npm run build`
+followed by the full test suite before every `git push`. It catches regressions
+locally — before CI has a chance to — and saves a round trip.
+
+**Why it exists**: CI is the authoritative gate, but a red CI pipeline blocks
+everyone sharing the branch. The hook gives the author one last chance to catch
+obvious breakage on their own machine before the push lands.
+
+**Install once** (per local clone):
+
+```bash
+npm run install-hooks
+```
+
+This copies `scripts/git-hooks/pre-push` into `.git/hooks/pre-push` and makes
+it executable. Safe to re-run if the hook changes upstream.
+
+**Verify installation:**
+
+```bash
+ls -la .git/hooks/pre-push
+```
+
+**Bypass** (`--no-verify`) is available but strongly discouraged. Per project
+policy, no push reaches `main` without explicit maintainer approval — skipping
+the hook increases the risk that a broken commit slips through.
+
 ## Pre-release smoke (manual, macOS only)
 
 For releases that touch `src/profiles.ts`, `src/keychain.ts`, or any of
