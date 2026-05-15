@@ -11,6 +11,7 @@
 //   usage fields: cache_read_input_tokens, cache_creation_input_tokens, input_tokens
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 // ---------------------------------------------------------------------------
@@ -203,6 +204,72 @@ export function summariseCacheHealth(
     effectiveInputTokens,
     lastFlushAt,
   };
+}
+
+// ---------------------------------------------------------------------------
+// loadActiveSessionHealth — glue + 1s in-process cache (Phase 15.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Options for {@link loadActiveSessionHealth}.
+ */
+export interface LoadHealthOptions {
+  /** Absolute path to `~/.claude/projects` (or equivalent). Default: `~/.claude/projects`. */
+  claudeProjectsDir?: string;
+  /** Working directory of the target project. Default: `process.cwd()`. */
+  projectCwd?: string;
+  /** Clock source. Defaults to `Date.now`. Injectable for TTL testing without real timers. */
+  now?: () => number;
+}
+
+/** In-process single-slot cache for {@link loadActiveSessionHealth}. */
+interface HealthCache {
+  path: string;
+  result: CacheHealthSummary | null;
+  expiresAt: number;
+}
+
+/** TTL for the in-process cache, in milliseconds. */
+const CACHE_TTL_MS = 1000;
+
+/** Module-level single-slot cache. Keyed by resolved JSONL path. */
+let _healthCache: HealthCache | null = null;
+
+/**
+ * High-level glue that wires together:
+ *   1. `findActiveSessionJsonl` (path resolution)
+ *   2. `readSessionJsonl` + `summariseCacheHealth` (read + compute)
+ *   3. A 1-second in-process TTL cache (keyed by resolved JSONL path)
+ *
+ * Cache key is the resolved path of the JSONL file, so switching between two
+ * different session files in the same process correctly busts the cache.
+ * (Single-slot design: A→B→A re-reads on every switch; acceptable given TTL=1s.)
+ *
+ * @returns `CacheHealthSummary` on success, or `null` when no active session is found.
+ */
+export function loadActiveSessionHealth(opts?: LoadHealthOptions): CacheHealthSummary | null {
+  const claudeProjectsDir =
+    opts?.claudeProjectsDir ?? path.join(os.homedir(), '.claude', 'projects');
+  const projectCwd = opts?.projectCwd ?? process.cwd();
+  const now = opts?.now ?? Date.now;
+
+  // Step 1: resolve JSONL path
+  const jsonlPath = findActiveSessionJsonl(claudeProjectsDir, projectCwd);
+  if (jsonlPath === null) return null;
+
+  // Step 2: check cache hit (same path, within TTL)
+  if (_healthCache !== null && _healthCache.path === jsonlPath && now() < _healthCache.expiresAt) {
+    return _healthCache.result;
+  }
+
+  // Step 3: cache miss — read file and compute
+  const entries = readSessionJsonl(jsonlPath);
+  const result = summariseCacheHealth(entries);
+
+  // Step 4: populate cache
+  _healthCache = { path: jsonlPath, result, expiresAt: now() + CACHE_TTL_MS };
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
