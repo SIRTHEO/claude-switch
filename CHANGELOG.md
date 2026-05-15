@@ -3,6 +3,13 @@
 <!-- Phase 14.3 note: the untracked-apiKey warning added in this release is
      transitional and will be removed in the next minor release. -->
 
+## Unreleased
+
+### Features
+
+* **statusline:** cache-health badge for Claude Code billing-bug visibility (Phase 15.4) ([baa415c](https://github.com/SIRTHEO/claude-switch/commit/baa415c))
+* **cli:** claude switch cache-health subcommand for billing-bug diagnostics (Phase 15.5) ([c65b171](https://github.com/SIRTHEO/claude-switch/commit/c65b171))
+
 ## [3.5.1](https://github.com/SIRTHEO/claude-switch/compare/v3.5.0...v3.5.1) (2026-05-08)
 
 

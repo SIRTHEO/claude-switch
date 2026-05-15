@@ -330,6 +330,51 @@ Fallback injects `ANTHROPIC_API_KEY` into the env of the `claude` process it spa
 
 ---
 
+## Why is my Max/Pro plan exhausting faster than expected?
+
+If your Claude Max or Pro subscription window drains much faster than the turn count would justify, you are likely hitting one or more known billing-pipeline bugs that were community-investigated between December 2025 and January 2026. None of these are claude-switch bugs — they are issues in the Claude Code client and Anthropic's billing infrastructure.
+
+### Known issues
+
+**Bug A — Word-substitution cache flush (10–20× cost amplification)**
+A defect in the billing pipeline causes a cache flush on every conversation turn under certain conditions. Instead of reusing the cached prompt context, the full prompt is re-sent and re-billed. Community analysis (Dec 2025 – Jan 2026) found amplification factors of 10–20× on affected sessions. This is the most common cause of unexpectedly fast plan exhaustion. Reference POC: [cc-cache-monitor by AlexZan](https://github.com/AlexZan/cc-cache-monitor).
+
+**Bug B — `--resume` / `--continue` invalidate cache on first turn**
+When you resume a previous Claude Code session with `--resume` or `--continue`, the cache is invalidated for the first turn of that resumed session, meaning it is billed at full price even though the context already existed. If you resume sessions frequently, the cost adds up quickly.
+
+**Telemetry coupling — disabling telemetry silently disables 1-hour cache TTL**
+Claude Code's 1-hour prompt cache TTL is silently coupled to the telemetry opt-in state. If you have disabled telemetry, the cache TTL drops and you lose the caching benefit that reduces billed tokens. This behavior is not documented in the Claude Code UI. Re-enabling telemetry restores the full TTL. This issue has been discussed on the Anthropic community forum.
+
+**Peak-hour throttling — 13:00–19:00 UTC**
+Anthropic has confirmed (after press contact) that subscription-tier inference is throttled during peak hours, roughly 13:00–19:00 UTC. During this window your sessions may run slower and cache reuse may be less effective, leading to higher effective token consumption per wall-clock hour.
+
+### User-actionable mitigations
+
+- **Avoid `--resume` and `--continue`** where possible — start fresh sessions instead to prevent the first-turn cache miss.
+- **Avoid peak hours (13:00–19:00 UTC)** for long, context-heavy sessions.
+- **Run one session at a time** — multiple parallel sessions compete for cache slots and can force additional flushes.
+- **Keep telemetry enabled** — disabling it silently degrades your cache TTL and increases billed tokens.
+
+### Detect issues with claude-switch
+
+claude-switch ships two surfaces for diagnosing cache health in real time:
+
+**Statusline badge** (installed via `claude switch statusline install`): shows a live `💾 N% 🚨X` indicator in the Claude Code status bar, where `N%` is the current cache hit ratio and `X` is the flush count for the active session. A high flush count or low hit ratio is an early warning that Bug A may be active.
+
+**CLI analysis** (`claude switch cache-health`): parses the active session JSONL and prints turn count, hit ratio, flush count, effective input tokens, and a timestamped list of flush events.
+
+```bash
+# Analyse the active session for the current directory
+claude switch cache-health
+
+# Inspect a specific historical session file
+claude switch cache-health --session ~/.claude/projects/<project>/<session>.jsonl
+```
+
+If `cache-health` reports a high flush count (more than 2–3 flushes in a short session), consider filing the session data as evidence on the relevant Anthropic issue tracker thread.
+
+---
+
 ## 🛠 Troubleshooting
 
 | Symptom | Fix |
@@ -339,6 +384,7 @@ Fallback injects `ANTHROPIC_API_KEY` into the env of the `claude` process it spa
 | Fallback is on but Claude still uses OAuth | First time Claude Code sees a new key it asks `Use this API key? [y/N]` — press **y** |
 | Usage stats show nothing | Only available for Max/Pro subscribers |
 | Unsure if claude is being billed via API key (not OAuth) | See [SECURITY.md — Silent API-key risk](SECURITY.md#silent-api-key-risk-claudejson-snapshot-leak): 3 jq commands to verify and the Phase 14.2 / 14.3 mitigations |
+| Max/Pro window exhausting faster than expected | See [Why is my Max/Pro plan exhausting faster than expected?](#why-is-my-maxpro-plan-exhausting-faster-than-expected) — run `claude switch cache-health` to check flush count |
 | Anything else | [Open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) |
 
 ---
