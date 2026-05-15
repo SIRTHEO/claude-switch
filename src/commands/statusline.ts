@@ -22,6 +22,7 @@ import {
 } from '../usage.js';
 import { profilesDir } from '../profiles.js';
 import { readProxyMode } from '../proxy-mode.js';
+import { loadActiveSessionHealth } from '../cache-health.js';
 import type { CommandContext } from './context.js';
 
 // --------------------------------------------------------------------------
@@ -31,10 +32,11 @@ import type { CommandContext } from './context.js';
 export interface StatuslineOptions {
   format: 'compact' | 'full' | 'json';
   color: boolean;
+  noCacheHealth?: boolean;
 }
 
 export function handleStatusline(ctx: CommandContext, options: StatuslineOptions): void {
-  renderStatusline(options.format, options.color, ctx.claudeJsonPath, ctx.accountsDirPath);
+  renderStatusline(options.format, options.color, ctx.claudeJsonPath, ctx.accountsDirPath, options.noCacheHealth ?? false);
 }
 
 /**
@@ -64,6 +66,7 @@ function renderStatusline(
   useColor: boolean,
   claudeJsonPathStr: string,
   accountsDirPath: string,
+  noCacheHealth: boolean,
 ): void {
   const c = (code: string, s: string): string => useColor ? `\x1b[${code}m${s}\x1b[0m` : s;
   const dim = (s: string): string => c('2', s);
@@ -118,6 +121,11 @@ function renderStatusline(
 
   const autoEngaged = isFallbackAutoEngaged(accountsDirPath);
 
+  // Phase 15.4 — cache-health badge. loadActiveSessionHealth reads the newest
+  // JSONL under ~/.claude/projects/<encoded-cwd>/ (1s in-process TTL cache).
+  // Suppressed when --no-cache-health is passed or no active session is found.
+  const cacheHealthSummary = noCacheHealth ? null : loadActiveSessionHealth();
+
   // Phase 13.6 — effective runtime mode. When the proxy is alive it writes
   // its current state to `.proxy-mode.json` on every transition; we read it
   // and reflect the *actual* per-request routing instead of the boot-time
@@ -155,7 +163,34 @@ function renderStatusline(
   })();
   const profileBadge = activeProfile ? ` ${cyan(`[${activeProfile}]`)}` : '';
 
+  // Cache-health badge: shown when a session JSONL is found and has data.
+  // Hide when: summary null (no session), turns === 0 (empty file), or --no-cache-health.
+  const cacheHealthBadge = (() => {
+    if (cacheHealthSummary === null || cacheHealthSummary.turns === 0) return '';
+    const { hitRatio, flushCount } = cacheHealthSummary;
+    const pctStr = `${(hitRatio * 100).toFixed(0)}%`;
+    // Color: flushCount ≥ 1 always red; otherwise hitRatio-based.
+    const coloredPct = (() => {
+      if (flushCount >= 1) return red(`💾 ${pctStr}`);
+      if (hitRatio >= 0.95) return green(`💾 ${pctStr}`);
+      if (hitRatio >= 0.80) return yellow(`💾 ${pctStr}`);
+      return red(`💾 ${pctStr}`);
+    })();
+    const flushBadge = flushCount >= 1 ? ` ${red(`🚨${flushCount}`)}` : '';
+    return ` ${coloredPct}${flushBadge}`;
+  })();
+
   if (format === 'json') {
+    const cacheHealthField = (!noCacheHealth && cacheHealthSummary !== null && cacheHealthSummary.turns > 0)
+      ? {
+          cacheHealth: {
+            hitRatio: cacheHealthSummary.hitRatio,
+            flushCount: cacheHealthSummary.flushCount,
+            effectiveInputTokens: cacheHealthSummary.effectiveInputTokens,
+            turns: cacheHealthSummary.turns,
+          },
+        }
+      : {};
     const json = {
       email,
       shortName,
@@ -171,16 +206,17 @@ function renderStatusline(
       fiveHour: fivePct ?? null,
       sevenDay: sevenPct ?? null,
       profile: activeProfile,
+      ...cacheHealthField,
     };
     process.stdout.write(`${JSON.stringify(json)}\n`);
     return;
   }
 
   if (format === 'full') {
-    process.stdout.write(`🔑 ${cyan(email)} · ${modeLabel}${usageBadge}${profileBadge}\n`);
+    process.stdout.write(`🔑 ${cyan(email)} · ${modeLabel}${usageBadge}${profileBadge}${cacheHealthBadge}\n`);
   } else {
     // compact (default)
-    process.stdout.write(`🔑 ${cyan(shortName)} ${modeLabel}${usageBadge}${profileBadge}\n`);
+    process.stdout.write(`🔑 ${cyan(shortName)} ${modeLabel}${usageBadge}${profileBadge}${cacheHealthBadge}\n`);
   }
 }
 
