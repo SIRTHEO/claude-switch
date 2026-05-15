@@ -338,6 +338,7 @@ Fallback injects `ANTHROPIC_API_KEY` into the env of the `claude` process it spa
 | `Token: ✗ expired` in the dashboard | Highlight the row → press `c` (Re-authenticate) |
 | Fallback is on but Claude still uses OAuth | First time Claude Code sees a new key it asks `Use this API key? [y/N]` — press **y** |
 | Usage stats show nothing | Only available for Max/Pro subscribers |
+| Unsure if claude is being billed via API key (not OAuth) | See [SECURITY.md — Silent API-key risk](SECURITY.md#silent-api-key-risk-claudejson-snapshot-leak): 3 jq commands to verify and the Phase 14.2 / 14.3 mitigations |
 | Anything else | [Open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) |
 
 ---
