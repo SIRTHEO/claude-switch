@@ -1,0 +1,204 @@
+// src/cache-health.ts
+// Phase 15.1 — JSONL parser and cache health summary for Claude Code sessions.
+//
+// Exposes billing-bug visibility for two known Anthropic issues:
+//   (1) cache flush (~10-20× cost amplification)
+//   (2) --resume cache invalidation
+//
+// Claude Code session JSONL format (real shape, verified from ~/.claude/projects/):
+//   { "type": "assistant", "message": { "role": "assistant", "usage": { ... } }, ... }
+//   usage fields: cache_read_input_tokens, cache_creation_input_tokens, input_tokens
+
+import fs from 'node:fs';
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+export interface AssistantTurn {
+  cache_read: number;
+  cache_creation: number;
+  input_tokens: number;
+}
+
+export interface CacheHealthSummary {
+  turns: number;
+  totalCacheRead: number;
+  totalCacheCreation: number;
+  totalInput: number;
+  /** Fraction of total tokens that were cache hits. Bounded [0, 1]. */
+  hitRatio: number;
+  /** Number of turns detected as cache flushes (turn_index > 0, cache_creation > 5000, cache_read < 1000). */
+  flushCount: number;
+  /**
+   * Effective cost in "input token equivalent" units:
+   *   cache_read × 0.1 + cache_creation × 1.25 + input × 1.0
+   */
+  effectiveInputTokens: number;
+  /** Turn index (0-based) of the last detected flush, or null if none. */
+  lastFlushAt: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Internal type guard helpers
+// ---------------------------------------------------------------------------
+
+/** Structural probe on an unknown object — safe cast with comment per repo convention. */
+function isObjectNonNull(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+
+/**
+ * Type guard for the nested `usage` object inside a Claude Code JSONL entry.
+ * The field `usage` must be a non-null object; token counts are optional
+ * (absent fields fall back to 0 in extraction).
+ */
+function isUsageObject(v: unknown): v is Record<string, unknown> {
+  return isObjectNonNull(v);
+}
+
+/** Shape returned after extracting the assistant entry — always has usage. */
+interface AssistantEntryNormalised {
+  usage: Record<string, unknown>;
+}
+
+/**
+ * Type guard / extractor for assistant JSONL entries (DoD #3: `isAssistantEntry` equivalent).
+ *
+ * Returns a normalised `{ usage }` object when the entry is a valid assistant
+ * turn, or null otherwise. A classic `v is X` predicate could not be used here
+ * because the union type produced by the nested-vs-flat duality prevents TS from
+ * narrowing `usage` after the guard (TS7053 — hence this extract-and-return pattern).
+ *
+ * Accepts both forms observed in production:
+ *   (a) Nested: { type:"assistant", message:{ role:"assistant", usage:{...} } }
+ *   (b) Flat (defensive fallback): { role:"assistant", usage:{...} }
+ *
+ * Returns null when:
+ * - the entry is not an object
+ * - `role` is not "assistant"
+ * - `usage` is absent or not an object (DoD: missing usage → skip)
+ */
+function extractAssistantEntry(v: unknown): AssistantEntryNormalised | null {
+  if (!isObjectNonNull(v)) return null;
+  // Form (a): nested under message — the canonical Claude Code format.
+  const maybeMsg = v['message']; // safe: structural probe on narrowed Record
+  if (isObjectNonNull(maybeMsg)) {
+    if (maybeMsg['role'] !== 'assistant') return null; // safe: structural probe
+    const usage = maybeMsg['usage']; // safe: structural probe
+    if (!isUsageObject(usage)) return null;
+    return { usage };
+  }
+  // Form (b): flat layout (defensive; not observed in real sessions as of 2026-05).
+  if (v['role'] !== 'assistant') return null; // safe: structural probe
+  const usage = v['usage']; // safe: structural probe
+  if (!isUsageObject(usage)) return null;
+  return { usage };
+}
+
+/** Extract a non-negative integer from an unknown value, defaulting to 0. */
+function extractTokenCount(v: unknown): number {
+  if (typeof v !== 'number') return 0;
+  if (!Number.isFinite(v) || v < 0) return 0;
+  return Math.floor(v);
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a Claude Code session JSONL file and return one `AssistantTurn` per
+ * assistant message that has a valid `usage` object.
+ *
+ * Parsing rules:
+ * - Lines are read via `fs.readFileSync` + split on `\n`, empty lines filtered.
+ * - Malformed JSON lines are skipped silently (no throw).
+ * - Only entries with `role === 'assistant'` and a present usage object are included.
+ * - Missing token count fields fall back to 0.
+ */
+export function readSessionJsonl(filePath: string): AssistantTurn[] {
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  const lines = raw.split('\n').filter(Boolean);
+  const turns: AssistantTurn[] = [];
+
+  for (const line of lines) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      // Skip malformed lines.
+      continue;
+    }
+
+    const entry = extractAssistantEntry(parsed);
+    if (entry === null) continue;
+
+    const { usage } = entry;
+
+    turns.push({
+      cache_read: extractTokenCount(usage['cache_read_input_tokens']),
+      cache_creation: extractTokenCount(usage['cache_creation_input_tokens']),
+      input_tokens: extractTokenCount(usage['input_tokens']),
+    });
+  }
+
+  return turns;
+}
+
+/**
+ * Compute cache health metrics from a list of `AssistantTurn` entries.
+ *
+ * Flush detection heuristic (turn_index > 0 required — initial creation is expected):
+ *   `cache_creation > 5000 && cache_read < 1000`
+ *
+ * Pricing constants for `effectiveInputTokens`:
+ *   `cache_read × 0.1 + cache_creation × 1.25 + input × 1.0`
+ */
+export function summariseCacheHealth(
+  entries: AssistantTurn[],
+  // opts reserved for future extension (threshold overrides, etc.)
+  _opts: Record<string, never> = {},
+): CacheHealthSummary {
+  let totalCacheRead = 0;
+  let totalCacheCreation = 0;
+  let totalInput = 0;
+  let effectiveInputTokens = 0;
+  let flushCount = 0;
+  let lastFlushAt: number | null = null;
+
+  for (let i = 0; i < entries.length; i++) {
+    const turn = entries[i]; // entries is AssistantTurn[] so index is safe; noUncheckedIndexedAccess satisfied via explicit check
+    if (turn === undefined) continue;
+
+    totalCacheRead += turn.cache_read;
+    totalCacheCreation += turn.cache_creation;
+    totalInput += turn.input_tokens;
+
+    // Pricing: cache_read × 0.1, cache_creation × 1.25, input × 1.0
+    effectiveInputTokens +=
+      turn.cache_read * 0.1 +
+      turn.cache_creation * 1.25 +
+      turn.input_tokens * 1.0;
+
+    // Flush detection: skip turn 0 (initial cache creation is normal).
+    if (i > 0 && turn.cache_creation > 5000 && turn.cache_read < 1000) {
+      flushCount++;
+      lastFlushAt = i;
+    }
+  }
+
+  const denominator = totalCacheRead + totalCacheCreation + totalInput;
+  const hitRatio = denominator === 0 ? 0 : Math.min(1, totalCacheRead / denominator);
+
+  return {
+    turns: entries.length,
+    totalCacheRead,
+    totalCacheCreation,
+    totalInput,
+    hitRatio,
+    flushCount,
+    effectiveInputTokens,
+    lastFlushAt,
+  };
+}
