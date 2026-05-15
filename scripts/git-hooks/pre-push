@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+# Pre-push hook: block push if build or tests fail.
+# Bypass (discouraged): git push --no-verify
+set -e
+
+echo "[pre-push] running build + tests..."
+
+npm run build
+
+CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 node --test dist/test/**/*.test.js dist/test/*.test.js > /tmp/pre-push-test.log 2>&1
+EXIT=$?
+
+if [ $EXIT -ne 0 ]; then
+  echo "[pre-push] tests failed (exit $EXIT)"
+  tail -20 /tmp/pre-push-test.log
+  exit 1
+fi
+
+# node --test exits 0 even when individual tests fail in some versions;
+# double-check the summary line "ℹ fail N".
+FAILS=$(grep -E '^. fail' /tmp/pre-push-test.log | awk '{print $3}')
+if [ -n "$FAILS" ] && [ "$FAILS" != "0" ]; then
+  echo "[pre-push] $FAILS test(s) failed"
+  tail -20 /tmp/pre-push-test.log
+  exit 1
+fi
+
+echo "[pre-push] build + tests green"
