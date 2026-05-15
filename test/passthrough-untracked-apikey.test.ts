@@ -1,5 +1,5 @@
 // test/passthrough-untracked-apikey.test.ts
-// Unit tests for the Phase 14.3 transitional warning that fires when
+// Unit tests for the transitional warning that fires when
 // ~/.claude.json carries an apiKey NOT tracked by claude-switch.
 //
 // We test the helper function directly (same approach as

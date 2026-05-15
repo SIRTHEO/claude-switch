@@ -1,4 +1,4 @@
-// Phase 13.6 — proxy runtime mode marker (.proxy-mode.json) lifecycle.
+// Proxy runtime mode marker (.proxy-mode.json) lifecycle.
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';

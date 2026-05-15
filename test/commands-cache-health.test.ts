@@ -1,5 +1,5 @@
 // test/commands-cache-health.test.ts
-// Tests for src/commands/cache-health.ts — Phase 15.5
+// Tests for src/commands/cache-health.ts
 //
 // Validates: text output, JSON output, --session bypass, no-session exit-1.
 

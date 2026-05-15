@@ -201,7 +201,7 @@ describe('parseCommand', () => {
     );
   });
 
-  // ---- route sub-tree (Phase 10d) ----
+  // ---- route sub-tree ----
 
   it('parses "switch route" as list (default)', () => {
     assert.deepEqual(parseCommand(['switch', 'route']), { action: 'route-list' });

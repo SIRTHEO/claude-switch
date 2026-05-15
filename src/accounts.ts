@@ -296,7 +296,7 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   } = accountData;
   const keychainRestored = !!(_keychain && typeof _keychain === 'object');
 
-  // Phase 14.2 — silent-billing leak prevention.
+  // Silent-billing leak prevention.
   //
   // Two snapshot fields can resuscitate an API-key authorization that
   // claude-switch doesn't track:
@@ -358,8 +358,8 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   // The user gets re-prompted "Use this API key? [Y/n]" on first use of
   // a key under the new account — that's the correct UX after a switch.
   //
-  // Phase 14.2: in addition to the cross-account leak prevention above,
-  // we ALSO refuse to restore snapshot api-key state for accounts where
+  // In addition to the cross-account leak prevention above, we ALSO
+  // refuse to restore snapshot api-key state for accounts where
   // claude-switch doesn't track a key (see `purgeUntracked` derivation
   // above). Prevents the silent-billing class where a one-time
   // ANTHROPIC_API_KEY env approval becomes permanent for the account

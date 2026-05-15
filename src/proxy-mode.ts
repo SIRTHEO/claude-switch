@@ -1,5 +1,5 @@
 // src/proxy-mode.ts
-// Phase 13.6 — ephemeral proxy runtime-mode marker.
+// Ephemeral proxy runtime-mode marker.
 //
 // The api-proxy decides per-request whether to forward via OAuth (subscription
 // billing) or API key (API credits). Its in-process state — burst sub-state,

@@ -42,13 +42,13 @@ import { getAlias } from '../aliases.js';
 import { findClaude } from './_helpers.js';
 import type { CommandContext } from './context.js';
 
-// Phase 14.3 — transitional warning for API keys in ~/.claude.json that are
-// NOT tracked by claude-switch. One banner per process; suppressed in tests.
+// Transitional warning for API keys in ~/.claude.json that are NOT tracked
+// by claude-switch. One banner per process; suppressed in tests.
 //
-// Background: Phase 14.2 added purge logic in accounts.load() that removes
-// data.apiKey from ~/.claude.json when claude-switch has no record of that
-// key. Before purging, this banner informs the user so they are not surprised
-// by the key disappearing on the next account switch.
+// When claude-switch has no record of an API key, accounts.load() removes
+// data.apiKey from ~/.claude.json. Before purging, this banner informs the
+// user so they are not surprised by the key disappearing on the next account
+// switch.
 //
 // This warning will be removed in the next minor release once users have had
 // time to acknowledge the transition.
@@ -115,7 +115,7 @@ export async function handlePassthrough(
     console.log(`Restored account: ${restored} (from interrupted --as)\n`);
   }
 
-  // Phase 14.3: warn BEFORE any load() call that may purge the key.
+  // Warn BEFORE any load() call that may purge the key.
   warnUntrackedApiKeyIfNeeded(claudeJsonPath, accountsDirPath);
 
   const claudeBin = findClaude(ctx.selfUrl);
@@ -148,7 +148,7 @@ export async function handlePassthrough(
   // Auto-disable runs inside this lock so its setFallbackEnabled(false) is
   // reflected by the fallbackEnvFor() read.
   //
-  // Phase 10c: project-aware routing runs FIRST inside this lock. If a
+  // Project-aware routing runs FIRST inside this lock. If a
   // .claude-switch / .routing.json / CLAUDE_SWITCH_ACCOUNT decides on a
   // different account, we perform the swap (save+load) before the rest of
   // the snapshot reads, so they all see the final active. Routing is
@@ -286,10 +286,10 @@ export async function handlePassthrough(
         // proxy stats. Lets the user verify the proxy actually saw
         // traffic / fired retries instead of guessing from a banner.
         persistStatsTo: `${accountsDirPath}/.proxy-stats.json`,
-        // Phase 13.4 + 13.6 — enable realtime usage push from upstream
-        // response headers AND runtime-mode marker for the statusline.
-        // Both wired together: the marker tells the statusline what
-        // mode the proxy is in (oauth-first / oauth-burst / api-first);
+        // Enable realtime usage push from upstream response headers AND
+        // runtime-mode marker for the statusline. Both wired together:
+        // the marker tells the statusline what mode the proxy is in
+        // (oauth-first / oauth-burst / api-first);
         // the header push keeps the per-account usage cache fresh
         // without polling /api/oauth/usage.
         accountsDirPath,

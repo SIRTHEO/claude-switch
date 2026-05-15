@@ -16,12 +16,6 @@
     "lint:fix": "biome lint --write --unsafe src bin test",
     "test": "npm run build && CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 node --test dist/test/**/*.test.js dist/test/*.test.js",
     "gif": "bash scripts/render-demo.sh",
-    "graph:status": "bash scripts/graph-refresh.sh",
-    "graph:refresh": "bash scripts/graph-refresh.sh --force",
-    "graph:summary": "bash scripts/graph-query.sh summary",
-    "graph:task": "bash scripts/graph-query.sh task",
-    "graph:file": "bash scripts/graph-query.sh file",
-    "graph:dependents": "bash scripts/graph-query.sh dependents",
     "install-hooks": "bash scripts/install-git-hooks.sh",
     "verify-release": "bash scripts/verify-release-readiness.sh",
     "prepublishOnly": "npm test"

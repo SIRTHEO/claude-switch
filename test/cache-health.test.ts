@@ -1,5 +1,5 @@
 // test/cache-health.test.ts
-// Tests for src/cache-health.ts — Phase 15.1 + 15.2
+// Tests for src/cache-health.ts
 //
 // The Claude Code session JSONL format has:
 //   { "type": "assistant", "message": { "role": "assistant", "usage": { ... } }, ... }
@@ -309,7 +309,7 @@ describe('summariseCacheHealth — multi-turn aggregation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// encodeProjectPath (Phase 15.2)
+// encodeProjectPath
 // ---------------------------------------------------------------------------
 
 describe('encodeProjectPath — encoding schema', () => {
@@ -334,7 +334,7 @@ describe('encodeProjectPath — encoding schema', () => {
 });
 
 // ---------------------------------------------------------------------------
-// findActiveSessionJsonl (Phase 15.2)
+// findActiveSessionJsonl
 // ---------------------------------------------------------------------------
 
 describe('findActiveSessionJsonl — project dir missing', () => {
@@ -432,7 +432,7 @@ describe('findActiveSessionJsonl — multiple jsonl files', () => {
 });
 
 // ---------------------------------------------------------------------------
-// loadActiveSessionHealth (Phase 15.3)
+// loadActiveSessionHealth
 // ---------------------------------------------------------------------------
 
 describe('loadActiveSessionHealth — null when no active session', () => {

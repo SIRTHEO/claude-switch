@@ -1,4 +1,4 @@
-// Phase 13.1 — profile-aware identity in statusline.
+// Profile-aware identity in statusline.
 // Spawn the built CLI with controlled HOME + CLAUDE_CONFIG_DIR fixtures
 // and assert that `claude switch statusline --format json` reads the
 // effective email from the right `.claude.json` (profile vs global).
@@ -105,7 +105,7 @@ describe('statusline — profile-aware identity (Phase 13.1)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 13.6 — proxy runtime mode reflected in statusline label
+// Proxy runtime mode reflected in statusline label
 // ---------------------------------------------------------------------------
 
 describe('statusline — proxy runtime mode (Phase 13.6)', () => {

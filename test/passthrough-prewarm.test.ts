@@ -75,10 +75,9 @@ describe('isUsageCacheStale — pre-warm gate predicates', () => {
   });
 
   it('cache older than the statusline freshness window is stale', () => {
-    // The freshness window is STATUSLINE_REFRESH_AFTER_MS (5 min as of
-    // Phase 13.5, was 10 min before) in src/usage.ts. 11 min ago is
-    // comfortably past both values — robust to future ratchets without
-    // test churn.
+    // The freshness window is STATUSLINE_REFRESH_AFTER_MS (5 min,
+    // was 10 min before) in src/usage.ts. 11 min ago is comfortably
+    // past both values — robust to future ratchets without test churn.
     writeCache({
       fetchedAt: Date.now() - 11 * 60_000,
       payload: { five_hour: { utilization: 30 }, seven_day: { utilization: 10 } },

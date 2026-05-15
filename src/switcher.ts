@@ -51,10 +51,10 @@ export function switchTo(targetEmail: string, claudeJsonPath: string, accountsDi
 
     const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
 
-    // Phase 13.3 — pre-fetch usage for the target so the next statusline
-    // redraw doesn't show "no badge" while the in-band stale check spawns
-    // its own refresh. Cheap detached spawn; only fires when the target
-    // account's per-account cache is missing or stale.
+    // Pre-fetch usage for the target so the next statusline redraw doesn't
+    // show "no badge" while the in-band stale check spawns its own refresh.
+    // Cheap detached spawn; only fires when the target account's per-account
+    // cache is missing or stale.
     if (shouldTriggerUsageRefreshAfterSwitch(accountsDirPath, targetEmail)) {
       triggerBackgroundUsageRefresh();
     }
@@ -133,10 +133,10 @@ export function switchToAndSyncFallback(
       }
     }
 
-    // Phase 13.3 — pre-fetch usage for the new account (same pattern as
-    // switchTo above). Fires only when the target's per-account cache is
-    // stale so back-to-back switches between two fresh-cached accounts
-    // don't waste network calls.
+    // Pre-fetch usage for the new account (same pattern as switchTo above).
+    // Fires only when the target's per-account cache is stale so
+    // back-to-back switches between two fresh-cached accounts don't waste
+    // network calls.
     if (shouldTriggerUsageRefreshAfterSwitch(accountsDirPath, targetEmail)) {
       triggerBackgroundUsageRefresh();
     }
