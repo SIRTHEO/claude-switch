@@ -48,6 +48,32 @@ type Notice = Parameters<typeof renderHome>[2];
  * fixture. Renaming or removing any of these breaks tests but not
  * production.
  */
+/**
+ * Factory for the SIGINT handler installed by runApp(). Exposed for testing
+ * so the signal lifecycle can be verified without spawning a subprocess or
+ * requiring a real TTY.
+ *
+ * @internal
+ */
+function makeSigintHandler(restoreBuffer: () => void): () => never {
+  return (): never => {
+    restoreBuffer();
+    process.exit(130);
+  };
+}
+
+/**
+ * Factory for the SIGTERM handler installed by runApp(). Exposed for testing.
+ *
+ * @internal
+ */
+function makeSigtermHandler(restoreBuffer: () => void): () => never {
+  return (): never => {
+    restoreBuffer();
+    process.exit(143);
+  };
+}
+
 export const _internal = {
   refreshUsageOnEntry,
   handleSwitched,
@@ -58,6 +84,8 @@ export const _internal = {
   handleRemove,
   handleProfiles,
   handleUsage,
+  makeSigintHandler,
+  makeSigtermHandler,
 };
 
 /**
