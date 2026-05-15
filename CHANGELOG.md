@@ -10,6 +10,63 @@
 * **statusline:** cache-health badge for Claude Code billing-bug visibility (Phase 15.4) ([baa415c](https://github.com/SIRTHEO/claude-switch/commit/baa415c))
 * **cli:** claude switch cache-health subcommand for billing-bug diagnostics (Phase 15.5) ([c65b171](https://github.com/SIRTHEO/claude-switch/commit/c65b171))
 
+## [3.7.0](https://github.com/SIRTHEO/claude-switch/compare/v3.5.1...v3.7.0) (2026-05-15)
+
+
+### Features
+
+* **cache-health:** findActiveSessionJsonl helper for active Claude Code session lookup ([43de1c4](https://github.com/SIRTHEO/claude-switch/commit/43de1c470d50795ef0bb630823c213515f209620))
+* **cache-health:** JSONL parser + summary for Claude Code billing-bug visibility ([88bbbfa](https://github.com/SIRTHEO/claude-switch/commit/88bbbfaa94373c835b83327e72bee6c09735dd7a))
+* **cache-health:** loadActiveSessionHealth glue with 1s in-process cache ([875c377](https://github.com/SIRTHEO/claude-switch/commit/875c377bfa722dfda4ae81baa23e8f434338f3d4))
+* **cli:** claude switch cache-health subcommand for billing-bug diagnostics ([ecf3685](https://github.com/SIRTHEO/claude-switch/commit/ecf3685befd3b051526144b74adc51b235416039))
+* **passthrough:** warn on untracked apiKey in claude.json (transitional) ([f33ae73](https://github.com/SIRTHEO/claude-switch/commit/f33ae73750ae972a4f547d043406988d8975832a))
+* **profiles:** CLAUDE_SWITCH_DEBUG_PROFILES diagnostic flag (part A) ([ba7c39b](https://github.com/SIRTHEO/claude-switch/commit/ba7c39bee338befb17ab6954f28e2d678cf01c39))
+* **proxy:** realtime usage push from upstream rate-limit headers ([0f97e0f](https://github.com/SIRTHEO/claude-switch/commit/0f97e0fafaf51f33790ef68088815ad96fc8557d))
+* **statusline:** cache-health badge for Claude Code billing-bug visibility ([cd4ea38](https://github.com/SIRTHEO/claude-switch/commit/cd4ea38c1af0a98e8b25ea9928d9b7039743607c))
+* **statusline:** realtime account/profile/usage  ([a319d84](https://github.com/SIRTHEO/claude-switch/commit/a319d8429255bc2da8279104c07dd8d915f26ed1))
+* **statusline:** reflect proxy runtime mode ([71f0310](https://github.com/SIRTHEO/claude-switch/commit/71f03106ac2533701e9b53fe9cf933ac353adaa0))
+* **usage:** tighten cache TTL constants ([41f0f80](https://github.com/SIRTHEO/claude-switch/commit/41f0f802b561216f3b044af1f15cfe5694914cd3))
+
+
+### Bug Fixes
+
+* **passthrough:** wire accountsDirPath+account into startFallbackProxy  ([eb18276](https://github.com/SIRTHEO/claude-switch/commit/eb182765d8604626d9ae27425036d1f733787fea))
+* **profiles:** live Keychain capture for active-account isolated ([f4c1181](https://github.com/SIRTHEO/claude-switch/commit/f4c118172aa1853b3e9f6d33a1fc6fadf8174fca))
+* **review:** address findings from post-quality push review ([c8da529](https://github.com/SIRTHEO/claude-switch/commit/c8da529805433046d7332f738c7166636993c658))
+* **scripts:** resolve bare filenames in graph:task fallback ([a0b2656](https://github.com/SIRTHEO/claude-switch/commit/a0b265608ffd5317fde15d8008417e0effde38dc))
+* **security:** prevent silent API-key billing via untracked claude.json snapshot ([7e55cf8](https://github.com/SIRTHEO/claude-switch/commit/7e55cf82df90bc3eb2553b4a1966393d4e4b68f3))
+* **setup-wizard:** complete useEffect dependency array ([fd2c8b4](https://github.com/SIRTHEO/claude-switch/commit/fd2c8b441e07ccc9046754e3b92ba8cbb3fab910))
+* **test:** set USERPROFILE alongside HOME for Windows os.homedir() isolation ([a361db5](https://github.com/SIRTHEO/claude-switch/commit/a361db5c8e5bd879fb4df0218cedbff577479837))
+* **test:** skip statusline cache-health E2E scenarios on Windows ([7fe23ef](https://github.com/SIRTHEO/claude-switch/commit/7fe23eff158e4919128f25c67aff4a7afeba5714))
+* **test:** Windows compatibility for E2E + skip POSIX-only tests ([ff00290](https://github.com/SIRTHEO/claude-switch/commit/ff0029073861ac19985fc9311f4de6ed2a060f62))
+* **test:** Windows EBUSY on rmSync + skip POSIX-only shell binary check ([10e3fe2](https://github.com/SIRTHEO/claude-switch/commit/10e3fe2bcc5106e6b302d0e4f16ccdbc9e5f5e14))
+
+
+### Refactors
+
+* **cli:** consolidate shared arg-parsing helper with commands/_helpers ([f0e1277](https://github.com/SIRTHEO/claude-switch/commit/f0e12779df3440b9e83afa0152da5a30ee591ef5))
+* **profiles:** consolidate refreshLegacySnapshotIfStale inside ensureProfileForAccount ([595b20a](https://github.com/SIRTHEO/claude-switch/commit/595b20ae4ea0a518f2ac3129ab5b009923c3a252))
+* **proxy:** extract upstream usage header parsing helper ([0b8904c](https://github.com/SIRTHEO/claude-switch/commit/0b8904cb175380156cf0068bd8bef007bda68067))
+* **types:** audit and tighten 'as' casts in domain modules ([c6e4441](https://github.com/SIRTHEO/claude-switch/commit/c6e44417edced7daf564a385798f5b1265e37f69))
+* **ui:** apply ExitError pattern to handleSwitched (16.2 follow-up) ([ac92bc7](https://github.com/SIRTHEO/claude-switch/commit/ac92bc79929646c22eef151ea44178597fecb0d6))
+* **ui:** centralize Ink screen await via awaitInkScreen helper ([ebda74a](https://github.com/SIRTHEO/claude-switch/commit/ebda74a9b56ae49a5f95d3ed4c3e41cb08043e17))
+* **ui:** replace process.exit with ExitError in profiles.tsx spawn handler ([71e9838](https://github.com/SIRTHEO/claude-switch/commit/71e98383a2caadf29bad81bfdc4f4d26a97e0440))
+
+
+### Documentation
+
+* **contributing:** release cadence policy + bump decision matrix ([69647de](https://github.com/SIRTHEO/claude-switch/commit/69647de8d7e6b4c02db4671269c76be1d6286cd5))
+* integrate understand-anything graph with /harness-work flow ([61666e3](https://github.com/SIRTHEO/claude-switch/commit/61666e3624798e79f463fa50d55af6c0e8c9d9df))
+* **internal:** document Ink screen reject path and ExitError pattern ([c0db564](https://github.com/SIRTHEO/claude-switch/commit/c0db564c902ea19933b2b291b522ffd03a496d72))
+* **readme:** add CI status badges ([07d023b](https://github.com/SIRTHEO/claude-switch/commit/07d023bc78c59c1283629068f2f34f8f9735d386))
+* **readme:** cache-health visibility section + CHANGELOG entries ([7b0d171](https://github.com/SIRTHEO/claude-switch/commit/7b0d1714877712e7761946c1e0ba7d04ff6800ca))
+* **security:** document silent API-key risk and 14.2/14.3 mitigations ([97b466a](https://github.com/SIRTHEO/claude-switch/commit/97b466ad5812e436a70f7772bcadf10d198ad61f))
+
+
+### Chores
+
+* **release:** coordinate multi-phase release ([e942389](https://github.com/SIRTHEO/claude-switch/commit/e942389f32f4431886b83f487a3d879310560d37))
+
 ## [3.5.1](https://github.com/SIRTHEO/claude-switch/compare/v3.5.0...v3.5.1) (2026-05-08)
 
 
