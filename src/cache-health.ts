@@ -1,5 +1,6 @@
 // src/cache-health.ts
 // Phase 15.1 — JSONL parser and cache health summary for Claude Code sessions.
+// Phase 15.2 — findActiveSessionJsonl helper for active Claude Code session lookup.
 //
 // Exposes billing-bug visibility for two known Anthropic issues:
 //   (1) cache flush (~10-20× cost amplification)
@@ -10,6 +11,7 @@
 //   usage fields: cache_read_input_tokens, cache_creation_input_tokens, input_tokens
 
 import fs from 'node:fs';
+import path from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -201,4 +203,88 @@ export function summariseCacheHealth(
     effectiveInputTokens,
     lastFlushAt,
   };
+}
+
+// ---------------------------------------------------------------------------
+// findActiveSessionJsonl
+// ---------------------------------------------------------------------------
+
+/**
+ * Encode a filesystem path to the directory name used by Claude Code under
+ * `~/.claude/projects/`.
+ *
+ * Schema (verified empirically from `~/.claude/projects/` on macOS, 2026-05):
+ *   Every character that is NOT an ASCII alphanumeric or a hyphen is replaced
+ *   with a hyphen (`-`). In practice this means:
+ *     - `/` → `-`   (path separators become hyphens)
+ *     - `.` → `-`   (dot in dir/file names becomes hyphen)
+ *     - any other non-alphanum-non-hyphen (spaces, braces, quotes, …) → `-`
+ *   The leading `/` therefore produces the leading `-` that all entries share.
+ *
+ * @example
+ * encodeProjectPath('/foo/bar')      // '-foo-bar'
+ * encodeProjectPath('/Users/me/.x') // '-Users-me--x'
+ */
+export function encodeProjectPath(projectCwd: string): string {
+  return projectCwd.replace(/[^a-zA-Z0-9-]/g, '-');
+}
+
+/**
+ * Find the most-recently-modified `*.jsonl` file inside the Claude Code
+ * project directory that corresponds to `projectCwd`.
+ *
+ * Claude Code stores session JSONL files at:
+ *   `<claudeProjectsDir>/<encoded-cwd>/<uuid>.jsonl`
+ *
+ * Steps:
+ * 1. Encode `projectCwd` via {@link encodeProjectPath}.
+ * 2. Build the candidate directory path.
+ * 3. Return `null` if the directory does not exist.
+ * 4. List all `*.jsonl` files; return `null` if there are none.
+ * 5. Return the path of the file with the highest `mtime`.
+ *
+ * @param claudeProjectsDir - Absolute path to `~/.claude/projects` (or equivalent).
+ * @param projectCwd        - Absolute path to the project working directory
+ *                            (typically `process.cwd()`).
+ * @returns Absolute path to the newest JSONL file, or `null`.
+ */
+export function findActiveSessionJsonl(
+  claudeProjectsDir: string,
+  projectCwd: string,
+): string | null {
+  const encoded = encodeProjectPath(projectCwd);
+  const projectDir = path.join(claudeProjectsDir, encoded);
+
+  // (3) Directory does not exist → null
+  if (!fs.existsSync(projectDir)) return null;
+
+  // (4) List *.jsonl files
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(projectDir).filter((f) => f.endsWith('.jsonl'));
+  } catch {
+    return null;
+  }
+
+  if (entries.length === 0) return null;
+
+  // (5) Return the newest by mtime
+  let bestPath: string | null = null;
+  let bestMtime = -Infinity;
+
+  for (const entry of entries) {
+    const fullPath = path.join(projectDir, entry);
+    let mtime: number;
+    try {
+      mtime = fs.statSync(fullPath).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (mtime > bestMtime) {
+      bestMtime = mtime;
+      bestPath = fullPath;
+    }
+  }
+
+  return bestPath;
 }

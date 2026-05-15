@@ -1,5 +1,5 @@
 // test/cache-health.test.ts
-// Tests for src/cache-health.ts — Phase 15.1
+// Tests for src/cache-health.ts — Phase 15.1 + 15.2
 //
 // The Claude Code session JSONL format has:
 //   { "type": "assistant", "message": { "role": "assistant", "usage": { ... } }, ... }
@@ -13,6 +13,8 @@ import path from 'node:path';
 import {
   readSessionJsonl,
   summariseCacheHealth,
+  encodeProjectPath,
+  findActiveSessionJsonl,
 } from '../src/cache-health.js';
 
 // ---------------------------------------------------------------------------
@@ -302,5 +304,128 @@ describe('summariseCacheHealth — multi-turn aggregation', () => {
       Math.abs(s.hitRatio - expected) < 1e-9,
       `hitRatio expected ${expected}, got ${s.hitRatio}`,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// encodeProjectPath (Phase 15.2)
+// ---------------------------------------------------------------------------
+
+describe('encodeProjectPath — encoding schema', () => {
+  it('encodes /foo/bar to -foo-bar (slashes become hyphens)', () => {
+    assert.strictEqual(encodeProjectPath('/foo/bar'), '-foo-bar');
+  });
+
+  it('encodes /Users/me/.config to -Users-me--config (dots become hyphens)', () => {
+    assert.strictEqual(encodeProjectPath('/Users/me/.config'), '-Users-me--config');
+  });
+
+  it('preserves existing hyphens in path segments', () => {
+    // /my-app/sub -> -my-app-sub (the hyphen in "my-app" is preserved)
+    assert.strictEqual(encodeProjectPath('/my-app/sub'), '-my-app-sub');
+  });
+
+  it('encodes non-alphanum-non-hyphen characters (spaces, braces, colons) to hyphens', () => {
+    // Matches the empirical pattern from ~/.claude/projects/
+    // e.g. {"decision":"approve"} -> --decision---approve-
+    assert.strictEqual(encodeProjectPath('/a b/c:d'), '-a-b-c-d');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findActiveSessionJsonl (Phase 15.2)
+// ---------------------------------------------------------------------------
+
+describe('findActiveSessionJsonl — project dir missing', () => {
+  let tmpBase: string;
+  beforeEach(() => { tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-session-')); });
+  afterEach(() => { fs.rmSync(tmpBase, { recursive: true, force: true }); });
+
+  it('returns null when the project directory does not exist', () => {
+    const result = findActiveSessionJsonl(tmpBase, '/non/existent/project');
+    assert.strictEqual(result, null);
+  });
+});
+
+describe('findActiveSessionJsonl — project dir empty of jsonl', () => {
+  let tmpBase: string;
+  beforeEach(() => { tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-session-')); });
+  afterEach(() => { fs.rmSync(tmpBase, { recursive: true, force: true }); });
+
+  it('returns null when the project dir exists but has no *.jsonl files', () => {
+    // Create the encoded dir with a non-jsonl file
+    const encoded = encodeProjectPath('/foo/bar');
+    const projectDir = path.join(tmpBase, encoded);
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.writeFileSync(path.join(projectDir, 'notes.txt'), 'hello');
+
+    const result = findActiveSessionJsonl(tmpBase, '/foo/bar');
+    assert.strictEqual(result, null);
+  });
+});
+
+describe('findActiveSessionJsonl — single jsonl file', () => {
+  let tmpBase: string;
+  beforeEach(() => { tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-session-')); });
+  afterEach(() => { fs.rmSync(tmpBase, { recursive: true, force: true }); });
+
+  it('returns the single jsonl file when exactly one exists', () => {
+    const encoded = encodeProjectPath('/foo/bar');
+    const projectDir = path.join(tmpBase, encoded);
+    fs.mkdirSync(projectDir, { recursive: true });
+    const jsonlPath = path.join(projectDir, 'abc123.jsonl');
+    fs.writeFileSync(jsonlPath, '');
+
+    const result = findActiveSessionJsonl(tmpBase, '/foo/bar');
+    assert.strictEqual(result, jsonlPath);
+  });
+});
+
+describe('findActiveSessionJsonl — multiple jsonl files', () => {
+  let tmpBase: string;
+  beforeEach(() => { tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-session-')); });
+  afterEach(() => { fs.rmSync(tmpBase, { recursive: true, force: true }); });
+
+  it('returns the jsonl file with the highest mtime among 3 files', () => {
+    const encoded = encodeProjectPath('/foo/bar');
+    const projectDir = path.join(tmpBase, encoded);
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const fileA = path.join(projectDir, 'old.jsonl');
+    const fileB = path.join(projectDir, 'middle.jsonl');
+    const fileC = path.join(projectDir, 'newest.jsonl');
+
+    fs.writeFileSync(fileA, '');
+    fs.writeFileSync(fileB, '');
+    fs.writeFileSync(fileC, '');
+
+    // Set mtimes explicitly so the test is deterministic regardless of FS timing
+    const now = Date.now();
+    fs.utimesSync(fileA, new Date(now - 3000), new Date(now - 3000));
+    fs.utimesSync(fileB, new Date(now - 2000), new Date(now - 2000));
+    fs.utimesSync(fileC, new Date(now - 1000), new Date(now - 1000));
+
+    const result = findActiveSessionJsonl(tmpBase, '/foo/bar');
+    assert.strictEqual(result, fileC);
+  });
+
+  it('ignores non-jsonl files when selecting the newest', () => {
+    const encoded = encodeProjectPath('/foo/bar');
+    const projectDir = path.join(tmpBase, encoded);
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const jsonlFile = path.join(projectDir, 'session.jsonl');
+    const txtFile = path.join(projectDir, 'notes.txt');
+
+    fs.writeFileSync(jsonlFile, '');
+    fs.writeFileSync(txtFile, '');
+
+    const now = Date.now();
+    // Make notes.txt newer than the jsonl — it must still be ignored
+    fs.utimesSync(jsonlFile, new Date(now - 1000), new Date(now - 1000));
+    fs.utimesSync(txtFile, new Date(now), new Date(now));
+
+    const result = findActiveSessionJsonl(tmpBase, '/foo/bar');
+    assert.strictEqual(result, jsonlFile);
   });
 });
