@@ -10,6 +10,8 @@
 
 <p>
   <a href="https://www.npmjs.com/package/@sirtheo/claude-switch"><img alt="npm" src="https://img.shields.io/npm/v/@sirtheo/claude-switch?color=f0b429&label=npm&style=for-the-badge"></a>
+  <a href="https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/SIRTHEO/claude-switch/actions/workflows/commitlint.yml"><img alt="commitlint" src="https://github.com/SIRTHEO/claude-switch/actions/workflows/commitlint.yml/badge.svg?branch=main"></a>
   <a href="https://www.npmjs.com/package/@sirtheo/claude-switch"><img alt="downloads" src="https://img.shields.io/npm/dm/@sirtheo/claude-switch?color=3fb950&style=for-the-badge"></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-79c0ff?style=for-the-badge"></a>
   <a href="https://github.com/SIRTHEO/claude-switch"><img alt="stars" src="https://img.shields.io/github/stars/sirtheo/claude-switch?style=for-the-badge&color=f0b429"></a>
