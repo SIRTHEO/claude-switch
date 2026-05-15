@@ -105,6 +105,8 @@ export function SetupScreen({ selfPath, onDone, deps: depsOverride }: Props) {
 
   // Step driver: kicks off the synchronous detections on mount + on each
   // `step.kind` transition that needs a side effect.
+  // The `d.*` callable deps are stable (captured from prop default on first
+  // render) but biome's exhaustive-deps rule still requires them to be listed.
   useEffect(() => {
     if (step.kind === 'detect-bin') {
       const realClaude = d.findRealClaude(selfPath);
@@ -144,7 +146,7 @@ export function SetupScreen({ selfPath, onDone, deps: depsOverride }: Props) {
       });
     }
     // step.binPath is read in 'detect-shell' and 'no-npm-bin' branches.
-  }, [step, selfPath]);
+  }, [step, selfPath, d.findRealClaude, d.saveClaudeBin, d.getNpmBinDir, d.detectShellConfigs]);
 
   // ---- Status-line transitions ----
 
