@@ -251,8 +251,8 @@ function readLegacyAccount(email: string, accountsDirPath: string): LegacyAccoun
  * refresh actually happened, false otherwise (no _keychain, no
  * refresh_token, fresh tokens, or refresh failed).
  *
- * Awaited by callers before they enter the sync `importProfileFromAccount`
- * / `ensureProfileForAccount` flow, so the snapshot landing in the
+ * Called internally by `ensureProfileForAccount` before the sync
+ * `importProfileFromAccount` flow, so the snapshot landing in the
  * Keychain / per-profile JSON is fresh by construction. Without this
  * pre-step, profiles dormant for hours/days would carry expired
  * access tokens straight to claude, which then 401s instead of
@@ -525,11 +525,22 @@ export interface EnsureProfileResult {
  * If a profile already linked to `email` exists, it is returned as-is.
  * Otherwise the legacy saved account is imported into a fresh profile —
  * no browser re-login required when a Keychain snapshot is present.
+ *
+ * Internally calls `refreshLegacySnapshotIfStale` before any sync
+ * credential-writing so the snapshot landing in the Keychain / per-profile
+ * JSON is always fresh by construction. Refresh failure is silent — we
+ * fall through to the existing "needsLogin" handling.
  */
-export function ensureProfileForAccount(
+export async function ensureProfileForAccount(
   email: string,
   accountsDirPath: string,
-): EnsureProfileResult {
+): Promise<EnsureProfileResult> {
+  // Refresh the legacy snapshot's access token if stale BEFORE entering
+  // the sync credential-writing path. Failure is silent — fall through
+  // to the existing needsLogin handling.
+  try {
+    await refreshLegacySnapshotIfStale(email, accountsDirPath);
+  } catch { /* network failure → fall through */ }
   // If we land on a profile that says "needs login" but the legacy
   // account file still carries a `_keychain` snapshot, opportunistically
   // re-write the missing Keychain entry at the per-config-dir service
@@ -549,9 +560,9 @@ export function ensureProfileForAccount(
       // Detect whether the snapshot tokens are stale (expired) so the
       // maintainer can distinguish H2 from H4 in the debug output.
       // We do a simple synchronous expiresAt check — the async
-      // refreshLegacySnapshotIfStale is called upstream by the UI before
+      // refreshLegacySnapshotIfStale is called at the top of
       // ensureProfileForAccount, so if we reach here with stale tokens the
-      // refresh either failed or wasn't attempted.
+      // refresh either failed or returned without updating the snapshot.
       const oauthExp = legacy._keychain?.claudeAiOauth?.expiresAt;
       const isStale = oauthExp !== undefined && Date.now() >= Number(oauthExp);
       const hasLoginReason = isStale ? 'snapshot-stale' : (hasKeychain ? 'json-ok' : 'keychain-miss');

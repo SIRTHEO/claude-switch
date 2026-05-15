@@ -307,39 +307,39 @@ describe('ensureProfileForAccount', () => {
     fs.mkdirSync(accountsDir, { recursive: true });
   });
 
-  it('creates a new profile when none exists for the email', () => {
+  it('creates a new profile when none exists for the email', async () => {
     fs.writeFileSync(path.join(accountsDir, 'new@x.com.json'), JSON.stringify({ emailAddress: 'new@x.com' }));
-    const result = ensureProfileForAccount('new@x.com', accountsDir);
+    const result = await ensureProfileForAccount('new@x.com', accountsDir);
     assert.strictEqual(result.emailAddress, 'new@x.com');
     assert.strictEqual(result.created, true);
     assert.ok(profileExists(result.profileName));
   });
 
-  it('reuses an existing profile already linked to the email', () => {
+  it('reuses an existing profile already linked to the email', async () => {
     fs.writeFileSync(path.join(accountsDir, 'mine@x.com.json'), JSON.stringify({ emailAddress: 'mine@x.com' }));
-    const first = ensureProfileForAccount('mine@x.com', accountsDir);
+    const first = await ensureProfileForAccount('mine@x.com', accountsDir);
     assert.strictEqual(first.created, true);
 
     // Second call must reuse, not create.
-    const second = ensureProfileForAccount('mine@x.com', accountsDir);
+    const second = await ensureProfileForAccount('mine@x.com', accountsDir);
     assert.strictEqual(second.profileName, first.profileName);
     assert.strictEqual(second.created, false);
   });
 
-  it('needsLogin=true when no credential snapshot in account', () => {
+  it('needsLogin=true when no credential snapshot in account', async () => {
     fs.writeFileSync(path.join(accountsDir, 'pre@x.com.json'), JSON.stringify({ emailAddress: 'pre@x.com' }));
-    const result = ensureProfileForAccount('pre@x.com', accountsDir);
+    const result = await ensureProfileForAccount('pre@x.com', accountsDir);
     assert.strictEqual(result.needsLogin, true);
   });
 
-  it('needsLogin=false when reusing a profile that already has a login', () => {
+  it('needsLogin=false when reusing a profile that already has a login', async () => {
     const dir = createProfile('ready');
     fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({
       userID: 'a'.repeat(64),
       oauthAccount: { emailAddress: 'ready@x.com' },
     }));
     // Profile already exists and has login — no account file needed.
-    const result = ensureProfileForAccount('ready@x.com', accountsDir);
+    const result = await ensureProfileForAccount('ready@x.com', accountsDir);
     assert.strictEqual(result.needsLogin, false);
     assert.strictEqual(result.created, false);
     assert.strictEqual(result.profileName, 'ready');
@@ -357,7 +357,7 @@ describe('ensureProfileForAccount', () => {
   // The actual live capture on darwin is exercised manually — the same
   // policy already in place for tryRecoverFromLegacy since v3.5.
 
-  it('live capture is a no-op when CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 (active email, no snapshot)', () => {
+  it('live capture is a no-op when CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 (active email, no snapshot)', async () => {
     // Simulate: active account is "active@x.com", no legacy snapshot file
     // exists. Without Keychain access, the helper cannot fabricate
     // credentials. Result: needsLogin=true (the honest answer).
@@ -366,14 +366,14 @@ describe('ensureProfileForAccount', () => {
     fs.writeFileSync(claudeJsonPath, JSON.stringify({
       oauthAccount: { emailAddress: 'active@x.com' },
     }));
-    // No accounts file → import path → must throw (no legacy snapshot to import).
-    assert.throws(
+    // No accounts file → import path → must reject (no legacy snapshot to import).
+    await assert.rejects(
       () => ensureProfileForAccount('active@x.com', accountsDir),
       /No saved account for active@x\.com/,
     );
   });
 
-  it('live capture is a no-op for non-active email (legacy path still authoritative)', () => {
+  it('live capture is a no-op for non-active email (legacy path still authoritative)', async () => {
     // Pre-condition: active account is "other@x.com", but we're opening
     // isolated for "target@x.com". The live-capture branch must NOT fire
     // (email mismatch) — fall through to the existing logic.
@@ -385,13 +385,13 @@ describe('ensureProfileForAccount', () => {
     fs.writeFileSync(path.join(accountsDir, 'target@x.com.json'), JSON.stringify({
       emailAddress: 'target@x.com',
     }));
-    const result = ensureProfileForAccount('target@x.com', accountsDir);
+    const result = await ensureProfileForAccount('target@x.com', accountsDir);
     assert.strictEqual(result.created, true);
     assert.strictEqual(result.needsLogin, true,
       'no _keychain snapshot + non-active email + Keychain disabled → genuine login required');
   });
 
-  it('existing-profile reuse with active email + disable flag stays on legacy logic', () => {
+  it('existing-profile reuse with active email + disable flag stays on legacy logic', async () => {
     // Profile exists and has a hasLogin signal in JSON. With disable flag
     // on, hasLogin is NOT demoted by Keychain absence (the v3.5 darwin
     // check is gated by the same flag), so needsLogin stays false.
@@ -407,10 +407,107 @@ describe('ensureProfileForAccount', () => {
       userID: 'b'.repeat(64),
       oauthAccount: { emailAddress: 'active@x.com' },
     }));
-    const result = ensureProfileForAccount('active@x.com', accountsDir);
+    const result = await ensureProfileForAccount('active@x.com', accountsDir);
     assert.strictEqual(result.profileName, 'active');
     assert.strictEqual(result.created, false);
     assert.strictEqual(result.needsLogin, false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 12.3 — refreshLegacySnapshotIfStale consolidated inside ensureProfileForAccount
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ensureProfileForAccount — built-in refresh (Phase 12.3)', () => {
+  let accountsDir: string;
+  let origDisableKc: string | undefined;
+
+  beforeEach(() => {
+    accountsDir = path.join(tmpHome, '.claude', 'accounts');
+    fs.mkdirSync(accountsDir, { recursive: true });
+    origDisableKc = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = '1';
+  });
+
+  afterEach(() => {
+    if (origDisableKc === undefined) delete process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    else process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = origDisableKc;
+  });
+
+  it('refreshes a stale snapshot and updates the account file before importing (fetch mock)', async () => {
+    // Snapshot with an expired access token — simulates "dormant account".
+    const staleExpiry = Date.now() - 10_000;
+    const email = 'sirtheo.stale@example.com';
+    const accountFile = path.join(accountsDir, `${email}.json`);
+    fs.writeFileSync(accountFile, JSON.stringify({
+      emailAddress: email,
+      _keychain: {
+        claudeAiOauth: {
+          accessToken: 'old-token',
+          refreshToken: 'rtok-stale',
+          expiresAt: staleExpiry,
+        },
+      },
+    }));
+
+    // Stub globalThis.fetch to simulate a successful OAuth refresh.
+    const origFetch = globalThis.fetch;
+    let fetchCalled = false;
+    globalThis.fetch = async (_url: string | URL | Request, _opts?: RequestInit) => {
+      fetchCalled = true;
+      return new Response(JSON.stringify({
+        access_token: 'new-token',
+        refresh_token: 'rtok-stale',
+        expires_in: 3600,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+
+    try {
+      await ensureProfileForAccount(email, accountsDir);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+
+    assert.ok(fetchCalled, 'fetch should have been called to refresh the stale token');
+    // The account file must now have the refreshed access token.
+    const updated = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
+    assert.strictEqual(updated._keychain.claudeAiOauth.accessToken, 'new-token',
+      'account file should contain the refreshed access token after ensure');
+  });
+
+  it('does NOT call fetch when the snapshot is fresh (expiresAt far in the future)', async () => {
+    const freshExpiry = Date.now() + 3_600_000;
+    const email = 'sirtheo.fresh@example.com';
+    const accountFile = path.join(accountsDir, `${email}.json`);
+    fs.writeFileSync(accountFile, JSON.stringify({
+      emailAddress: email,
+      _keychain: {
+        claudeAiOauth: {
+          accessToken: 'valid-token',
+          refreshToken: 'rtok-fresh',
+          expiresAt: freshExpiry,
+        },
+      },
+    }));
+
+    const origFetch = globalThis.fetch;
+    let fetchCalled = false;
+    globalThis.fetch = async (_url: string | URL | Request, _opts?: RequestInit) => {
+      fetchCalled = true;
+      return new Response('{}', { status: 200 });
+    };
+
+    try {
+      await ensureProfileForAccount(email, accountsDir);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+
+    assert.strictEqual(fetchCalled, false, 'fetch must NOT be called when the token is still fresh');
+    // Token unchanged in file.
+    const unchanged = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
+    assert.strictEqual(unchanged._keychain.claudeAiOauth.accessToken, 'valid-token',
+      'account file access token should remain unchanged');
   });
 });
 
@@ -442,7 +539,7 @@ describe('CLAUDE_SWITCH_DEBUG_PROFILES', () => {
     fs.rmSync(tmpHome2, { recursive: true, force: true });
   });
 
-  it('flag OFF — ensureProfileForAccount produces no debug output to stderr', () => {
+  it('flag OFF — ensureProfileForAccount produces no debug output to stderr', async () => {
     delete process.env.CLAUDE_SWITCH_DEBUG_PROFILES;
     // Write a minimal account file so ensureProfileForAccount completes.
     fs.writeFileSync(path.join(accountsDir2, 'sirtheo.work@example.com.json'), JSON.stringify({
@@ -458,7 +555,7 @@ describe('CLAUDE_SWITCH_DEBUG_PROFILES', () => {
     process.stderr.write = spy as typeof process.stderr.write;
 
     try {
-      ensureProfileForAccount('sirtheo.work@example.com', accountsDir2);
+      await ensureProfileForAccount('sirtheo.work@example.com', accountsDir2);
     } finally {
       process.stderr.write = origWrite;
     }
@@ -467,7 +564,7 @@ describe('CLAUDE_SWITCH_DEBUG_PROFILES', () => {
     assert.strictEqual(debugLines.length, 0, 'No debug output expected when flag is OFF');
   });
 
-  it('flag ON — ensureProfileForAccount emits ≥1 [claude-switch:profiles] line to stderr', () => {
+  it('flag ON — ensureProfileForAccount emits ≥1 [claude-switch:profiles] line to stderr', async () => {
     process.env.CLAUDE_SWITCH_DEBUG_PROFILES = '1';
     fs.writeFileSync(path.join(accountsDir2, 'sirtheo.work@example.com.json'), JSON.stringify({
       emailAddress: 'sirtheo.work@example.com',
@@ -482,7 +579,7 @@ describe('CLAUDE_SWITCH_DEBUG_PROFILES', () => {
     process.stderr.write = spy as typeof process.stderr.write;
 
     try {
-      ensureProfileForAccount('sirtheo.work@example.com', accountsDir2);
+      await ensureProfileForAccount('sirtheo.work@example.com', accountsDir2);
     } finally {
       process.stderr.write = origWrite;
     }

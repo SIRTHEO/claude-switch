@@ -21,7 +21,6 @@ import {
   removeProfile,
   importProfileFromAccount,
   ensureProfileForAccount,
-  refreshLegacySnapshotIfStale,
   profilePath,
   isValidProfileName,
   profileExists,
@@ -181,19 +180,12 @@ export function ProfilesScreen({ accountsDirPath, initialNotice, onExit }: Scree
   const onAccountPick = (email: string): void => {
     if (step.kind !== 'pick-account') return;
     if (step.purpose === 'isolated') {
-      // Fire-and-await the legacy-snapshot refresh BEFORE the sync
-      // ensureProfileForAccount call. If the snapshot's access token is
-      // stale, this rewrites the legacy file with fresh tokens so the
-      // ensured profile lands with credentials claude can actually use.
-      // Network failure is silent — we still call ensureProfileForAccount
-      // and surface needsLogin as today.
+      // ensureProfileForAccount is async and handles the legacy-snapshot
+      // refresh internally. We fire-and-await it inside an IIFE because
+      // this Ink handler must remain synchronous.
       void (async () => {
         try {
-          await refreshLegacySnapshotIfStale(email, accountsDirPath);
-        } catch { /* swallow — fall through to the sync path */ }
-
-        try {
-          const ensured = ensureProfileForAccount(email, accountsDirPath);
+          const ensured = await ensureProfileForAccount(email, accountsDirPath);
           if (ensured.needsLogin) {
             // Refresh-token is also expired (or never existed). Instead of
             // dropping the user back to the menu with "go run this command
