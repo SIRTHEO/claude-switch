@@ -79,7 +79,7 @@ describe('profile spawn — integration with mock claude', () => {
     // only meaningful when keychain is disabled (i.e. the default test
     // mode that runs in CI everywhere).
     { skip: !KEYCHAIN_DISABLED },
-    () => {
+    async () => {
       const email = 'spawn-test@example.com';
       // Legacy account file with a fresh _keychain snapshot (the
       // post-`add` representation of any saved account).
@@ -94,7 +94,7 @@ describe('profile spawn — integration with mock claude', () => {
         },
       }));
 
-      const ensured = ensureProfileForAccount(email, accountsDir);
+      const ensured = await ensureProfileForAccount(email, accountsDir);
       assert.equal(ensured.created, true, 'expected a brand-new profile to be created');
       assert.equal(ensured.needsLogin, false, 'expected credentials to be reachable post-import');
 

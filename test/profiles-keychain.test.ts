@@ -110,7 +110,7 @@ describe('profile Keychain integration — ensureProfileForAccount', { skip: !ma
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  it('returns needsLogin=true when an existing profile has no Keychain entry AND legacy account has no _keychain snapshot', () => {
+  it('returns needsLogin=true when an existing profile has no Keychain entry AND legacy account has no _keychain snapshot', async () => {
     // The "stuck" path: profile exists but credentials are gone, and
     // the legacy account file is too old to have a _keychain snapshot
     // (pre-v2.2 import). The fix should report needsLogin=true so the
@@ -131,7 +131,7 @@ describe('profile Keychain integration — ensureProfileForAccount', { skip: !ma
       emailAddress: email,
     }));
 
-    const result = ensureProfileForAccount(email, accountsDir);
+    const result = await ensureProfileForAccount(email, accountsDir);
     assert.equal(result.profileName, 'fresh');
     assert.equal(result.created, false);
     assert.equal(result.needsLogin, true,
