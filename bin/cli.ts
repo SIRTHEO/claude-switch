@@ -73,7 +73,7 @@ export type Command =
   | { action: 'fallback-auto'; mode: 'on' | 'off' | 'status'; threshold?: number }
   | { action: 'fallback-auto-engage'; mode: 'on' | 'off' | 'status'; threshold?: number }
   | { action: 'usage'; force: boolean; refreshOnly: boolean }
-  | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean }
+  | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean; noCacheHealth: boolean }
   | { action: 'statusline-install'; variant: 'plain' | 'ccstatusline' }
   | { action: 'statusline-uninstall' }
   | { action: 'statusline-status' }
@@ -181,7 +181,8 @@ export function parseCommand(args: string[]): Command {
       // Honour both the CLI flag and the de-facto NO_COLOR env standard
       // (https://no-color.org). Either turning colour off is enough.
       const color = !rest.includes('--no-color') && !process.env.NO_COLOR;
-      return { action: 'statusline', format: fmt as 'compact' | 'full' | 'json', color };
+      const noCacheHealth = rest.includes('--no-cache-health');
+      return { action: 'statusline', format: fmt as 'compact' | 'full' | 'json', color, noCacheHealth };
     }
     case 'alias': {
       const sub2 = args[2];
@@ -259,7 +260,7 @@ async function main(): Promise<void> {
     selfUrl: import.meta.url,
   };
   if (cmd.action === 'statusline') {
-    handleStatusline(statuslineCtx, { format: cmd.format, color: cmd.color });
+    handleStatusline(statuslineCtx, { format: cmd.format, color: cmd.color, noCacheHealth: cmd.noCacheHealth });
     return;
   }
   if (cmd.action === 'statusline-install') {
