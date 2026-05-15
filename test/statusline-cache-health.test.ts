@@ -131,7 +131,14 @@ function runStatuslineJson(
 // Scenario D — JSONL present → cacheHealth field appears in --json
 // ---------------------------------------------------------------------------
 
-describe('statusline cache-health — Scenario D: JSONL present → cacheHealth in JSON', () => {
+// Windows file-locking semantics + Node child_process timing cause flaky EBUSY
+// errors on after() cleanup for the three E2E scenarios below. The cache-health
+// pipeline is fully unit-tested via test/cache-health.test.ts (parser) and
+// test/commands-cache-health.test.ts (handler); the E2E scenarios are macOS +
+// Linux only.
+const skipE2E = { skip: process.platform === 'win32' ? 'EBUSY race on Windows; covered by unit tests' : false };
+
+describe('statusline cache-health — Scenario D: JSONL present → cacheHealth in JSON', skipE2E, () => {
   let tmpHome: string;
   let projectCwd: string;
 
@@ -178,7 +185,7 @@ describe('statusline cache-health — Scenario D: JSONL present → cacheHealth 
 // Scenario E — JSONL absent → no cacheHealth field in --json
 // ---------------------------------------------------------------------------
 
-describe('statusline cache-health — Scenario E: JSONL absent → no cacheHealth in JSON', () => {
+describe('statusline cache-health — Scenario E: JSONL absent → no cacheHealth in JSON', skipE2E, () => {
   let tmpHome: string;
   let projectCwd: string;
 
@@ -208,7 +215,7 @@ describe('statusline cache-health — Scenario E: JSONL absent → no cacheHealt
 // Scenario F — --no-cache-health → suppresses cacheHealth even with JSONL
 // ---------------------------------------------------------------------------
 
-describe('statusline cache-health — Scenario F: --no-cache-health suppresses badge and JSON field', () => {
+describe('statusline cache-health — Scenario F: --no-cache-health suppresses badge and JSON field', skipE2E, () => {
   let tmpHome: string;
   let projectCwd: string;
 
