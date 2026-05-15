@@ -173,7 +173,7 @@ describe('statusline realtime — Scenario A: switch A→B + badge update', () =
   });
 
   after(() => {
-    fs.rmSync(tmpHome, { recursive: true, force: true });
+    fs.rmSync(tmpHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it('statusline shows account A (30%) before any switch', () => {
@@ -235,7 +235,7 @@ describe('statusline realtime — Scenario B: profile session shows profile acco
   });
 
   after(() => {
-    fs.rmSync(tmpHome, { recursive: true, force: true });
+    fs.rmSync(tmpHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it('statusline without CLAUDE_CONFIG_DIR shows the global account', () => {
@@ -277,7 +277,7 @@ describe('statusline realtime — Scenario C: proxy oauth-burst mode reflected',
   });
 
   after(() => {
-    fs.rmSync(tmpHome, { recursive: true, force: true });
+    fs.rmSync(tmpHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   afterEach(() => {
