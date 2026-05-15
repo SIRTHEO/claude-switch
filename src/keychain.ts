@@ -75,20 +75,6 @@ export function writeKeychain(data: KeychainData): void {
 }
 
 /**
- * Read a specific Keychain entry by account field. Used to verify that
- * a profile's userID actually has live credentials before we tell the
- * caller "yes, this profile is logged in" — a JSON-only check is not
- * enough because oauthAccount.emailAddress can persist after the
- * Keychain entry has been deleted/expired/rotated.
- *
- * Returns null on non-macOS, on missing/locked entries, or when the
- * stored value isn't valid JSON.
- */
-function readKeychainAt(account: string): KeychainData | null {
-  return readKeychainAtService(SERVICE, account);
-}
-
-/**
  * Write to a specific Keychain entry (account field). Used for profiles:
  * each profile has its own userID which becomes the account field, so we
  * can import a saved account's tokens into the profile's distinct entry.

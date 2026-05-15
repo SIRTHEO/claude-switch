@@ -70,9 +70,6 @@ describe('awaitInkScreen', () => {
   });
 
   it('propagates the exact result captured by closure mutation', async () => {
-    const instance = {
-      waitUntilExit: () => Promise.resolve(),
-    };
     let capturedResult = 'initial';
     // Simulate the onDone callback pattern: mutation before exit
     const instanceWithSideEffect = {
