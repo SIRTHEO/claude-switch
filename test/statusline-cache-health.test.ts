@@ -1,5 +1,5 @@
 // test/statusline-cache-health.test.ts
-// Phase 15.4 — cache-health badge integration tests.
+// Cache-health badge integration tests.
 //
 // Spawns the compiled CLI in isolated tmp environments.
 // Three scenarios:

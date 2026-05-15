@@ -45,8 +45,8 @@ export function handleStatusline(ctx: CommandContext, options: StatuslineOptions
  * spawned claude session uses the profile's local `.claude.json` for
  * everything — but the statusline was reading from the global one,
  * silently showing the main account's email/usage while the session
- * actually ran as a different account. Phase 13.1 fix: route the
- * lookup through CCD when it points into the profiles tree.
+ * actually ran as a different account. Fix: route the lookup through
+ * CCD when it points into the profiles tree.
  *
  * Non-profile CCDs (custom config dirs the user set for their own
  * reasons) fall through to the global path. The profile-tree guard
@@ -121,16 +121,16 @@ function renderStatusline(
 
   const autoEngaged = isFallbackAutoEngaged(accountsDirPath);
 
-  // Phase 15.4 — cache-health badge. loadActiveSessionHealth reads the newest
+  // Cache-health badge. loadActiveSessionHealth reads the newest
   // JSONL under ~/.claude/projects/<encoded-cwd>/ (1s in-process TTL cache).
   // Suppressed when --no-cache-health is passed or no active session is found.
   const cacheHealthSummary = noCacheHealth ? null : loadActiveSessionHealth();
 
-  // Phase 13.6 — effective runtime mode. When the proxy is alive it writes
-  // its current state to `.proxy-mode.json` on every transition; we read it
-  // and reflect the *actual* per-request routing instead of the boot-time
-  // flag. When the marker is missing or stale (proxy not running / crashed),
-  // fall back to the persistent flag — back-compat with the pre-13.6 label.
+  // Effective runtime mode. When the proxy is alive it writes its current
+  // state to `.proxy-mode.json` on every transition; we read it and reflect
+  // the *actual* per-request routing instead of the boot-time flag. When the
+  // marker is missing or stale (proxy not running / crashed), fall back to the
+  // persistent flag.
   const runtimeMarker = readProxyMode(accountsDirPath);
   type EffectiveMode = 'oauth' | 'oauth-burst' | 'api-auto' | 'api';
   const effectiveMode: EffectiveMode = (() => {

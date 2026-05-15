@@ -345,8 +345,8 @@ describe('ensureProfileForAccount', () => {
     assert.strictEqual(result.profileName, 'ready');
   });
 
-  // Phase 12.2 regressions — live-Keychain capture for the active-account
-  // isolated path. All tests below run with CLAUDE_SWITCH_DISABLE_KEYCHAIN=1
+  // Regressions: live-Keychain capture for the active-account isolated path.
+  // All tests below run with CLAUDE_SWITCH_DISABLE_KEYCHAIN=1
   // (the npm-test default), so the live-capture helper is a no-op by
   // contract. We assert that:
   //   1. the helper does NOT crash or short-circuit unrelated logic
@@ -415,7 +415,7 @@ describe('ensureProfileForAccount', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 12.3 — refreshLegacySnapshotIfStale consolidated inside ensureProfileForAccount
+// refreshLegacySnapshotIfStale consolidated inside ensureProfileForAccount
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('ensureProfileForAccount — built-in refresh (Phase 12.3)', () => {
@@ -512,7 +512,7 @@ describe('ensureProfileForAccount — built-in refresh (Phase 12.3)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLAUDE_SWITCH_DEBUG_PROFILES diagnostic flag (Phase 12.1 Part A)
+// CLAUDE_SWITCH_DEBUG_PROFILES diagnostic flag
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('CLAUDE_SWITCH_DEBUG_PROFILES', () => {

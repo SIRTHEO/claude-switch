@@ -43,7 +43,7 @@ export interface State {
    *  undefined when no restore is queued. */
   pendingRestore?: string;
   /** Snapshot of "last account routed to per emailDomain". Used by
-   *  project-aware routing (Phase 10) to pick deterministically when a
+   *  project-aware routing to pick deterministically when a
    *  `.claude-switch` constraint matches multiple saved accounts. Keyed
    *  by the lower-cased domain (`acme.com`), value is the chosen email.
    *  Optional — older state files predate the field; resolver tolerates

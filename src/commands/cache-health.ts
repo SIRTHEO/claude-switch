@@ -1,6 +1,6 @@
 // src/commands/cache-health.ts
 // `claude switch cache-health [--session <path>] [--json]`
-// Phase 15.5 — CLI surface for billing-bug diagnostics via cache-health analysis.
+// CLI surface for billing-bug diagnostics via cache-health analysis.
 //
 // Two modes:
 //   Default: resolve the active session for process.cwd() via loadActiveSessionHealth.

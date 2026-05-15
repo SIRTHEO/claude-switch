@@ -198,7 +198,7 @@ export interface StartFallbackProxyOptions {
    *  `close()` so the next `claude switch status` can render the
    *  most recent session's counters. */
   persistStatsTo?: string;
-  /** Phase 13.4 — enables realtime usage tracking from upstream response
+  /** Enables realtime usage tracking from upstream response
    *  headers. When BOTH fields are set, the proxy parses
    *  `anthropic-ratelimit-{five-hour,seven-day}-percent-used` (and
    *  documented aliases) from every 2xx upstream response and merges the
@@ -275,7 +275,7 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
       process.stderr.write(
         `\n⚡ claude-switch: OAuth failed ${consecutiveOauthFailures}× in a row — entering API-burst mode (probing OAuth every ${Math.round(burstConfig.probeIntervalMs / 60000)} min)\n\n`,
       );
-      // Phase 13.6 — runtime mode marker for the statusline. Only emit on
+      // Runtime mode marker for the statusline. Only emit on
       // state transitions; individual OAuth failures before the threshold
       // don't move the marker.
       if (opts.accountsDirPath) {
@@ -297,8 +297,8 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
     counters.oauthSuccesses++;
     lastOauthAttemptAt = now();
     dbg('oauth succeeded');
-    // Phase 13.6 — flip back to oauth-first only when we were actually
-    // in burst. Plain successes don't change the persisted mode.
+    // Flip back to oauth-first only when we were actually in burst.
+    // Plain successes don't change the persisted mode.
     if (wasInBurst && opts.accountsDirPath) {
       writeProxyMode(opts.accountsDirPath, 'oauth-first',
         'OAuth probe succeeded — burst exited');
@@ -318,7 +318,7 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
     : isHttps ? 443 : 80;
   const requester = isHttps ? https : http;
 
-  // Phase 13.4 — realtime usage update from upstream response headers.
+  // Realtime usage update from upstream response headers.
   // Only fires when the caller wired both accountsDirPath + account at
   // proxy startup. Best-effort: parse failures, missing headers, and
   // cache write errors are all swallowed inside updateUsageCacheFromHeaders.
@@ -526,9 +526,9 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
     server.on('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address() as AddressInfo; // safe: server is bound to a TCP address, never a pipe, so address() is always AddressInfo here
-      // Phase 13.6 — emit initial runtime mode marker. `oauth-burst` is
-      // only entered after threshold failures, never at startup; we
-      // always boot in either `oauth-first` or `api-first`.
+      // Emit initial runtime mode marker. `oauth-burst` is only entered
+      // after threshold failures, never at startup; we always boot in
+      // either `oauth-first` or `api-first`.
       if (opts.accountsDirPath) {
         const initialMode = mode === 'api-first' ? 'api-first' : 'oauth-first';
         writeProxyMode(opts.accountsDirPath, initialMode, `proxy started in ${mode} mode`);
@@ -553,9 +553,9 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
         port: addr.port,
         close: (cb) => {
           persistStats();
-          // Phase 13.6 — clear the runtime mode marker on clean shutdown
-          // so the next statusline read falls back to the persistent flag
-          // instead of sticky-displaying a stale mode.
+          // Clear the runtime mode marker on clean shutdown so the next
+          // statusline read falls back to the persistent flag instead of
+          // sticky-displaying a stale mode.
           if (opts.accountsDirPath) clearProxyMode(opts.accountsDirPath);
           server.close(cb);
         },

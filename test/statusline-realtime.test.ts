@@ -1,5 +1,5 @@
 // test/statusline-realtime.test.ts
-// Phase 13.7 — E2E realtime statusline bundle.
+// E2E realtime statusline bundle.
 //
 // Three scenarios:
 //   A — switch A→B in shell + statusline reload + check badge updated

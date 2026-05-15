@@ -1,6 +1,6 @@
 // src/cache-health.ts
-// Phase 15.1 — JSONL parser and cache health summary for Claude Code sessions.
-// Phase 15.2 — findActiveSessionJsonl helper for active Claude Code session lookup.
+// JSONL parser and cache health summary for Claude Code sessions.
+// findActiveSessionJsonl helper for active Claude Code session lookup.
 //
 // Exposes billing-bug visibility for two known Anthropic issues:
 //   (1) cache flush (~10-20× cost amplification)
@@ -226,7 +226,7 @@ export function summariseCacheHealth(
 }
 
 // ---------------------------------------------------------------------------
-// loadActiveSessionHealth — glue + 1s in-process cache (Phase 15.3)
+// loadActiveSessionHealth — glue + 1s in-process cache
 // ---------------------------------------------------------------------------
 
 /**
@@ -389,7 +389,7 @@ export function findActiveSessionJsonl(
 }
 
 // ---------------------------------------------------------------------------
-// extractFlushTurns — line-accurate flush event extraction (Phase 15.5)
+// extractFlushTurns — line-accurate flush event extraction
 // ---------------------------------------------------------------------------
 
 /**

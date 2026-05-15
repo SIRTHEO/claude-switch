@@ -25,15 +25,15 @@ const ENDPOINT_HOST = 'api.anthropic.com';
 const ENDPOINT_PATH = '/api/oauth/usage';
 const BETA_HEADER = 'oauth-2025-04-20';
 // Cache TTL. Used to be 15 min when /api/oauth/usage was the only refresh
-// path; lowered to 10 min in Phase 13.5 once 13.2 (per-account caches —
-// each account decays independently, no churn from A↔B switches) and
-// 13.4 (header push from proxy — most refreshes happen for free as a
-// side effect of regular API traffic) reduced endpoint pressure.
+// path; lowered to 10 min once per-account caches (each account decays
+// independently, no churn from A↔B switches) and header push from proxy
+// (most refreshes happen for free as a side effect of regular API traffic)
+// reduced endpoint pressure.
 const CACHE_TTL_MS = 10 * 60 * 1000;
 // How stale the cache can get before the statusline kicks off a background
 // refresh. Slightly tighter than CACHE_TTL_MS so the user sees fresher
 // numbers while still respecting the endpoint's rate limit. Was 10 min;
-// Phase 13.5 dropped to 5 min for the same reasons as above.
+// dropped to 5 min for the same reasons as above.
 const STATUSLINE_REFRESH_AFTER_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 5_000;
 const MAX_BODY_BYTES = 16 * 1024;
@@ -369,7 +369,7 @@ export function readUsageCacheFor(
 }
 
 /**
- * Decision helper for the "pre-fetch on switch" path (Phase 13.3): returns
+ * Decision helper for the "pre-fetch on switch" path: returns
  * true when the target account's cache is missing or stale, false when it
  * is fresh enough that an immediate refresh would be wasted. Kept as a
  * pure predicate so switcher.ts can call it without pulling in the
@@ -383,7 +383,7 @@ export function shouldTriggerUsageRefreshAfterSwitch(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 13.4 — realtime usage push from proxy response headers
+// Realtime usage push from proxy response headers
 // ---------------------------------------------------------------------------
 //
 // The api-proxy intercepts every Claude API response when fallback is in

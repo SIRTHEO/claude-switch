@@ -763,7 +763,7 @@ describe('startFallbackProxy — oauth-first burst transitions (live OAuth ↔ A
 });
 
 // ---------------------------------------------------------------------------
-// Phase 13.4 — usage cache update from upstream rate-limit headers
+// Usage cache update from upstream rate-limit headers
 // ---------------------------------------------------------------------------
 
 describe('startFallbackProxy — usage header push (Phase 13.4)', () => {
@@ -872,7 +872,7 @@ describe('startFallbackProxy — usage header push (Phase 13.4)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 13.6 — proxy writes runtime-mode marker on lifecycle events
+// Proxy writes runtime-mode marker on lifecycle events
 // ---------------------------------------------------------------------------
 
 describe('startFallbackProxy — runtime mode marker (Phase 13.6)', () => {

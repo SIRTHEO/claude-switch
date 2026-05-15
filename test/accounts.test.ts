@@ -343,8 +343,8 @@ describe('save/load — API-key acceptance leak prevention', () => {
   });
 
   it('restores customApiKeyResponses + apiKey on load when claude-switch tracks an apikey for the account (Phase 14.2)', () => {
-    // Phase 14.2: restore only happens when claude-switch ALSO tracks an
-    // apikey for the target (via `_apiKey` in snapshot or Keychain entry).
+    // Restore only happens when claude-switch ALSO tracks an apikey for
+    // the target (via `_apiKey` in snapshot or Keychain entry).
     // Here we include `_apiKey: '...'` so the tracker recognises bob's key.
     fs.writeFileSync(claudeJson, JSON.stringify({
       oauthAccount: { emailAddress: 'alice@example.com' },
@@ -389,7 +389,7 @@ describe('save/load — API-key acceptance leak prevention', () => {
     assert.deepEqual(restored.customApiKeyResponses, { approved: ['sk-ant-api03-alice'], rejected: [] });
   });
 
-  // ----- Phase 14.2 — silent-billing leak prevention -----
+  // ----- Silent-billing leak prevention -----
 
   it('Phase 14.2: load() PURGES apiKey + customApiKeyResponses when claude-switch does NOT track an apikey', () => {
     // The bug class: account file carries _claudeJsonApiKey + approval

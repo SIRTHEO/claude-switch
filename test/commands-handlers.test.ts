@@ -1,6 +1,6 @@
 // test/commands-handlers.test.ts
 // Coverage push for the thin CLI command handlers in `src/commands/`.
-// Pre-Phase 11 these were sitting at 7-22% line coverage — handlers
+// These handlers were sitting at 7-22% line coverage before —
 // are mostly "read context, call domain, format output" so they
 // looked low-leverage to test. The reality is they are the boundary
 // between the CLI surface and the domain, and a regression here
