@@ -442,7 +442,7 @@ describe('_runDispatchLoop', () => {
     // Set up: no active account so handleApikey returns error notice.
     fs.writeFileSync(h.claudeJson, '{}');
     let callCount = 0;
-    let receivedNotice: unknown = undefined;
+    let receivedNotice: unknown;
     const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
       callCount++;
       receivedNotice = notice;
@@ -459,7 +459,7 @@ describe('_runDispatchLoop', () => {
     // Set up: account has an API key so handleFallbackToggle enables cleanly.
     setApiKey(h.email, 'sk-ant-api03-test', h.accDir);
     let callCount = 0;
-    let receivedNotice: unknown = undefined;
+    let receivedNotice: unknown;
     const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
       callCount++;
       receivedNotice = notice;
@@ -473,7 +473,7 @@ describe('_runDispatchLoop', () => {
 
   it('dispatches usage action (no token → error notice)', async () => {
     let callCount = 0;
-    let receivedNotice: unknown = undefined;
+    let receivedNotice: unknown;
     const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
       callCount++;
       receivedNotice = notice;
@@ -517,7 +517,7 @@ describe('_runDispatchLoop', () => {
 
   it('dispatches add action (no binary → error notice, loop continues)', async () => {
     let callCount = 0;
-    let receivedNotice: unknown = undefined;
+    let receivedNotice: unknown;
     const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
       callCount++;
       receivedNotice = notice;
@@ -543,7 +543,7 @@ describe('_runDispatchLoop', () => {
 
   it('dispatches profiles action (no binary → error notice, loop continues)', async () => {
     let callCount = 0;
-    let receivedNotice: unknown = undefined;
+    let receivedNotice: unknown;
     const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
       callCount++;
       receivedNotice = notice;
@@ -572,7 +572,7 @@ describe('_runDispatchLoop', () => {
     // Override HOME to point to tmpDir (no .claude-bin file) and PATH to
     // a dir with no real claude binary so findClaudeBinary returns null.
     let callCount = 0;
-    let receivedNotice: unknown = undefined;
+    let receivedNotice: unknown;
     const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
       callCount++;
       receivedNotice = notice;

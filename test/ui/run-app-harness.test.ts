@@ -18,7 +18,6 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import path from 'node:path';
 
 import { makeRunAppHarness, type RunAppHarness } from './run-app-harness.js';
 import { _internal } from '../../src/ui/run-app.js';

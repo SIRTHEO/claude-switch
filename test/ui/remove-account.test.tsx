@@ -194,7 +194,6 @@ describe('RemoveAccountScreen — cancel path', () => {
 
   it("shows cancelled status message after cancel", async () => {
     h = setup();
-    const preview = { lines: ['• Account file /tmp/x.json'], hadAliases: false };
     instance = render(
       <RemoveAccountScreen
         email={TEST_EMAIL}

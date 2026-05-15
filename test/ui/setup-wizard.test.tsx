@@ -20,7 +20,7 @@
 //
 // All keystroke helpers use makeKeystrokeHelper(instance) as required.
 
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { render } from 'ink-testing-library';
 
@@ -156,12 +156,11 @@ describe('SetupScreen — manual-bin step', () => {
 
   it('empty Enter on manual-bin skips (binPath=null) and transitions to next step', async () => {
     const saveClaudeBinCalls: string[] = [];
-    let doneResult: SetupWizardResult | null = null;
 
     instance = render(
       <SetupScreen
         selfPath="/usr/local/bin/claude-switch"
-        onDone={(r) => { doneResult = r; }}
+        onDone={() => undefined}
         deps={makeStubDepsManualBin({
           saveClaudeBin: (p) => { saveClaudeBinCalls.push(p); },
           // no-shell-config path so wizard reaches summary without more keystrokes
