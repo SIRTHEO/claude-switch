@@ -413,3 +413,82 @@ describe('ensureProfileForAccount', () => {
     assert.strictEqual(result.needsLogin, false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLAUDE_SWITCH_DEBUG_PROFILES diagnostic flag (Phase 12.1 Part A)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('CLAUDE_SWITCH_DEBUG_PROFILES', () => {
+  let tmpHome2: string;
+  let accountsDir2: string;
+  let origDebug: string | undefined;
+  let origDisableKc: string | undefined;
+
+  beforeEach(() => {
+    tmpHome2 = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-dbg-'));
+    accountsDir2 = path.join(tmpHome2, 'accounts');
+    fs.mkdirSync(accountsDir2, { recursive: true });
+    process.env.HOME = tmpHome2;
+    origDebug = process.env.CLAUDE_SWITCH_DEBUG_PROFILES;
+    origDisableKc = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = '1';
+  });
+
+  afterEach(() => {
+    if (origDebug === undefined) delete process.env.CLAUDE_SWITCH_DEBUG_PROFILES;
+    else process.env.CLAUDE_SWITCH_DEBUG_PROFILES = origDebug;
+    if (origDisableKc === undefined) delete process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    else process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = origDisableKc;
+    fs.rmSync(tmpHome2, { recursive: true, force: true });
+  });
+
+  it('flag OFF — ensureProfileForAccount produces no debug output to stderr', () => {
+    delete process.env.CLAUDE_SWITCH_DEBUG_PROFILES;
+    // Write a minimal account file so ensureProfileForAccount completes.
+    fs.writeFileSync(path.join(accountsDir2, 'sirtheo.work@example.com.json'), JSON.stringify({
+      emailAddress: 'sirtheo.work@example.com',
+    }));
+
+    const stderrChunks: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    const spy = (chunk: string | Uint8Array, ...rest: unknown[]) => {
+      if (typeof chunk === 'string') stderrChunks.push(chunk);
+      return (origWrite as (...a: unknown[]) => boolean)(chunk, ...rest);
+    };
+    process.stderr.write = spy as typeof process.stderr.write;
+
+    try {
+      ensureProfileForAccount('sirtheo.work@example.com', accountsDir2);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+
+    const debugLines = stderrChunks.filter(l => l.includes('[claude-switch:profiles]'));
+    assert.strictEqual(debugLines.length, 0, 'No debug output expected when flag is OFF');
+  });
+
+  it('flag ON — ensureProfileForAccount emits ≥1 [claude-switch:profiles] line to stderr', () => {
+    process.env.CLAUDE_SWITCH_DEBUG_PROFILES = '1';
+    fs.writeFileSync(path.join(accountsDir2, 'sirtheo.work@example.com.json'), JSON.stringify({
+      emailAddress: 'sirtheo.work@example.com',
+    }));
+
+    const stderrChunks: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    const spy = (chunk: string | Uint8Array, ...rest: unknown[]) => {
+      if (typeof chunk === 'string') stderrChunks.push(chunk);
+      return (origWrite as (...a: unknown[]) => boolean)(chunk, ...rest);
+    };
+    process.stderr.write = spy as typeof process.stderr.write;
+
+    try {
+      ensureProfileForAccount('sirtheo.work@example.com', accountsDir2);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+
+    const debugLines = stderrChunks.filter(l => l.includes('[claude-switch:profiles]'));
+    assert.ok(debugLines.length >= 1,
+      `Expected ≥1 debug line when CLAUDE_SWITCH_DEBUG_PROFILES=1, got ${debugLines.length}`);
+  });
+});
