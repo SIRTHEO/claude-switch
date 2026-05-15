@@ -292,7 +292,6 @@ describe('ProfilesScreen — note screen', () => {
       />,
     );
     await tick();
-    const keys = makeKeystrokeHelper(instance);
 
     // Find "List profiles" — only visible when at least 1 profile exists.
     // Since we have 0 profiles, the item won't appear. Create one to enable it.
