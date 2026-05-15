@@ -124,10 +124,9 @@ async function handleSwitched(
   const { command, args, options } = buildSpawnArgs(bin, [], process.platform, extraEnv);
   const result = spawnSync(command, args, options);
   if (result.error) {
-    process.stderr.write(`Error: could not launch claude: ${result.error.message}\n`);
-    process.exit(1);
+    throw new ExitError(`Error: could not launch claude: ${result.error.message}`, 1);
   }
-  process.exit(result.status ?? 0);
+  throw new ExitError('', result.status ?? 0);
 }
 
 async function handleAdd(claudeJsonPath: string, accountsDirPath: string): Promise<Notice> {
@@ -220,7 +219,7 @@ async function handleProfiles(accountsDirPath: string): Promise<Notice> {
   const bin = findClaudeBinary(import.meta.url);
   if (!bin) return { kind: 'error', text: 'Could not find the real claude binary — run setup first.' };
   // The profiles screen owns its own buffer + spawn lifecycle (it may
-  // process.exit() to launch claude in an isolated session). The no-op
+  // throw ExitError to launch claude in an isolated session). The no-op
   // restoreBuffer is fine since Ink already restores its own buffer when
   // it unmounts.
   await runProfilesScreen(accountsDirPath, bin, () => undefined);
