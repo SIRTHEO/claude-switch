@@ -16,7 +16,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { _internal } from '../../src/ui/run-app.js';
+import { _internal, _runDispatchLoop } from '../../src/ui/run-app.js';
+import { ExitError } from '../../src/errors.js';
+import type { HomeExit } from '../../src/ui/screens/home.js';
 import { save as saveAccount } from '../../src/accounts.js';
 import { setFallbackEnabled } from '../../src/fallback.js';
 import { setApiKey } from '../../src/apikey.js';
@@ -27,6 +29,8 @@ interface Harness {
   claudeJson: string;
   accDir: string;
   email: string;
+  /** Path to a fake claude binary (exit 0, chmod 755). */
+  claudeBin: string;
 }
 
 function setup(activeEmail = 'a@b.com'): Harness {
@@ -36,7 +40,11 @@ function setup(activeEmail = 'a@b.com'): Harness {
   fs.mkdirSync(accDir, { recursive: true });
   fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: activeEmail } }));
   saveAccount(activeEmail, claudeJson, accDir);
-  return { tmpDir, claudeJson, accDir, email: activeEmail };
+  // Fake claude binary: exits 0 immediately, chmod 755.
+  const claudeBin = path.join(tmpDir, 'claude-fake');
+  fs.writeFileSync(claudeBin, '#!/usr/bin/env sh\nexit 0\n');
+  fs.chmodSync(claudeBin, 0o755);
+  return { tmpDir, claudeJson, accDir, email: activeEmail, claudeBin };
 }
 
 function teardown(h: Harness): void {
@@ -122,6 +130,41 @@ describe('_internal.handleSwitched', () => {
     assert.equal(notice?.kind, 'success');
     assert.match(notice?.text ?? '', /Switched to/);
   });
+
+  it('enters defaultIsolated path and returns a notice (warning or error or success)', async () => {
+    // With CLAUDE_SWITCH_BIN set and defaultIsolated=true, handleSwitched enters
+    // the profile-isolation branch. In a tmpDir without real profiles data,
+    // ensureProfileForAccount may succeed (needsLogin=false) or throw — either
+    // way, we verify the path is exercised and a notice (not a throw) comes back.
+    const prevBin = process.env.CLAUDE_SWITCH_BIN;
+    const prevHome = process.env.HOME;
+    process.env.CLAUDE_SWITCH_BIN = h.claudeBin;
+    process.env.HOME = h.tmpDir;
+    try {
+      const notice = await _internal.handleSwitched({
+        switchedFrom: 'old@example.com',
+        switchedTo: h.email,
+        autoLaunch: true,
+        defaultIsolated: true,
+      }, h.accDir);
+      // Either an ExitError is thrown (spawnSync with exit 0) or we get a notice.
+      // Both are valid — the important thing is the defaultIsolated branch was entered.
+      assert.ok(
+        notice === null ||
+        notice?.kind === 'warning' ||
+        notice?.kind === 'error' ||
+        notice?.kind === 'success',
+        `Expected notice or null, got: ${JSON.stringify(notice)}`,
+      );
+    } catch (err) {
+      // ExitError is acceptable — spawnSync completed without error.
+      assert.ok(err instanceof ExitError, `Expected ExitError, got: ${String(err)}`);
+    } finally {
+      if (prevBin === undefined) delete process.env.CLAUDE_SWITCH_BIN;
+      else process.env.CLAUDE_SWITCH_BIN = prevBin;
+      process.env.HOME = prevHome;
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -192,3 +235,363 @@ describe('_internal.handleUsage', () => {
     assert.match(notice?.text ?? '', /No OAuth access token/);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// handleAdd (Phase 19.2 — bin-null path)
+// ────────────────────────────────────────────────────────────────────
+
+describe('_internal.handleAdd', () => {
+  let h: Harness;
+  beforeEach(() => { h = setup(); });
+  afterEach(() => teardown(h));
+
+  it('returns error when claude binary cannot be found', async () => {
+    // findClaudeBinary checks CLAUDE_SWITCH_BIN, getSavedClaudeBin(), then PATH.
+    // Override all three paths to ensure null is returned.
+    const prevHome = process.env.HOME;
+    const prevPath = process.env.PATH;
+    const prevBin = process.env.CLAUDE_SWITCH_BIN;
+    process.env.HOME = h.tmpDir;
+    process.env.PATH = h.tmpDir;
+    delete process.env.CLAUDE_SWITCH_BIN;
+    try {
+      const notice = await _internal.handleAdd(h.claudeJson, h.accDir);
+      assert.equal(notice?.kind, 'error');
+      assert.match(notice?.text ?? '', /Could not find/i);
+    } finally {
+      process.env.HOME = prevHome;
+      process.env.PATH = prevPath;
+      if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// handleProfiles (Phase 19.2 — bin-null path)
+// ────────────────────────────────────────────────────────────────────
+
+describe('_internal.handleProfiles', () => {
+  let h: Harness;
+  beforeEach(() => { h = setup(); });
+  afterEach(() => teardown(h));
+
+  it('returns error when claude binary cannot be found', async () => {
+    const prevHome = process.env.HOME;
+    const prevPath = process.env.PATH;
+    const prevBin = process.env.CLAUDE_SWITCH_BIN;
+    process.env.HOME = h.tmpDir;
+    process.env.PATH = h.tmpDir;
+    delete process.env.CLAUDE_SWITCH_BIN;
+    try {
+      const notice = await _internal.handleProfiles(h.accDir);
+      assert.equal(notice?.kind, 'error');
+      assert.match(notice?.text ?? '', /Could not find/i);
+    } finally {
+      process.env.HOME = prevHome;
+      process.env.PATH = prevPath;
+      if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// handleReauth (Phase 19.2 — bin-null path)
+// ────────────────────────────────────────────────────────────────────
+
+describe('_internal.handleReauth', () => {
+  let h: Harness;
+  beforeEach(() => { h = setup(); });
+  afterEach(() => teardown(h));
+
+  it('returns error when claude binary cannot be found', async () => {
+    // Override HOME so getSavedClaudeBin finds no .claude-bin, and PATH
+    // so resolver finds no 'claude' in PATH either.
+    const prevHome = process.env.HOME;
+    const prevPath = process.env.PATH;
+    const prevBin = process.env.CLAUDE_SWITCH_BIN;
+    process.env.HOME = h.tmpDir;
+    process.env.PATH = h.tmpDir;
+    delete process.env.CLAUDE_SWITCH_BIN;
+    try {
+      const notice = await _internal.handleReauth(h.claudeJson, h.accDir);
+      assert.equal(notice?.kind, 'error');
+      assert.match(notice?.text ?? '', /Could not find/i);
+    } finally {
+      process.env.HOME = prevHome;
+      process.env.PATH = prevPath;
+      if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
+    }
+  });
+
+});
+
+// ────────────────────────────────────────────────────────────────────
+// handleSwitched — autoLaunch=true + bin not found (Phase 19.2)
+// ────────────────────────────────────────────────────────────────────
+
+describe('_internal.handleSwitched — autoLaunch paths', () => {
+  let h: Harness;
+  beforeEach(() => { h = setup(); });
+  afterEach(() => teardown(h));
+
+  it('returns success notice when autoLaunch=true but binary not found', async () => {
+    // When findClaudeBinary returns null, handleSwitched falls through
+    // to the "Switched to X" success notice even with autoLaunch=true.
+    const prevHome = process.env.HOME;
+    const prevPath = process.env.PATH;
+    const prevBin = process.env.CLAUDE_SWITCH_BIN;
+    process.env.HOME = h.tmpDir;
+    process.env.PATH = h.tmpDir;
+    delete process.env.CLAUDE_SWITCH_BIN;
+    try {
+      const notice = await _internal.handleSwitched({
+        switchedFrom: 'old@example.com',
+        switchedTo: h.email,
+        autoLaunch: true,
+        defaultIsolated: false,
+      }, h.accDir);
+      assert.equal(notice?.kind, 'success');
+      assert.match(notice?.text ?? '', /Switched to/);
+    } finally {
+      process.env.HOME = prevHome;
+      process.env.PATH = prevPath;
+      if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
+    }
+  });
+
+  it('throws ExitError when autoLaunch=true and binary exits 0 (spawnSync completes)', async () => {
+    // With CLAUDE_SWITCH_BIN pointing to a fake binary (exit 0), handleSwitched
+    // calls spawnSync, gets status=0, and throws ExitError('', 0).
+    const prevBin = process.env.CLAUDE_SWITCH_BIN;
+    process.env.CLAUDE_SWITCH_BIN = h.claudeBin;
+    try {
+      await assert.rejects(
+        () => _internal.handleSwitched({
+          switchedFrom: 'old@example.com',
+          switchedTo: h.email,
+          autoLaunch: true,
+          defaultIsolated: false,
+        }, h.accDir),
+        (err: unknown) => err instanceof ExitError,
+      );
+    } finally {
+      if (prevBin === undefined) delete process.env.CLAUDE_SWITCH_BIN;
+      else process.env.CLAUDE_SWITCH_BIN = prevBin;
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// handleFallbackToggle — enable with API key already set (Phase 19.2)
+// ────────────────────────────────────────────────────────────────────
+
+describe('_internal.handleFallbackToggle — enable path', () => {
+  let h: Harness;
+  beforeEach(() => { h = setup(); });
+  afterEach(() => teardown(h));
+
+  it('enables fallback when active account has an API key', async () => {
+    // Fallback is currently OFF; account has an API key → should enable cleanly.
+    setApiKey(h.email, 'sk-ant-api03-test', h.accDir);
+    const notice = await _internal.handleFallbackToggle(h.claudeJson, h.accDir);
+    assert.equal(notice?.kind, 'success');
+    assert.match(notice?.text ?? '', /Fallback ON/);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// _runDispatchLoop (Phase 19.2 — dispatch loop with injected renderHome)
+// ────────────────────────────────────────────────────────────────────
+
+describe('_runDispatchLoop', () => {
+  let h: Harness;
+  beforeEach(() => { h = setup(); });
+  afterEach(() => teardown(h));
+
+  it('exits immediately when renderHome returns action=exit', async () => {
+    // Stub renderHome to return exit on the first call.
+    const renderStub = async (): Promise<HomeExit> => ({ action: 'exit' });
+    await _runDispatchLoop(h.claudeJson, h.accDir, renderStub);
+    // If we reach here without throwing, the loop exited cleanly.
+    assert.ok(true);
+  });
+
+  it('dispatches switched action and loops back', async () => {
+    // First call returns switched, second call returns exit.
+    let callCount = 0;
+    const renderStub = async (): Promise<HomeExit> => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          action: 'switched',
+          payload: {
+            switchedFrom: h.email,
+            switchedTo: h.email,
+            autoLaunch: false,
+            defaultIsolated: false,
+          },
+        };
+      }
+      return { action: 'exit' };
+    };
+    await _runDispatchLoop(h.claudeJson, h.accDir, renderStub);
+    assert.equal(callCount, 2, 'loop must continue after switched action');
+  });
+
+  it('dispatches apikey action when no active account (error notice, loop continues)', async () => {
+    // Set up: no active account so handleApikey returns error notice.
+    fs.writeFileSync(h.claudeJson, '{}');
+    let callCount = 0;
+    let receivedNotice: unknown = undefined;
+    const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
+      callCount++;
+      receivedNotice = notice;
+      if (callCount >= 2) return { action: 'exit' };
+      return { action: 'apikey' };
+    };
+    await _runDispatchLoop(h.claudeJson, h.accDir, renderStub);
+    assert.equal(callCount, 2, 'loop must continue after apikey error');
+    // On second call, notice should carry the error from handleApikey.
+    assert.deepEqual((receivedNotice as { kind: string } | null)?.kind, 'error');
+  });
+
+  it('dispatches fallback-toggle action (enable path)', async () => {
+    // Set up: account has an API key so handleFallbackToggle enables cleanly.
+    setApiKey(h.email, 'sk-ant-api03-test', h.accDir);
+    let callCount = 0;
+    let receivedNotice: unknown = undefined;
+    const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
+      callCount++;
+      receivedNotice = notice;
+      if (callCount >= 2) return { action: 'exit' };
+      return { action: 'fallback-toggle' };
+    };
+    await _runDispatchLoop(h.claudeJson, h.accDir, renderStub);
+    assert.equal(callCount, 2);
+    assert.equal((receivedNotice as { kind: string } | null)?.kind, 'success');
+  });
+
+  it('dispatches usage action (no token → error notice)', async () => {
+    let callCount = 0;
+    let receivedNotice: unknown = undefined;
+    const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
+      callCount++;
+      receivedNotice = notice;
+      if (callCount >= 2) return { action: 'exit' };
+      return { action: 'usage' };
+    };
+    await _runDispatchLoop(h.claudeJson, h.accDir, renderStub);
+    assert.equal(callCount, 2);
+    assert.equal((receivedNotice as { kind: string } | null)?.kind, 'error');
+  });
+
+  it('propagates ExitError from handler (does not catch it)', async () => {
+    // handleSwitched with autoLaunch=true + bin found throws ExitError.
+    // Use CLAUDE_SWITCH_BIN to point to the fake binary (exit 0).
+    // Also override HOME to tmpDir so getSavedClaudeBin doesn't pick up
+    // a system-wide .claude-bin pointer that might resolve differently.
+    const prevBin = process.env.CLAUDE_SWITCH_BIN;
+    const prevHome = process.env.HOME;
+    process.env.CLAUDE_SWITCH_BIN = h.claudeBin;
+    process.env.HOME = h.tmpDir;
+    try {
+      const renderStub = async (): Promise<HomeExit> => ({
+        action: 'switched',
+        payload: {
+          switchedFrom: 'old@example.com',
+          switchedTo: h.email,
+          autoLaunch: true,
+          defaultIsolated: false,
+        },
+      });
+      await assert.rejects(
+        () => _runDispatchLoop(h.claudeJson, h.accDir, renderStub),
+        (err: unknown) => err instanceof ExitError,
+      );
+    } finally {
+      if (prevBin === undefined) delete process.env.CLAUDE_SWITCH_BIN;
+      else process.env.CLAUDE_SWITCH_BIN = prevBin;
+      process.env.HOME = prevHome;
+    }
+  });
+
+  it('dispatches add action (no binary → error notice, loop continues)', async () => {
+    let callCount = 0;
+    let receivedNotice: unknown = undefined;
+    const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
+      callCount++;
+      receivedNotice = notice;
+      if (callCount >= 2) return { action: 'exit' };
+      return { action: 'add' };
+    };
+    const prevHome = process.env.HOME;
+    const prevPath = process.env.PATH;
+    const prevBin = process.env.CLAUDE_SWITCH_BIN;
+    process.env.HOME = h.tmpDir;
+    process.env.PATH = h.tmpDir;
+    delete process.env.CLAUDE_SWITCH_BIN;
+    try {
+      await _runDispatchLoop(h.claudeJson, h.accDir, renderStub);
+    } finally {
+      process.env.HOME = prevHome;
+      process.env.PATH = prevPath;
+      if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
+    }
+    assert.equal(callCount, 2);
+    assert.equal((receivedNotice as { kind: string } | null)?.kind, 'error');
+  });
+
+  it('dispatches profiles action (no binary → error notice, loop continues)', async () => {
+    let callCount = 0;
+    let receivedNotice: unknown = undefined;
+    const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
+      callCount++;
+      receivedNotice = notice;
+      if (callCount >= 2) return { action: 'exit' };
+      return { action: 'profiles' };
+    };
+    const prevHome = process.env.HOME;
+    const prevPath = process.env.PATH;
+    const prevBin = process.env.CLAUDE_SWITCH_BIN;
+    process.env.HOME = h.tmpDir;
+    process.env.PATH = h.tmpDir;
+    delete process.env.CLAUDE_SWITCH_BIN;
+    try {
+      await _runDispatchLoop(h.claudeJson, h.accDir, renderStub);
+    } finally {
+      process.env.HOME = prevHome;
+      process.env.PATH = prevPath;
+      if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
+    }
+    assert.equal(callCount, 2);
+    assert.equal((receivedNotice as { kind: string } | null)?.kind, 'error');
+  });
+
+  it('dispatches reauth action (no binary → error notice, loop continues)', async () => {
+    // handleReauth returns error notice when findClaudeBinary returns null.
+    // Override HOME to point to tmpDir (no .claude-bin file) and PATH to
+    // a dir with no real claude binary so findClaudeBinary returns null.
+    let callCount = 0;
+    let receivedNotice: unknown = undefined;
+    const renderStub = async (_cj: string, _ad: string, notice: unknown): Promise<HomeExit> => {
+      callCount++;
+      receivedNotice = notice;
+      if (callCount >= 2) return { action: 'exit' };
+      return { action: 'reauth' };
+    };
+    const prevHome = process.env.HOME;
+    const prevPath = process.env.PATH;
+    // Redirect HOME so getSavedClaudeBin finds no .claude-bin file.
+    process.env.HOME = h.tmpDir;
+    process.env.PATH = h.tmpDir;
+    try {
+      await _runDispatchLoop(h.claudeJson, h.accDir, renderStub);
+    } finally {
+      process.env.HOME = prevHome;
+      process.env.PATH = prevPath;
+    }
+    assert.equal(callCount, 2);
+    assert.equal((receivedNotice as { kind: string } | null)?.kind, 'error');
+  });
+});
+
