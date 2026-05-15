@@ -26,7 +26,7 @@ interface Preview {
   hadAliases: boolean;
 }
 
-function buildPreview(email: string, accountsDirPath: string): Preview | { error: string } {
+export function buildPreview(email: string, accountsDirPath: string): Preview | { error: string } {
   const accountFile = path.join(accountsDirPath, `${email}.json`);
   if (!fs.existsSync(accountFile)) {
     return { error: `No saved account for ${email}.` };
@@ -63,7 +63,7 @@ interface Props {
   onDone: (result: RemoveAccountResult) => void;
 }
 
-function RemoveAccountScreen({ email, claudeJsonPath, accountsDirPath, initialStep, onDone }: Props) {
+export function RemoveAccountScreen({ email, claudeJsonPath, accountsDirPath, initialStep, onDone }: Props) {
   const { exit } = useApp();
   const [step, setStep] = useState<Step>(initialStep);
 
