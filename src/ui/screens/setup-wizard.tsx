@@ -27,6 +27,27 @@ import {
 import { ORANGE } from '../theme.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 
+/** Injectable dependencies — used for testing. All optional; default to real implementations. */
+export interface SetupDeps {
+  findRealClaude: (selfPath: string) => string | null;
+  saveClaudeBin: (path: string) => void;
+  getNpmBinDir: () => string | null;
+  detectShellConfigs: () => string[];
+  patchShellConfig: (cfg: string, npmBin: string) => boolean;
+  detectExistingStatusLine: () => DetectedExisting;
+  installStatusLine: (command: string) => void;
+}
+
+const defaultDeps: SetupDeps = {
+  findRealClaude,
+  saveClaudeBin,
+  getNpmBinDir,
+  detectShellConfigs,
+  patchShellConfig,
+  detectExistingStatusLine,
+  installStatusLine,
+};
+
 export interface SetupWizardResult {
   binPath: string | null;
   patchedConfigs: string[];
@@ -57,6 +78,8 @@ type Step =
 interface Props {
   selfPath: string;
   onDone: (result: SetupWizardResult) => void;
+  /** Override system probes for testing — all optional, default to real implementations. */
+  deps?: Partial<SetupDeps>;
 }
 
 const REPLACE_CHAIN_OPTS = [
@@ -70,8 +93,9 @@ const VARIANT_OPTS = [
   { value: 'ccstatusline', label: 'Badge + ccstatusline', hint: 'fancy bar — needs npx + ccstatusline' },
 ] as const;
 
-export function SetupScreen({ selfPath, onDone }: Props) {
+export function SetupScreen({ selfPath, onDone, deps: depsOverride }: Props) {
   const { exit } = useApp();
+  const d: SetupDeps = { ...defaultDeps, ...depsOverride };
   const [step, setStep] = useState<Step>({ kind: 'detect-bin' });
 
   const finish = (result: SetupWizardResult): void => {
@@ -83,9 +107,9 @@ export function SetupScreen({ selfPath, onDone }: Props) {
   // `step.kind` transition that needs a side effect.
   useEffect(() => {
     if (step.kind === 'detect-bin') {
-      const realClaude = findRealClaude(selfPath);
+      const realClaude = d.findRealClaude(selfPath);
       if (realClaude) {
-        saveClaudeBin(realClaude);
+        d.saveClaudeBin(realClaude);
         setStep({ kind: 'detect-shell', binPath: realClaude });
       } else {
         setStep({ kind: 'manual-bin' });
@@ -94,12 +118,12 @@ export function SetupScreen({ selfPath, onDone }: Props) {
     }
 
     if (step.kind === 'detect-shell') {
-      const npmBin = getNpmBinDir();
+      const npmBin = d.getNpmBinDir();
       if (!npmBin) {
         setStep({ kind: 'no-npm-bin', binPath: step.binPath });
         return;
       }
-      const configs = detectShellConfigs();
+      const configs = d.detectShellConfigs();
       if (configs.length === 0) {
         setStep({ kind: 'no-shell-config', binPath: step.binPath, npmBin });
         return;
@@ -127,7 +151,7 @@ export function SetupScreen({ selfPath, onDone }: Props) {
   const startStatusLine = (binPath: string | null, npmBin: string, patched: string[]): void => {
     let existing: DetectedExisting;
     try {
-      existing = detectExistingStatusLine();
+      existing = d.detectExistingStatusLine();
     } catch {
       existing = { kind: 'absent' };
     }
@@ -153,7 +177,7 @@ export function SetupScreen({ selfPath, onDone }: Props) {
   ): void => {
     let installed = false;
     try {
-      installStatusLine(command);
+      d.installStatusLine(command);
       installed = true;
     } catch {
       installed = false;
@@ -174,7 +198,7 @@ export function SetupScreen({ selfPath, onDone }: Props) {
       setStep({ kind: 'detect-shell', binPath: null });
       return;
     }
-    saveClaudeBin(trimmed);
+    d.saveClaudeBin(trimmed);
     setStep({ kind: 'detect-shell', binPath: trimmed });
   };
 
@@ -183,7 +207,7 @@ export function SetupScreen({ selfPath, onDone }: Props) {
     const patched: string[] = [];
     for (const cfg of selected) {
       try {
-        if (patchShellConfig(cfg, step.npmBin)) patched.push(cfg);
+        if (d.patchShellConfig(cfg, step.npmBin)) patched.push(cfg);
       } catch {
         /* keep going — surface what worked in the summary */
       }
