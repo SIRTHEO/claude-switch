@@ -36,7 +36,7 @@ interface Props {
   onDone: (result: SetApiKeyResult) => void;
 }
 
-function ApikeyScreen({ email, accountsDirPath, onDone }: Props) {
+export function ApikeyScreen({ email, accountsDirPath, onDone }: Props) {
   const { exit } = useApp();
   const existing = getApiKey(email, accountsDirPath);
   const [step, setStep] = useState<Step>(
