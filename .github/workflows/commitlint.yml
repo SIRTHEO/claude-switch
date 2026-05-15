@@ -1,0 +1,35 @@
+name: Commit Lint
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate conventional commits
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          BAD=$(git log "$BASE..$HEAD" --format='%s' | \
+            grep -vE '^(feat|fix|chore|docs|refactor|test|perf|build|ci|revert)(\([^)]+\))?(!)?:' || true)
+          if [ -n "$BAD" ]; then
+            echo "Non-conventional commits detected:"
+            echo "$BAD" | sed 's/^/  /'
+            echo ""
+            echo "Each commit message must match:"
+            echo "  <type>[optional scope][optional !]: <description>"
+            echo ""
+            echo "Allowed types: feat, fix, chore, docs, refactor, test, perf, build, ci, revert"
+            echo "Examples:"
+            echo "  feat: add oauth refresh"
+            echo "  fix(keychain): handle missing entry"
+            echo "  feat!: drop Node 18 support (breaking)"
+            exit 1
+          fi
+          echo "All commits conform to conventional commits"

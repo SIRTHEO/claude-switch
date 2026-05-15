@@ -130,6 +130,59 @@ migration pattern, see [`docs/internal/architecture.md`](docs/internal/architect
 For error-handling patterns + the audit predicate that flags new
 silent catches, see [`docs/internal/error-handling.md`](docs/internal/error-handling.md).
 
+## Conventional commits
+
+Every commit reachable from a PR targeting `main` is validated by CI
+(`commitlint.yml`). The message must match:
+
+```
+<type>[optional scope][optional !]: <description>
+```
+
+**Allowed types**
+
+| Type | When to use |
+|------|-------------|
+| `feat` | New user-facing feature |
+| `fix` | Bug fix |
+| `chore` | Tooling, dependencies, config (no prod code change) |
+| `docs` | Documentation only |
+| `refactor` | Code restructure without behaviour change |
+| `test` | Test additions or corrections |
+| `perf` | Performance improvement |
+| `build` | Build system or bundler changes |
+| `ci` | CI workflow changes |
+| `revert` | Reverts a previous commit |
+
+**Breaking changes**: append `!` before the colon (`feat!:` / `fix!:`).
+This triggers a major semver bump via release-please.
+
+**Yes (valid)**
+
+```
+feat: add oauth refresh
+fix(keychain): handle missing entry gracefully
+feat(profiles): CLAUDE_SWITCH_DEBUG_PROFILES diagnostic flag
+chore(release): coordinate Phase 17 release
+feat!: drop Node 18 support
+ci: auto-merge release-please PRs
+```
+
+**No (invalid)**
+
+```
+add oauth refresh          # missing type prefix
+Fixed the bug              # missing type prefix
+WIP                        # missing type prefix
+feat - add something       # dash instead of colon
+```
+
+**Scope** is optional but recommended for larger code areas
+(`keychain`, `profiles`, `proxy`, `ui`, `cli`, `ci`, `release`, etc.).
+
+release-please reads these prefixes to decide the semver bump: `feat` →
+minor, `fix` → patch, `!` → major, everything else → no release bump.
+
 ## Conventions
 
 - Conventional commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`,
