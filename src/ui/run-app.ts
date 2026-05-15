@@ -51,12 +51,83 @@ type Notice = Parameters<typeof renderHome>[2];
 export const _internal = {
   refreshUsageOnEntry,
   handleSwitched,
+  handleAdd,
   handleApikey,
   handleFallbackToggle,
   handleReauth,
   handleRemove,
+  handleProfiles,
   handleUsage,
 };
+
+/**
+ * Exposed for testing: runs the home-screen dispatch loop with a
+ * caller-supplied `renderHome` stub. Production code uses `runApp()`,
+ * which wires `renderHome` from `./screens/home.js`. Zero behavior
+ * difference — only the rendering dependency is injected.
+ *
+ * @internal
+ */
+export async function _runDispatchLoop(
+  claudeJsonPath: string,
+  accountsDirPath: string,
+  renderHomeFn: typeof renderHome,
+): Promise<void> {
+  let notice: Notice = null;
+  while (true) {
+    const r: HomeExit = await renderHomeFn(claudeJsonPath, accountsDirPath, notice);
+    notice = null;
+
+    try {
+      switch (r.action) {
+        case 'exit':
+          return;
+        case 'switched':
+          if (r.payload) {
+            const sw = await handleSwitched(r.payload, accountsDirPath);
+            if (sw) notice = sw;
+          }
+          break;
+        case 'add':
+          notice = await handleAdd(claudeJsonPath, accountsDirPath);
+          break;
+        case 'manage':
+          await runManageAccount(claudeJsonPath, accountsDirPath);
+          break;
+        case 'apikey':
+          notice = await handleApikey(claudeJsonPath, accountsDirPath);
+          break;
+        case 'fallback-toggle':
+          notice = await handleFallbackToggle(claudeJsonPath, accountsDirPath);
+          break;
+        case 'auto-fallback':
+          await runAutoFallbackScreen(accountsDirPath);
+          break;
+        case 'profiles':
+          notice = await handleProfiles(accountsDirPath);
+          break;
+        case 'usage':
+          notice = await handleUsage(claudeJsonPath, accountsDirPath);
+          break;
+        case 'reauth':
+          notice = await handleReauth(claudeJsonPath, accountsDirPath);
+          break;
+        case 'remove':
+          notice = await handleRemove(claudeJsonPath, accountsDirPath);
+          break;
+        case 'setup':
+          await runSetupWizardScreen(process.argv[1] ?? '');
+          break;
+        case 'settings':
+          await runSettingsScreen(accountsDirPath, getCurrent(claudeJsonPath) || null);
+          break;
+      }
+    } catch (e) {
+      if (e instanceof ExitError) throw e;
+      notice = { kind: 'error', text: e instanceof Error ? e.message : String(e) };
+    }
+  }
+}
 
 async function refreshUsageOnEntry(claudeJsonPath: string, accountsDirPath: string): Promise<void> {
   if (!readGlobalPrefs(accountsDirPath).refreshUsageOnEntry) return;
@@ -269,61 +340,7 @@ export async function runApp(claudeJsonPath: string, accountsDirPath: string): P
 
   try {
   await refreshUsageOnEntry(claudeJsonPath, accountsDirPath);
-
-  let notice: Notice = null;
-  while (true) {
-    const r: HomeExit = await renderHome(claudeJsonPath, accountsDirPath, notice);
-    notice = null;
-
-    try {
-      switch (r.action) {
-        case 'exit':
-          return;
-        case 'switched':
-          if (r.payload) {
-            const sw = await handleSwitched(r.payload, accountsDirPath);
-            if (sw) notice = sw;
-          }
-          break;
-        case 'add':
-          notice = await handleAdd(claudeJsonPath, accountsDirPath);
-          break;
-        case 'manage':
-          await runManageAccount(claudeJsonPath, accountsDirPath);
-          break;
-        case 'apikey':
-          notice = await handleApikey(claudeJsonPath, accountsDirPath);
-          break;
-        case 'fallback-toggle':
-          notice = await handleFallbackToggle(claudeJsonPath, accountsDirPath);
-          break;
-        case 'auto-fallback':
-          await runAutoFallbackScreen(accountsDirPath);
-          break;
-        case 'profiles':
-          notice = await handleProfiles(accountsDirPath);
-          break;
-        case 'usage':
-          notice = await handleUsage(claudeJsonPath, accountsDirPath);
-          break;
-        case 'reauth':
-          notice = await handleReauth(claudeJsonPath, accountsDirPath);
-          break;
-        case 'remove':
-          notice = await handleRemove(claudeJsonPath, accountsDirPath);
-          break;
-        case 'setup':
-          await runSetupWizardScreen(process.argv[1] ?? '');
-          break;
-        case 'settings':
-          await runSettingsScreen(accountsDirPath, getCurrent(claudeJsonPath) || null);
-          break;
-      }
-    } catch (e) {
-      if (e instanceof ExitError) throw e;  // let finally restore buffer, then handleError exits
-      notice = { kind: 'error', text: e instanceof Error ? e.message : String(e) };
-    }
-  }
+  await _runDispatchLoop(claudeJsonPath, accountsDirPath, renderHome);
   } finally {
     restoreBuffer();
     if (useAlt) {
