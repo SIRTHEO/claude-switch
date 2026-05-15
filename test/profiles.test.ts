@@ -193,6 +193,12 @@ describe('importProfileFromAccount', () => {
   });
 
   it('rejects symlink account files', () => {
+    // Symlinks on Windows require elevated privileges (developer mode or admin),
+    // which CI runners do not have. The lstat-based rejection still applies
+    // on Windows in production, but exercising it from a test requires symlink
+    // creation which fails with EPERM in CI. Skip on win32.
+    if (process.platform === 'win32') return;
+
     // Plant a symlink in the accounts directory and confirm we refuse to
     // follow it into another location.
     const target = path.join(tmpHome, 'sneaky.json');

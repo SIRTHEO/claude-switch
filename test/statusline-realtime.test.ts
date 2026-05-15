@@ -57,6 +57,7 @@ function runStatusline(
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
+    USERPROFILE: home,
     CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1',
   };
   if (opts.configDir) {
@@ -83,6 +84,7 @@ function runSwitch(home: string, target: string): { status: number | null; stder
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
+    USERPROFILE: home,
     CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1',
   };
   delete env.CLAUDE_CONFIG_DIR;

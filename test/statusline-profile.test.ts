@@ -30,6 +30,7 @@ function runStatusline(home: string, configDir?: string): StatuslineJson {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
+    USERPROFILE: home, // Windows: os.homedir() reads USERPROFILE, not HOME
     CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1', // hot-path for tests; no Keychain prompts
   };
   if (configDir) env.CLAUDE_CONFIG_DIR = configDir;

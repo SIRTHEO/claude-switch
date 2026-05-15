@@ -137,6 +137,11 @@ describe('handleList — with accounts', () => {
   });
 
   it('writes a warning to stderr when claude.json is unreadable but still lists accounts', () => {
+    // chmod 0o000 doesn't make files unreadable on Windows — the NTFS ACL model
+    // is independent of POSIX permission bits. Skip on win32; the production
+    // path is identical and exercised on macOS + linux CI matrix entries.
+    if (process.platform === 'win32') return;
+
     // Make the file unreadable by replacing it with something unreadable
     fs.chmodSync(h.claudeJson, 0o000);
     h.stdout.length = 0;

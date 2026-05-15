@@ -105,6 +105,7 @@ function runStatuslineJson(
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
+    USERPROFILE: home, // Windows: os.homedir() reads USERPROFILE, not HOME
     CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1',
     // Unset CLAUDE_CONFIG_DIR so profile override doesn't interfere.
     CLAUDE_CONFIG_DIR: undefined,
