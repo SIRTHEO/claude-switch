@@ -15,6 +15,7 @@ import {
   summariseCacheHealth,
   encodeProjectPath,
   findActiveSessionJsonl,
+  loadActiveSessionHealth,
 } from '../src/cache-health.js';
 
 // ---------------------------------------------------------------------------
@@ -427,5 +428,121 @@ describe('findActiveSessionJsonl — multiple jsonl files', () => {
 
     const result = findActiveSessionJsonl(tmpBase, '/foo/bar');
     assert.strictEqual(result, jsonlFile);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loadActiveSessionHealth (Phase 15.3)
+// ---------------------------------------------------------------------------
+
+describe('loadActiveSessionHealth — null when no active session', () => {
+  let tmpBase: string;
+  beforeEach(() => { tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-lash-null-')); });
+  afterEach(() => { fs.rmSync(tmpBase, { recursive: true, force: true }); });
+
+  it('returns null when findActiveSessionJsonl returns null (no project dir)', () => {
+    // tmpBase has no sub-directory for the cwd — findActiveSessionJsonl returns null
+    const result = loadActiveSessionHealth({
+      claudeProjectsDir: tmpBase,
+      projectCwd: '/totally/nonexistent/path',
+    });
+    assert.strictEqual(result, null);
+  });
+});
+
+describe('loadActiveSessionHealth — in-process 1s cache (readFileSync called once)', () => {
+  let tmpBase: string;
+  let projectDir: string;
+  let jsonlPath: string;
+
+  beforeEach(() => {
+    tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-lash-cache-'));
+    const projectCwd = '/test/cache/project';
+    const encoded = encodeProjectPath(projectCwd);
+    projectDir = path.join(tmpBase, encoded);
+    fs.mkdirSync(projectDir, { recursive: true });
+    jsonlPath = path.join(projectDir, 'session.jsonl');
+
+    // Write a valid JSONL with 1 assistant entry
+    const entry = {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        usage: {
+          cache_read_input_tokens: 1000,
+          cache_creation_input_tokens: 500,
+          input_tokens: 100,
+        },
+      },
+    };
+    fs.writeFileSync(jsonlPath, JSON.stringify(entry) + '\n');
+  });
+
+  afterEach(() => { fs.rmSync(tmpBase, { recursive: true, force: true }); });
+
+  it('reads the file exactly once for 3 consecutive calls within TTL (same now())', (t) => {
+    // Freeze time so TTL never expires
+    const frozenNow = Date.now();
+    const mockNow = () => frozenNow;
+
+    let readCallCount = 0;
+    const originalReadFileSync = fs.readFileSync;
+
+    // Spy: count calls to readFileSync that target our jsonl (ignore other calls)
+    // t.mock.method auto-restores after the test; no manual restore needed.
+    t.mock.method(fs, 'readFileSync', (p: unknown, ...rest: unknown[]) => {
+      if (p === jsonlPath) readCallCount++;
+      // Forward to original (cast needed for overloaded signature — per repo convention for JSON.parse)
+      return (originalReadFileSync as (...a: unknown[]) => unknown)(p, ...rest);
+    });
+
+    const opts = { claudeProjectsDir: tmpBase, projectCwd: '/test/cache/project', now: mockNow };
+
+    const r1 = loadActiveSessionHealth(opts);
+    const r2 = loadActiveSessionHealth(opts);
+    const r3 = loadActiveSessionHealth(opts);
+
+    // All three should return the same non-null summary
+    assert.ok(r1 !== null, 'r1 should not be null');
+    assert.strictEqual(r1?.turns, 1);
+    assert.deepStrictEqual(r1, r2);
+    assert.deepStrictEqual(r2, r3);
+
+    // readFileSync must have been called exactly once (cache served r2, r3)
+    assert.strictEqual(readCallCount, 1, `readFileSync called ${readCallCount} times, expected 1`);
+  });
+
+  it('re-reads the file after TTL expires (now() + 1100ms)', (t) => {
+    let tick = Date.now();
+
+    let readCallCount = 0;
+    const originalReadFileSync = fs.readFileSync;
+
+    // t.mock.method auto-restores after the test.
+    t.mock.method(fs, 'readFileSync', (p: unknown, ...rest: unknown[]) => {
+      if (p === jsonlPath) readCallCount++;
+      return (originalReadFileSync as (...a: unknown[]) => unknown)(p, ...rest);
+    });
+
+    const opts = {
+      claudeProjectsDir: tmpBase,
+      projectCwd: '/test/cache/project',
+      now: () => tick,
+    };
+
+    // First call — populates cache (expiresAt = tick + 1000)
+    const r1 = loadActiveSessionHealth(opts);
+    assert.ok(r1 !== null);
+    assert.strictEqual(readCallCount, 1);
+
+    // Advance 500ms — still within TTL → cache hit
+    tick += 500;
+    loadActiveSessionHealth(opts);
+    assert.strictEqual(readCallCount, 1, 'should still be 1 after 500ms');
+
+    // Advance another 601ms (total 1101ms) — TTL expired → cache miss → re-read
+    tick += 601;
+    loadActiveSessionHealth(opts);
+    assert.strictEqual(readCallCount, 2, 'should be 2 after TTL expires');
   });
 });
