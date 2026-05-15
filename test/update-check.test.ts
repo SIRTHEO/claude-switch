@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isNewer, detectInstallCommand, checkForUpdate, writeUpdateCache } from '../src/update-check.js';
+import { setFakeHome, restoreFakeHome } from './_helpers/fake-home.js';
 
 describe('isNewer', () => {
   it('returns true when latest is a higher patch', () => {
@@ -63,12 +64,11 @@ describe('checkForUpdate / writeUpdateCache — type guard coverage', () => {
   // path.  We use a temp HOME to isolate from the real cache.
   function withTempHome(fn: (home: string) => void): void {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
-    const orig = process.env.HOME;
+    const saved = setFakeHome(tmp);
     try {
-      process.env.HOME = tmp;
       fn(tmp);
     } finally {
-      process.env.HOME = orig;
+      restoreFakeHome(saved);
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   }

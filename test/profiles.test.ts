@@ -14,27 +14,19 @@ import {
   importProfileFromAccount,
   ensureProfileForAccount,
 } from '../src/profiles.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 // All tests redirect HOME so the profiles dir is sandboxed in /tmp.
 // On Windows, os.homedir() uses USERPROFILE (not HOME), so both are set.
 let tmpHome: string;
-let origHome: string | undefined;
-let origUserProfile: string | undefined;
+let savedHome: SavedHome;
 
 beforeEach(() => {
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-profiles-'));
-  origHome = process.env.HOME;
-  origUserProfile = process.env.USERPROFILE;
-  process.env.HOME = tmpHome;
-  if (process.platform === 'win32') process.env.USERPROFILE = tmpHome;
+  savedHome = setFakeHome(tmpHome);
 });
 afterEach(() => {
-  if (origHome === undefined) delete process.env.HOME;
-  else process.env.HOME = origHome;
-  if (process.platform === 'win32') {
-    if (origUserProfile === undefined) delete process.env.USERPROFILE;
-    else process.env.USERPROFILE = origUserProfile;
-  }
+  restoreFakeHome(savedHome);
   fs.rmSync(tmpHome, { recursive: true, force: true });
 });
 
@@ -517,6 +509,7 @@ describe('ensureProfileForAccount — built-in refresh (Phase 12.3)', () => {
 
 describe('CLAUDE_SWITCH_DEBUG_PROFILES', () => {
   let tmpHome2: string;
+  let savedHome2: SavedHome;
   let accountsDir2: string;
   let origDebug: string | undefined;
   let origDisableKc: string | undefined;
@@ -525,7 +518,7 @@ describe('CLAUDE_SWITCH_DEBUG_PROFILES', () => {
     tmpHome2 = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-dbg-'));
     accountsDir2 = path.join(tmpHome2, 'accounts');
     fs.mkdirSync(accountsDir2, { recursive: true });
-    process.env.HOME = tmpHome2;
+    savedHome2 = setFakeHome(tmpHome2);
     origDebug = process.env.CLAUDE_SWITCH_DEBUG_PROFILES;
     origDisableKc = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
     process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = '1';
@@ -536,6 +529,7 @@ describe('CLAUDE_SWITCH_DEBUG_PROFILES', () => {
     else process.env.CLAUDE_SWITCH_DEBUG_PROFILES = origDebug;
     if (origDisableKc === undefined) delete process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
     else process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = origDisableKc;
+    restoreFakeHome(savedHome2);
     fs.rmSync(tmpHome2, { recursive: true, force: true });
   });
 

@@ -31,6 +31,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ensureProfileForAccount } from '../src/profiles.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,21 +42,19 @@ const KEYCHAIN_DISABLED = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1';
 
 describe('profile spawn — integration with mock claude', () => {
   let tmpHome: string;
-  let origHome: string | undefined;
+  let savedHome: SavedHome;
   let accountsDir: string;
 
   beforeEach(() => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-spawn-'));
-    origHome = process.env.HOME;
-    process.env.HOME = tmpHome;
+    savedHome = setFakeHome(tmpHome);
     accountsDir = path.join(tmpHome, '.claude', 'accounts');
     fs.mkdirSync(accountsDir, { recursive: true });
     fs.mkdirSync(path.join(tmpHome, '.claude', 'profiles'), { recursive: true });
   });
 
   afterEach(() => {
-    if (origHome === undefined) delete process.env.HOME;
-    else process.env.HOME = origHome;
+    restoreFakeHome(savedHome);
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 

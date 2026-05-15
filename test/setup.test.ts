@@ -12,19 +12,19 @@ import {
   findRealClaude,
   runSetup,
 } from '../src/setup.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 describe('getSavedClaudeBin', () => {
   let tmpDir: string;
-  let origHome: string | undefined;
+  let savedHome: SavedHome;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-setup-'));
-    origHome = process.env.HOME;
-    process.env.HOME = tmpDir;
+    savedHome = setFakeHome(tmpDir);
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    restoreFakeHome(savedHome);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -53,16 +53,15 @@ describe('getSavedClaudeBin', () => {
 
 describe('saveClaudeBin', () => {
   let tmpDir: string;
-  let origHome: string | undefined;
+  let savedHome: SavedHome;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-setup-'));
-    origHome = process.env.HOME;
-    process.env.HOME = tmpDir;
+    savedHome = setFakeHome(tmpDir);
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    restoreFakeHome(savedHome);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -101,16 +100,15 @@ describe('getNpmBinDir', () => {
 
 describe('detectShellConfigs', () => {
   let tmpDir: string;
-  let origHome: string | undefined;
+  let savedHome: SavedHome;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-setup-'));
-    origHome = process.env.HOME;
-    process.env.HOME = tmpDir;
+    savedHome = setFakeHome(tmpDir);
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    restoreFakeHome(savedHome);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -239,19 +237,14 @@ describe('runSetup', () => {
 
   describe('first-run on fresh HOME', () => {
     let tmpHome: string;
-    let origHome: string | undefined;
-    let origUserProfile: string | undefined;
+    let savedHome: SavedHome;
     // Capture stdout so the test output stays clean.
     let stdoutBuffer: string[];
     let originalWrite: typeof process.stdout.write;
 
     beforeEach(() => {
       tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-runsetup-'));
-      origHome = process.env.HOME;
-      origUserProfile = process.env.USERPROFILE;
-      process.env.HOME = tmpHome;
-      // On Windows, os.homedir() uses USERPROFILE, not HOME.
-      if (process.platform === 'win32') process.env.USERPROFILE = tmpHome;
+      savedHome = setFakeHome(tmpHome);
       // Fake npm prefix points at a dir we can write into.
       const fakeNpmPrefix = path.join(tmpHome, 'fake-npm-global');
       fs.mkdirSync(path.join(fakeNpmPrefix, 'bin'), { recursive: true });
@@ -268,12 +261,7 @@ describe('runSetup', () => {
 
     afterEach(() => {
       process.stdout.write = originalWrite;
-      if (origHome !== undefined) process.env.HOME = origHome;
-      else delete process.env.HOME;
-      if (process.platform === 'win32') {
-        if (origUserProfile !== undefined) process.env.USERPROFILE = origUserProfile;
-        else delete process.env.USERPROFILE;
-      }
+      restoreFakeHome(savedHome);
       fs.rmSync(tmpHome, { recursive: true, force: true });
     });
 

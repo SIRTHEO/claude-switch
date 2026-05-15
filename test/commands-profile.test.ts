@@ -26,6 +26,7 @@ import {
 import { save as saveAccount } from '../src/accounts.js';
 import { ExitError } from '../src/errors.js';
 import type { CommandContext } from '../src/commands/context.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 // ---------------------------------------------------------------------------
 // Scaffolding
@@ -38,7 +39,7 @@ interface Harness {
   accDir: string;
   ctx: CommandContext;
   stdout: string[];
-  origHome: string | undefined;
+  savedHome: SavedHome;
 }
 
 function setup(activeEmail?: string): Harness {
@@ -63,18 +64,13 @@ function setup(activeEmail?: string): Harness {
     selfUrl: fileURLToPath(import.meta.url),
   };
 
-  const origHome = process.env['HOME'];
-  process.env['HOME'] = fakeHome;
+  const savedHome = setFakeHome(fakeHome);
 
-  return { tmpDir, fakeHome, claudeJson, accDir, ctx, stdout: [], origHome };
+  return { tmpDir, fakeHome, claudeJson, accDir, ctx, stdout: [], savedHome };
 }
 
 function teardown(h: Harness): void {
-  if (h.origHome !== undefined) {
-    process.env['HOME'] = h.origHome;
-  } else {
-    delete process.env['HOME'];
-  }
+  restoreFakeHome(h.savedHome);
   fs.rmSync(h.tmpDir, { recursive: true, force: true });
 }
 

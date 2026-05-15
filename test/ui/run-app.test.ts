@@ -23,6 +23,7 @@ import { save as saveAccount } from '../../src/accounts.js';
 import { setFallbackEnabled } from '../../src/fallback.js';
 import { setApiKey } from '../../src/apikey.js';
 import { writeGlobalPrefs } from '../../src/preferences.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from '../_helpers/fake-home.js';
 
 interface Harness {
   tmpDir: string;
@@ -137,9 +138,9 @@ describe('_internal.handleSwitched', () => {
     // ensureProfileForAccount may succeed (needsLogin=false) or throw — either
     // way, we verify the path is exercised and a notice (not a throw) comes back.
     const prevBin = process.env.CLAUDE_SWITCH_BIN;
-    const prevHome = process.env.HOME;
+    let savedHome: SavedHome;
     process.env.CLAUDE_SWITCH_BIN = h.claudeBin;
-    process.env.HOME = h.tmpDir;
+    savedHome = setFakeHome(h.tmpDir);
     try {
       const notice = await _internal.handleSwitched({
         switchedFrom: 'old@example.com',
@@ -162,7 +163,7 @@ describe('_internal.handleSwitched', () => {
     } finally {
       if (prevBin === undefined) delete process.env.CLAUDE_SWITCH_BIN;
       else process.env.CLAUDE_SWITCH_BIN = prevBin;
-      process.env.HOME = prevHome;
+      restoreFakeHome(savedHome);
     }
   });
 });
@@ -248,10 +249,10 @@ describe('_internal.handleAdd', () => {
   it('returns error when claude binary cannot be found', async () => {
     // findClaudeBinary checks CLAUDE_SWITCH_BIN, getSavedClaudeBin(), then PATH.
     // Override all three paths to ensure null is returned.
-    const prevHome = process.env.HOME;
+    let savedHome2: SavedHome;
     const prevPath = process.env.PATH;
     const prevBin = process.env.CLAUDE_SWITCH_BIN;
-    process.env.HOME = h.tmpDir;
+    savedHome2 = setFakeHome(h.tmpDir);
     process.env.PATH = h.tmpDir;
     delete process.env.CLAUDE_SWITCH_BIN;
     try {
@@ -259,7 +260,7 @@ describe('_internal.handleAdd', () => {
       assert.equal(notice?.kind, 'error');
       assert.match(notice?.text ?? '', /Could not find/i);
     } finally {
-      process.env.HOME = prevHome;
+      restoreFakeHome(savedHome2);
       process.env.PATH = prevPath;
       if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
     }
@@ -276,10 +277,10 @@ describe('_internal.handleProfiles', () => {
   afterEach(() => teardown(h));
 
   it('returns error when claude binary cannot be found', async () => {
-    const prevHome = process.env.HOME;
+    let savedHomeProfiles: SavedHome;
     const prevPath = process.env.PATH;
     const prevBin = process.env.CLAUDE_SWITCH_BIN;
-    process.env.HOME = h.tmpDir;
+    savedHomeProfiles = setFakeHome(h.tmpDir);
     process.env.PATH = h.tmpDir;
     delete process.env.CLAUDE_SWITCH_BIN;
     try {
@@ -287,7 +288,7 @@ describe('_internal.handleProfiles', () => {
       assert.equal(notice?.kind, 'error');
       assert.match(notice?.text ?? '', /Could not find/i);
     } finally {
-      process.env.HOME = prevHome;
+      restoreFakeHome(savedHomeProfiles);
       process.env.PATH = prevPath;
       if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
     }
@@ -306,10 +307,10 @@ describe('_internal.handleReauth', () => {
   it('returns error when claude binary cannot be found', async () => {
     // Override HOME so getSavedClaudeBin finds no .claude-bin, and PATH
     // so resolver finds no 'claude' in PATH either.
-    const prevHome = process.env.HOME;
+    let savedHomeReauth: SavedHome;
     const prevPath = process.env.PATH;
     const prevBin = process.env.CLAUDE_SWITCH_BIN;
-    process.env.HOME = h.tmpDir;
+    savedHomeReauth = setFakeHome(h.tmpDir);
     process.env.PATH = h.tmpDir;
     delete process.env.CLAUDE_SWITCH_BIN;
     try {
@@ -317,7 +318,7 @@ describe('_internal.handleReauth', () => {
       assert.equal(notice?.kind, 'error');
       assert.match(notice?.text ?? '', /Could not find/i);
     } finally {
-      process.env.HOME = prevHome;
+      restoreFakeHome(savedHomeReauth);
       process.env.PATH = prevPath;
       if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
     }
@@ -337,10 +338,10 @@ describe('_internal.handleSwitched — autoLaunch paths', () => {
   it('returns success notice when autoLaunch=true but binary not found', async () => {
     // When findClaudeBinary returns null, handleSwitched falls through
     // to the "Switched to X" success notice even with autoLaunch=true.
-    const prevHome = process.env.HOME;
+    let savedHomeSwitched: SavedHome;
     const prevPath = process.env.PATH;
     const prevBin = process.env.CLAUDE_SWITCH_BIN;
-    process.env.HOME = h.tmpDir;
+    savedHomeSwitched = setFakeHome(h.tmpDir);
     process.env.PATH = h.tmpDir;
     delete process.env.CLAUDE_SWITCH_BIN;
     try {
@@ -353,7 +354,7 @@ describe('_internal.handleSwitched — autoLaunch paths', () => {
       assert.equal(notice?.kind, 'success');
       assert.match(notice?.text ?? '', /Switched to/);
     } finally {
-      process.env.HOME = prevHome;
+      restoreFakeHome(savedHomeSwitched);
       process.env.PATH = prevPath;
       if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
     }
@@ -491,9 +492,9 @@ describe('_runDispatchLoop', () => {
     // Also override HOME to tmpDir so getSavedClaudeBin doesn't pick up
     // a system-wide .claude-bin pointer that might resolve differently.
     const prevBin = process.env.CLAUDE_SWITCH_BIN;
-    const prevHome = process.env.HOME;
+    let savedHomeLoop: SavedHome;
     process.env.CLAUDE_SWITCH_BIN = h.claudeBin;
-    process.env.HOME = h.tmpDir;
+    savedHomeLoop = setFakeHome(h.tmpDir);
     try {
       const renderStub = async (): Promise<HomeExit> => ({
         action: 'switched',
@@ -511,7 +512,7 @@ describe('_runDispatchLoop', () => {
     } finally {
       if (prevBin === undefined) delete process.env.CLAUDE_SWITCH_BIN;
       else process.env.CLAUDE_SWITCH_BIN = prevBin;
-      process.env.HOME = prevHome;
+      restoreFakeHome(savedHomeLoop);
     }
   });
 
@@ -524,16 +525,15 @@ describe('_runDispatchLoop', () => {
       if (callCount >= 2) return { action: 'exit' };
       return { action: 'add' };
     };
-    const prevHome = process.env.HOME;
+    const savedHome = setFakeHome(h.tmpDir);
     const prevPath = process.env.PATH;
     const prevBin = process.env.CLAUDE_SWITCH_BIN;
-    process.env.HOME = h.tmpDir;
     process.env.PATH = h.tmpDir;
     delete process.env.CLAUDE_SWITCH_BIN;
     try {
       await _runDispatchLoop(h.claudeJson, h.accDir, renderStub);
     } finally {
-      process.env.HOME = prevHome;
+      restoreFakeHome(savedHome);
       process.env.PATH = prevPath;
       if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
     }
@@ -550,16 +550,15 @@ describe('_runDispatchLoop', () => {
       if (callCount >= 2) return { action: 'exit' };
       return { action: 'profiles' };
     };
-    const prevHome = process.env.HOME;
+    const savedHome = setFakeHome(h.tmpDir);
     const prevPath = process.env.PATH;
     const prevBin = process.env.CLAUDE_SWITCH_BIN;
-    process.env.HOME = h.tmpDir;
     process.env.PATH = h.tmpDir;
     delete process.env.CLAUDE_SWITCH_BIN;
     try {
       await _runDispatchLoop(h.claudeJson, h.accDir, renderStub);
     } finally {
-      process.env.HOME = prevHome;
+      restoreFakeHome(savedHome);
       process.env.PATH = prevPath;
       if (prevBin !== undefined) process.env.CLAUDE_SWITCH_BIN = prevBin;
     }
@@ -579,15 +578,14 @@ describe('_runDispatchLoop', () => {
       if (callCount >= 2) return { action: 'exit' };
       return { action: 'reauth' };
     };
-    const prevHome = process.env.HOME;
+    const savedHome = setFakeHome(h.tmpDir);
     const prevPath = process.env.PATH;
     // Redirect HOME so getSavedClaudeBin finds no .claude-bin file.
-    process.env.HOME = h.tmpDir;
     process.env.PATH = h.tmpDir;
     try {
       await _runDispatchLoop(h.claudeJson, h.accDir, renderStub);
     } finally {
-      process.env.HOME = prevHome;
+      restoreFakeHome(savedHome);
       process.env.PATH = prevPath;
     }
     assert.equal(callCount, 2);

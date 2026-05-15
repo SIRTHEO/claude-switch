@@ -32,6 +32,7 @@ import { ProfilesScreen, type ScreenExit } from '../../src/ui/screens/profiles.j
 import { save as saveAccount } from '../../src/accounts.js';
 import { createProfile } from '../../src/profiles.js';
 import { makeKeystrokeHelper } from '../ui/ink-keystroke-helper.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from '../_helpers/fake-home.js';
 
 // ---------------------------------------------------------------------------
 // Disable real Keychain for all tests in this file
@@ -49,7 +50,7 @@ interface Harness {
   tmpDir: string;
   claudeJson: string;
   accDir: string;
-  prevHome: string | undefined;
+  savedHome: SavedHome;
 }
 
 /**
@@ -66,11 +67,10 @@ function setup(): Harness {
   saveAccount(EMAIL, claudeJson, accDir);
   // profiles.ts reads from ~/.claude/profiles via os.homedir() — point
   // HOME at tmpDir for the duration of this test.
-  const prevHome = process.env.HOME;
-  process.env.HOME = tmpDir;
+  const savedHome = setFakeHome(tmpDir);
   // Empty profiles dir so listProfiles() returns []; some menu items gate on that.
   fs.mkdirSync(path.join(tmpDir, '.claude', 'profiles'), { recursive: true });
-  return { tmpDir, claudeJson, accDir, prevHome };
+  return { tmpDir, claudeJson, accDir, savedHome };
 }
 
 /**
@@ -88,8 +88,7 @@ function setupWithManualOps(): Harness {
 }
 
 function teardown(h: Harness): void {
-  if (h.prevHome === undefined) delete process.env.HOME;
-  else process.env.HOME = h.prevHome;
+  restoreFakeHome(h.savedHome);
   fs.rmSync(h.tmpDir, { recursive: true, force: true });
 }
 
