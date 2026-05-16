@@ -27,8 +27,23 @@ const SERVICE = 'claude-switch-apikey';
  *  user who explicitly opts out) keeps the JSON-only behaviour. The env
  *  var is read on every call — tests flip it per-suite. */
 export function keychainAvailable(): boolean {
-  if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1') return false;
+  if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1') {
+    warnDisableKeychainOnce();
+    return false;
+  }
   return process.platform === 'darwin';
+}
+
+let disableWarnEmitted = false;
+function warnDisableKeychainOnce(): void {
+  if (disableWarnEmitted) return;
+  if (process.env.NODE_ENV === 'test') return;
+  if (process.env.CLAUDE_SWITCH_TESTING === '1') return;
+  disableWarnEmitted = true;
+  process.stderr.write(
+    '⚠ claude-switch: CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 is set — API-key Keychain is bypassed.\n' +
+      '  This is meant for tests/sandboxes; unset it in your shell rc unless you know why.\n',
+  );
 }
 
 /** Read an API key from the Keychain. Returns null if absent or on
