@@ -45,12 +45,43 @@ function candidateAccounts(): string[] {
   return [os.userInfo().username, SERVICE];
 }
 
+/**
+ * Phase 12.6 — defense against H5 ("env inquinato").
+ *
+ * Warn (once per process, on stderr) when the disable flag is set OUTSIDE
+ * a test context. The flag is meant for our test suite + sandboxed
+ * fixtures; if a user has it lingering in their shell rc, every profile
+ * on darwin silently looks like `needsLogin=true` and the surface
+ * symptom is "claude-switch keeps asking me to re-auth". This banner
+ * makes the cause visible at the first Keychain read/write.
+ *
+ * Silenced when:
+ * - NODE_ENV=test (test runner sets this)
+ * - CLAUDE_SWITCH_TESTING=1 (explicit opt-in for test fixtures)
+ * - CLAUDE_SWITCH_DISABLE_KEYCHAIN unset or not '1' (nothing to warn about)
+ */
+let disableKeychainWarningEmitted = false;
+function warnIfDisableKeychainInProd(): void {
+  if (disableKeychainWarningEmitted) return;
+  if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1') return;
+  if (process.env.NODE_ENV === 'test') return;
+  if (process.env.CLAUDE_SWITCH_TESTING === '1') return;
+  disableKeychainWarningEmitted = true;
+  process.stderr.write(
+    '⚠ claude-switch: CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 is set — Keychain is bypassed.\n' +
+      '  This is meant for tests/sandboxes; unset it in your shell rc unless you know why.\n',
+  );
+}
+
 export function readKeychain(): KeychainData | null {
   if (process.platform !== 'darwin') return null;
   // Honour the same disable flag the write paths use, so test fixtures
   // that opt out of Keychain don't leak the developer's REAL tokens
   // through this read into a test assertion.
-  if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1') return null;
+  if (process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1') {
+    warnIfDisableKeychainInProd();
+    return null;
+  }
 
   for (const account of candidateAccounts()) {
     try {
