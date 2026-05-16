@@ -19,6 +19,7 @@ import { handleApikeySet, handleApikeyShow, handleApikeyRemove } from '../src/co
 import { migrateApiKeysToKeychain } from '../src/apikey.js';
 import { handleFallback, handleFallbackAuto, handleFallbackAutoEngage } from '../src/commands/fallback.js';
 import { handleUsage } from '../src/commands/usage.js';
+import { handleUsageSnapshot } from '../src/commands/usage-snapshot.js';
 import { handleAdd, handleRemove } from '../src/commands/account.js';
 import { handleSetup } from '../src/commands/setup.js';
 import { handleUpdate } from '../src/commands/update.js';
@@ -74,6 +75,7 @@ export type Command =
   | { action: 'fallback-auto'; mode: 'on' | 'off' | 'status'; threshold?: number }
   | { action: 'fallback-auto-engage'; mode: 'on' | 'off' | 'status'; threshold?: number }
   | { action: 'usage'; force: boolean; refreshOnly: boolean }
+  | { action: 'usage-snapshot'; email: string; json: boolean }
   | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean; noCacheHealth: boolean }
   | { action: 'statusline-install'; variant: 'plain' | 'ccstatusline' }
   | { action: 'statusline-uninstall' }
@@ -164,6 +166,15 @@ export function parseCommand(args: string[]): Command {
       const force = flags.includes('--force');
       const refreshOnly = flags.includes('--refresh-only');
       return { action: 'usage', force, refreshOnly };
+    }
+    case 'usage-snapshot': {
+      const rest = args.slice(2);
+      const email = rest.find((a) => !a.startsWith('--')) ?? '';
+      if (!email) {
+        throw new ExitError('Usage: claude switch usage-snapshot <email> [--json]');
+      }
+      const json = rest.includes('--json');
+      return { action: 'usage-snapshot', email, json };
     }
     case 'statusline':
     case 'sl': {
@@ -436,6 +447,9 @@ async function main(): Promise<void> {
 
     case 'usage':
       await handleUsage(ctx, { force: cmd.force, refreshOnly: cmd.refreshOnly });
+      break;
+    case 'usage-snapshot':
+      await handleUsageSnapshot(ctx, { email: cmd.email, json: cmd.json });
       break;
 
     case 'completions':
