@@ -58,6 +58,7 @@ export interface SetupWizardResult {
 type DetectedExisting =
   | { kind: 'absent' }
   | { kind: 'ours-plain' }
+  | { kind: 'ours-embedded' }
   | { kind: 'ours-ccstatusline' }
   | { kind: 'foreign'; command: string };
 
@@ -157,7 +158,11 @@ export function SetupScreen({ selfPath, onDone, deps: depsOverride }: Props) {
     } catch {
       existing = { kind: 'absent' };
     }
-    if (existing.kind === 'ours-plain' || existing.kind === 'ours-ccstatusline') {
+    if (
+      existing.kind === 'ours-plain' ||
+      existing.kind === 'ours-embedded' ||
+      existing.kind === 'ours-ccstatusline'
+    ) {
       // Already configured — nothing to ask.
       setStep({
         kind: 'summary',

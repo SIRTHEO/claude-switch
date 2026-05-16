@@ -76,8 +76,8 @@ export type Command =
   | { action: 'fallback-auto-engage'; mode: 'on' | 'off' | 'status'; threshold?: number }
   | { action: 'usage'; force: boolean; refreshOnly: boolean }
   | { action: 'usage-snapshot'; email: string; json: boolean }
-  | { action: 'statusline'; format: 'compact' | 'full' | 'json'; color: boolean; noCacheHealth: boolean }
-  | { action: 'statusline-install'; variant: 'plain' | 'ccstatusline' }
+  | { action: 'statusline'; format: 'compact' | 'full' | 'json' | 'embedded'; color: boolean; noCacheHealth: boolean }
+  | { action: 'statusline-install'; variant: 'plain' | 'embedded' | 'ccstatusline' }
   | { action: 'statusline-uninstall' }
   | { action: 'statusline-status' }
   | { action: 'profile-list' }
@@ -180,7 +180,11 @@ export function parseCommand(args: string[]): Command {
     case 'sl': {
       const sub2 = args[2];
       if (sub2 === 'install') {
-        const variant = args.includes('--ccstatusline') ? 'ccstatusline' : 'plain';
+        const variant = args.includes('--ccstatusline')
+          ? 'ccstatusline'
+          : args.includes('--embedded')
+            ? 'embedded'
+            : 'plain';
         return { action: 'statusline-install', variant };
       }
       if (sub2 === 'uninstall' || sub2 === 'remove') {
@@ -190,12 +194,23 @@ export function parseCommand(args: string[]): Command {
         return { action: 'statusline-status' };
       }
       const rest = args.slice(2);
-      const fmt = rest.includes('--full') ? 'full' : rest.includes('--json') ? 'json' : 'compact';
+      const fmt = rest.includes('--embedded')
+        ? 'embedded'
+        : rest.includes('--full')
+          ? 'full'
+          : rest.includes('--json')
+            ? 'json'
+            : 'compact';
       // Honour both the CLI flag and the de-facto NO_COLOR env standard
       // (https://no-color.org). Either turning colour off is enough.
       const color = !rest.includes('--no-color') && !process.env.NO_COLOR;
       const noCacheHealth = rest.includes('--no-cache-health');
-      return { action: 'statusline', format: fmt as 'compact' | 'full' | 'json', color, noCacheHealth };
+      return {
+        action: 'statusline',
+        format: fmt as 'compact' | 'full' | 'json' | 'embedded',
+        color,
+        noCacheHealth,
+      };
     }
     case 'alias': {
       const sub2 = args[2];

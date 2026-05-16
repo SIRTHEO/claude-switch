@@ -9,6 +9,8 @@
 // on the network — a stale cache triggers a detached background refresh
 // and the next redraw picks up the fresh value.
 
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { getCurrent } from '../accounts.js';
 import { isFallbackEnabled, isFallbackAutoEngaged } from '../fallback.js';
@@ -30,9 +32,66 @@ import type { CommandContext } from './context.js';
 // --------------------------------------------------------------------------
 
 export interface StatuslineOptions {
-  format: 'compact' | 'full' | 'json';
+  format: 'compact' | 'full' | 'json' | 'embedded';
   color: boolean;
   noCacheHealth?: boolean;
+}
+
+/**
+ * Read the JSON Claude Code pipes into the statusline command on stdin.
+ * Returns null when there is nothing to read (interactive terminal or no
+ * piped input), or when the payload is too large / malformed. Hot path:
+ * skip work instead of blocking the redraw.
+ */
+function readClaudeStatusStdin(): null | {
+  modelName: string | null;
+  cwd: string | null;
+  version: string | null;
+  exceeds200k: boolean;
+} {
+  if (process.stdin.isTTY) return null;
+  let raw: string;
+  try {
+    // fd 0; CC closes stdin after writing the JSON so this returns quickly.
+    raw = fs.readFileSync(0, 'utf-8');
+  } catch {
+    return null;
+  }
+  if (!raw || raw.length > 64 * 1024) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const p = parsed as Record<string, unknown>;
+  const model = p.model as Record<string, unknown> | undefined;
+  const workspace = p.workspace as Record<string, unknown> | undefined;
+  const modelName =
+    typeof model?.display_name === 'string'
+      ? model.display_name
+      : typeof model?.id === 'string'
+        ? (model.id as string)
+        : null;
+  const cwd =
+    (typeof workspace?.current_dir === 'string' ? (workspace.current_dir as string) : null) ??
+    (typeof p.cwd === 'string' ? p.cwd : null);
+  const version = typeof p.version === 'string' ? p.version : null;
+  const exceeds200k = p.exceeds_200k_tokens === true;
+  return { modelName, cwd, version, exceeds200k };
+}
+
+/** Shorten a path for the statusline: replace $HOME with ~, then keep only the
+ *  last 2 segments so long monorepo paths don't blow out the bar. */
+function shortenCwd(p: string): string {
+  const home = os.homedir();
+  let s = p.startsWith(home) ? `~${p.slice(home.length)}` : p;
+  const parts = s.split(path.sep).filter(Boolean);
+  if (parts.length > 2) {
+    s = `…/${parts.slice(-2).join('/')}`;
+  }
+  return s;
 }
 
 export function handleStatusline(ctx: CommandContext, options: StatuslineOptions): void {
@@ -62,7 +121,7 @@ function effectiveClaudeJsonPath(globalPath: string): string {
 }
 
 function renderStatusline(
-  format: 'compact' | 'full' | 'json',
+  format: 'compact' | 'full' | 'json' | 'embedded',
   useColor: boolean,
   claudeJsonPathStr: string,
   accountsDirPath: string,
@@ -212,6 +271,23 @@ function renderStatusline(
     return;
   }
 
+  if (format === 'embedded') {
+    // Drop-in replacement for the old `claude switch sl | ccstatusline` chain.
+    // Reads CC's per-redraw JSON from stdin and renders: badge + model + cwd
+    // + version, plus the usage / profile / cache-health badges already in
+    // the compact line. Nothing here blocks: stdin read returns immediately
+    // because CC closes the pipe after writing the JSON.
+    const extra = readClaudeStatusStdin();
+    const modelChunk = extra?.modelName ? ` · ${cyan(extra.modelName)}` : '';
+    const cwdChunk = extra?.cwd ? ` · ${dim(shortenCwd(extra.cwd))}` : '';
+    const ctxChunk = extra?.exceeds200k ? ` ${yellow('>200k')}` : '';
+    const versionChunk = extra?.version ? ` ${dim(`v${extra.version}`)}` : '';
+    process.stdout.write(
+      `🔑 ${cyan(shortName)} ${modeLabel}${usageBadge}${profileBadge}${cacheHealthBadge}${modelChunk}${cwdChunk}${ctxChunk}${versionChunk}\n`,
+    );
+    return;
+  }
+
   if (format === 'full') {
     process.stdout.write(`🔑 ${cyan(email)} · ${modeLabel}${usageBadge}${profileBadge}${cacheHealthBadge}\n`);
   } else {
@@ -224,10 +300,22 @@ function renderStatusline(
 // Install / uninstall / status — patch Claude Code's settings.json
 // --------------------------------------------------------------------------
 
-export async function handleStatuslineInstall(variant: 'plain' | 'ccstatusline'): Promise<void> {
-  const { installStatusLine, PLAIN_COMMAND, CCSTATUSLINE_COMMAND, claudeSettingsPath } =
-    await import('../statusline-install.js');
-  const command = variant === 'ccstatusline' ? CCSTATUSLINE_COMMAND : PLAIN_COMMAND;
+export async function handleStatuslineInstall(
+  variant: 'plain' | 'embedded' | 'ccstatusline',
+): Promise<void> {
+  const {
+    installStatusLine,
+    PLAIN_COMMAND,
+    EMBEDDED_COMMAND,
+    CCSTATUSLINE_COMMAND,
+    claudeSettingsPath,
+  } = await import('../statusline-install.js');
+  const command =
+    variant === 'ccstatusline'
+      ? CCSTATUSLINE_COMMAND
+      : variant === 'embedded'
+        ? EMBEDDED_COMMAND
+        : PLAIN_COMMAND;
   installStatusLine(command);
   console.log(`Installed status line in ${claudeSettingsPath()}`);
   console.log(`  command: ${command}`);
@@ -254,8 +342,11 @@ export async function handleStatuslineStatus(): Promise<void> {
     case 'ours-plain':
       console.log('Status line: claude-switch badge (plain)');
       break;
+    case 'ours-embedded':
+      console.log('Status line: claude-switch badge + embedded model/cwd');
+      break;
     case 'ours-ccstatusline':
-      console.log('Status line: claude-switch badge + ccstatusline');
+      console.log('Status line: claude-switch badge + ccstatusline (legacy chain)');
       break;
     case 'foreign':
       console.log('Status line: a different command is configured');

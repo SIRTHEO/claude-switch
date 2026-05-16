@@ -20,6 +20,12 @@ export function claudeSettingsPath(): string {
 /** Direct command: just our badge, no chaining. Simplest, no dependency. */
 export const PLAIN_COMMAND = 'claude switch sl --no-color';
 
+/** Embedded: our badge AND the model/cwd/version that ccstatusline used to
+ *  provide. Reads CC's per-redraw JSON from stdin internally; no npx, no
+ *  dependency, no subshell. This is the recommended default — supersedes
+ *  the ccstatusline chain. */
+export const EMBEDDED_COMMAND = 'claude switch sl --embedded --no-color';
+
 export const CCSTATUSLINE_VERSION = '2.2.12';
 
 /** Chained with ccstatusline so the user keeps the rest of their bar.
@@ -31,6 +37,7 @@ export const CCSTATUSLINE_COMMAND =
 export type ExistingStatus =
   | { kind: 'absent' }
   | { kind: 'ours-plain' }
+  | { kind: 'ours-embedded' }
   | { kind: 'ours-ccstatusline' }
   | { kind: 'foreign'; command: string };
 
@@ -65,6 +72,7 @@ export function detectExistingStatusLine(settingsPath: string = claudeSettingsPa
   // since it's the exact subcommand we wrote.
   if (command.includes('claude switch sl')) {
     if (command.includes('ccstatusline')) return { kind: 'ours-ccstatusline' };
+    if (command.includes('--embedded')) return { kind: 'ours-embedded' };
     return { kind: 'ours-plain' };
   }
   return { kind: 'foreign', command };
@@ -101,7 +109,13 @@ export function installStatusLine(
  */
 export function uninstallStatusLine(settingsPath: string = claudeSettingsPath()): boolean {
   const status = detectExistingStatusLine(settingsPath);
-  if (status.kind !== 'ours-plain' && status.kind !== 'ours-ccstatusline') return false;
+  if (
+    status.kind !== 'ours-plain' &&
+    status.kind !== 'ours-embedded' &&
+    status.kind !== 'ours-ccstatusline'
+  ) {
+    return false;
+  }
 
   let settings: Record<string, unknown>;
   try {
