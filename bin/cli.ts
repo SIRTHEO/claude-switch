@@ -37,6 +37,7 @@ import {
   handleProfileStatus,
   handleProfileLogin,
   handleProfileUse,
+  handleProfileLaunch,
   handleProfileImport,
   handleProfileRemove,
 } from '../src/commands/profile.js';
@@ -92,7 +93,9 @@ export type Command =
   | { action: 'route-remove'; pattern: string | undefined }
   | { action: 'route-test'; cwd: string | undefined; json: boolean }
   | { action: 'dashboard' }
-  | { action: 'cache-health'; sessionPath: string | undefined; json: boolean };
+  | { action: 'cache-health'; sessionPath: string | undefined; json: boolean }
+  | { action: 'terminals'; json: boolean }
+  | { action: 'profile-launch'; name: string; terminal: string };
 
 export function parseCommand(args: string[]): Command {
   if (args[0] === '--as') {
@@ -249,13 +252,22 @@ export function parseCommand(args: string[]): Command {
         return { action: 'profile-remove', name: args[3] };
       }
       if (sub2 === 'status') return { action: 'profile-status', name: args[3] };
+      if (sub2 === 'launch') {
+        if (!args[3]) throw new ExitError('Usage: claude switch profile launch <name> --terminal <id>');
+        const terminalIdx = args.indexOf('--terminal');
+        const terminal = terminalIdx >= 4 ? args[terminalIdx + 1] : undefined;
+        if (!terminal) {
+          throw new ExitError('Usage: claude switch profile launch <name> --terminal <id>');
+        }
+        return { action: 'profile-launch', name: args[3], terminal };
+      }
       if (sub2 === 'import' || sub2 === 'import-from-account') {
         if (!args[3]) throw new ExitError('Usage: claude switch profile import <email> [--as <profile-name>]');
         const asIdx = args.indexOf('--as');
         const profileName = asIdx >= 4 && args[asIdx + 1] ? args[asIdx + 1] : undefined;
         return { action: 'profile-import', email: args[3], profileName };
       }
-      throw new ExitError('Usage: claude switch profile <list|create|use|login|import|remove|status> [name]');
+      throw new ExitError('Usage: claude switch profile <list|create|use|login|launch|import|remove|status> [name]');
     }
     case 'route': {
       const sub2 = args[2];
@@ -280,6 +292,7 @@ export function parseCommand(args: string[]): Command {
       const sessionPath = sessionIdx >= 0 ? rest[sessionIdx + 1] : undefined;
       return { action: 'cache-health', sessionPath, json };
     }
+    case 'terminals': return { action: 'terminals', json: args.includes('--json') };
     default: return { action: 'switch-to', target: sub };
   }
 }
@@ -335,6 +348,12 @@ async function main(): Promise<void> {
   if (cmd.action === 'profile-status') { await handleProfileStatus(cmd.name); return; }
   if (cmd.action === 'profile-login')  { await handleProfileLogin(statuslineCtx, cmd.name); return; }
   if (cmd.action === 'profile-use')    { await handleProfileUse(statuslineCtx, cmd.name, cmd.args); /* never returns */ }
+  if (cmd.action === 'profile-launch') { await handleProfileLaunch(statuslineCtx, cmd.name, cmd.terminal); return; }
+  if (cmd.action === 'terminals') {
+    const { handleTerminals } = await import('../src/commands/terminals.js');
+    handleTerminals({ json: cmd.json });
+    return;
+  }
   if (cmd.action === 'profile-import') { await handleProfileImport(statuslineCtx, cmd.email, cmd.profileName); return; }
   if (cmd.action === 'profile-remove') { await handleProfileRemove(cmd.name); return; }
 

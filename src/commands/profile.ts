@@ -165,6 +165,51 @@ export async function handleProfileLogin(ctx: CommandContext, name: string): Pro
   }
 }
 
+/**
+ * Spawn the profile's `claude` session inside a NEW window of the
+ * specified terminal emulator. The current process exits immediately
+ * after handing the launch off so the GUI / launching shell returns
+ * focus to the user. Used by the GUI's per-profile "Launch in ▾"
+ * picker.
+ */
+export async function handleProfileLaunch(
+  ctx: CommandContext,
+  name: string,
+  terminalId: string,
+): Promise<void> {
+  const { profilePath, profileExists, readProfile } = await import('../profiles.js');
+  if (!profileExists(name)) {
+    throw new ExitError(
+      `Profile "${name}" does not exist. Create it with: claude switch profile create ${name}`,
+    );
+  }
+  let info: ReturnType<typeof readProfile>;
+  try {
+    info = readProfile(name);
+  } catch (e) {
+    throw new ExitError(errMessage(e));
+  }
+  if (!info.hasLogin) {
+    throw new ExitError(
+      `Profile "${name}" has no login yet. Run: claude switch profile login ${name}`,
+    );
+  }
+  const dir = profilePath(name);
+  const claudeBin = findClaude(ctx.selfUrl);
+  const { launchInTerminal } = await import('../terminals.js');
+  try {
+    launchInTerminal({
+      terminalId,
+      cwd: process.env.HOME ?? '/',
+      env: { CLAUDE_CONFIG_DIR: dir },
+      command: [claudeBin],
+    });
+  } catch (e) {
+    throw new ExitError(errMessage(e));
+  }
+  console.log(`Opening claude under profile "${name}" in ${terminalId}…`);
+}
+
 export async function handleProfileUse(
   ctx: CommandContext,
   name: string,
