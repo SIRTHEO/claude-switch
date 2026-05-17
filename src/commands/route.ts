@@ -180,7 +180,15 @@ export function handleRouteRemove(ctx: CommandContext, pattern: string | undefin
 // route test
 // ---------------------------------------------------------------------------
 
-export function handleRouteTest(ctx: CommandContext, cwdArg: string | undefined): void {
+export interface RouteTestOptions {
+  json: boolean;
+}
+
+export function handleRouteTest(
+  ctx: CommandContext,
+  cwdArg: string | undefined,
+  opts: RouteTestOptions = { json: false },
+): void {
   const cwd = cwdArg ? path.resolve(cwdArg) : process.cwd();
   const accounts = listAccounts(ctx.accountsDirPath);
   let activeEmail: string | null = null;
@@ -200,6 +208,26 @@ export function handleRouteTest(ctx: CommandContext, cwdArg: string | undefined)
     lastUsedByDomain,
     resolveAlias: (a) => getAlias(a, ctx.accountsDirPath),
   });
+
+  if (opts.json) {
+    process.stdout.write(
+      `${JSON.stringify({
+        cwd,
+        activeAccount: activeEmail,
+        savedAccounts: accounts,
+        decision: decision
+          ? {
+              email: decision.email,
+              source: decision.source,
+              banner: decision.banner ?? null,
+              warning: decision.warning ?? null,
+              wouldSwitch: decision.email !== activeEmail && accounts.includes(decision.email),
+            }
+          : null,
+      })}\n`,
+    );
+    return;
+  }
 
   console.log(`cwd:           ${cwd}`);
   console.log(`active:        ${activeEmail ?? '(none)'}`);
