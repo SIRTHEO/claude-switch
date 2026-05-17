@@ -5,20 +5,52 @@
 // `--refresh-only` is an internal flag the statusline uses to refresh the
 // cache asynchronously without producing any output.
 
-import { ExitError } from '../errors.js';
+import { ExitError, errMessage } from '../errors.js';
 import { withLock } from '../lock.js';
 import { getCurrent } from '../accounts.js';
 import {
   getAccessTokenFromKeychain,
   fetchUsageCached,
+  refreshUsageForAccount,
 } from '../usage.js';
 import type { CommandContext } from './context.js';
 
 export async function handleUsage(
   ctx: CommandContext,
-  options: { force: boolean; refreshOnly: boolean },
+  options: { force: boolean; refreshOnly: boolean; account?: string },
 ): Promise<void> {
   const { claudeJsonPath, accountsDirPath } = ctx;
+
+  // `--account <email>` refreshes the cached usage for an account
+  // regardless of which account is currently active. Loads tokens from
+  // that account's snapshot file, refreshes them if expired, hits the
+  // Anthropic usage endpoint with them. Used by the GUI to refresh a
+  // non-active account without forcing the user to switch first.
+  if (options.account) {
+    try {
+      const cache = await refreshUsageForAccount(options.account, accountsDirPath);
+      if (cache.rateLimitedUntil && cache.rateLimitedUntil > Date.now()) {
+        const waitSec = Math.ceil((cache.rateLimitedUntil - Date.now()) / 1000);
+        console.log(
+          `Anthropic's usage endpoint is rate-limiting ${options.account}. Retry in ~${waitSec}s.`,
+        );
+        return;
+      }
+      if (cache.payload) {
+        const ageMin = Math.round((Date.now() - cache.fetchedAt) / 60_000);
+        console.log(
+          `Refreshed usage for ${options.account} (${ageMin} min ago):\n` +
+            `  5-hour window:    ${cache.payload.five_hour.utilization.toFixed(1)}%\n` +
+            `  7-day window:     ${cache.payload.seven_day.utilization.toFixed(1)}%`,
+        );
+        return;
+      }
+      console.log(`No usage payload returned for ${options.account}.`);
+      return;
+    } catch (e) {
+      throw new ExitError(errMessage(e));
+    }
+  }
 
   // Snapshot (token, account) atomically. A concurrent `claude switch B`
   // between these two reads would otherwise pair token-of-A with

@@ -74,7 +74,7 @@ export type Command =
   | { action: 'fallback'; mode: 'on' | 'off' | 'status'; json: boolean }
   | { action: 'fallback-auto'; mode: 'on' | 'off' | 'status'; threshold?: number }
   | { action: 'fallback-auto-engage'; mode: 'on' | 'off' | 'status'; threshold?: number }
-  | { action: 'usage'; force: boolean; refreshOnly: boolean }
+  | { action: 'usage'; force: boolean; refreshOnly: boolean; account?: string }
   | { action: 'usage-snapshot'; email: string; json: boolean }
   | { action: 'statusline'; format: 'compact' | 'full' | 'json' | 'embedded'; color: boolean; noCacheHealth: boolean }
   | { action: 'statusline-install'; variant: 'plain' | 'embedded' | 'ccstatusline' }
@@ -166,7 +166,9 @@ export function parseCommand(args: string[]): Command {
       const flags = args.slice(2);
       const force = flags.includes('--force');
       const refreshOnly = flags.includes('--refresh-only');
-      return { action: 'usage', force, refreshOnly };
+      const accountFlagIdx = flags.indexOf('--account');
+      const account = accountFlagIdx >= 0 ? flags[accountFlagIdx + 1] : undefined;
+      return { action: 'usage', force, refreshOnly, account };
     }
     case 'usage-snapshot': {
       const rest = args.slice(2);
@@ -468,7 +470,11 @@ async function main(): Promise<void> {
       break;
 
     case 'usage':
-      await handleUsage(ctx, { force: cmd.force, refreshOnly: cmd.refreshOnly });
+      await handleUsage(ctx, {
+        force: cmd.force,
+        refreshOnly: cmd.refreshOnly,
+        account: cmd.account,
+      });
       break;
     case 'usage-snapshot':
       await handleUsageSnapshot(ctx, { email: cmd.email, json: cmd.json });

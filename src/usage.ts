@@ -20,6 +20,7 @@ import { createHash } from 'node:crypto';
 import { readKeychain } from './keychain.js';
 import { writeJsonAtomic } from './atomic-write.js';
 import { errMessage } from './errors.js';
+import { isSafeEmail } from './accounts.js';
 
 const ENDPOINT_HOST = 'api.anthropic.com';
 const ENDPOINT_PATH = '/api/oauth/usage';
@@ -310,6 +311,159 @@ export async function fetchUsageCached(
   }
   writeUsageCache(accountsDirPath, next);
   return next;
+}
+
+/**
+ * Read the OAuth tokens (accessToken / refreshToken / expiresAt) for a
+ * specific account from its saved snapshot file, without touching the
+ * active-account state in `~/.claude.json` or the Keychain.
+ *
+ * Used by per-account usage refresh so we can hit the Anthropic usage
+ * endpoint on behalf of a NON-active account — e.g. to refresh the GUI's
+ * cached numbers for the second account in a multi-account setup
+ * without forcing the user to switch into it first.
+ *
+ * Returns null if the account file doesn't exist, isn't parseable, or
+ * doesn't carry an accessToken.
+ */
+export function readAccountOauth(
+  email: string,
+  accountsDirPath: string,
+): { accessToken: string; refreshToken?: string; expiresAt?: number | string } | null {
+  if (!isSafeEmail(email)) return null;
+  const accountFile = path.join(accountsDirPath, `${email}.json`);
+  let raw: string;
+  try {
+    raw = fs.readFileSync(accountFile, 'utf-8');
+  } catch {
+    return null;
+  }
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  // Tokens live in one of three places depending on platform + snapshot
+  // generation:
+  //
+  //   1. macOS: snapshot has `_keychain.claudeAiOauth.{accessToken,…}` —
+  //      the active claude binary keeps live tokens in the Keychain, and
+  //      save() copies that block into the file at snapshot time.
+  //   2. Linux / Windows: snapshot has the tokens directly at the top
+  //      level (claude.json's `oauthAccount` spread by save()).
+  //   3. Legacy: tokens nested under an explicit `oauthAccount` object.
+  //
+  // Probe all three. The first one with a usable accessToken wins.
+  const top = parsed;
+  const nested = parsed.oauthAccount as Record<string, unknown> | undefined;
+  const keychainBlock = parsed._keychain as Record<string, unknown> | undefined;
+  const keychainOauth = keychainBlock?.claudeAiOauth as Record<string, unknown> | undefined;
+
+  const accessToken =
+    typeof keychainOauth?.accessToken === 'string'
+      ? (keychainOauth.accessToken as string)
+      : typeof top.accessToken === 'string'
+        ? (top.accessToken as string)
+        : typeof nested?.accessToken === 'string'
+          ? (nested.accessToken as string)
+          : null;
+  if (!accessToken) return null;
+
+  const refreshToken =
+    typeof keychainOauth?.refreshToken === 'string'
+      ? (keychainOauth.refreshToken as string)
+      : typeof top.refreshToken === 'string'
+        ? (top.refreshToken as string)
+        : typeof nested?.refreshToken === 'string'
+          ? (nested.refreshToken as string)
+          : undefined;
+
+  const expiresAtRaw =
+    keychainOauth?.expiresAt ?? top.expiresAt ?? nested?.expiresAt;
+  const expiresAt =
+    typeof expiresAtRaw === 'number' || typeof expiresAtRaw === 'string'
+      ? expiresAtRaw
+      : undefined;
+
+  return { accessToken, refreshToken, expiresAt };
+}
+
+/**
+ * Persist a refreshed OAuth bundle back to the account file so the next
+ * read sees the new (non-stale) tokens. Only writes the three OAuth
+ * fields — the rest of the snapshot (apiKey, prefs, _keychain backup)
+ * is preserved.
+ */
+function persistRefreshedOauth(
+  email: string,
+  accountsDirPath: string,
+  oauth: { accessToken: string; refreshToken?: string; expiresAt: number },
+): void {
+  if (!isSafeEmail(email)) return;
+  const accountFile = path.join(accountsDirPath, `${email}.json`);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(fs.readFileSync(accountFile, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  parsed.accessToken = oauth.accessToken;
+  if (oauth.refreshToken) parsed.refreshToken = oauth.refreshToken;
+  parsed.expiresAt = oauth.expiresAt;
+  try {
+    writeJsonAtomic(accountFile, parsed);
+  } catch {
+    // Persisting fresh tokens is best-effort — the in-memory token is
+    // still usable for the current refresh call.
+  }
+}
+
+/**
+ * Refresh the cached usage snapshot for any saved account (active or
+ * not). Loads that account's OAuth tokens from its snapshot file,
+ * refreshes them via the Anthropic OAuth endpoint if expired, then
+ * calls fetchUsage and writes the per-account cache.
+ *
+ * Throws when the account isn't saved or has no usable refresh token.
+ * Network failures fall through and surface via the returned cache's
+ * shape (no payload, no rateLimitedUntil — the caller can decide).
+ */
+export async function refreshUsageForAccount(
+  email: string,
+  accountsDirPath: string,
+): Promise<UsageCache> {
+  const tokens = readAccountOauth(email, accountsDirPath);
+  if (!tokens) {
+    throw new Error(
+      `No usable OAuth tokens for ${email}. The account snapshot is missing or pre-dates the per-account refresh path.`,
+    );
+  }
+  const { refreshIfStale } = await import('./oauth-refresh.js');
+  const refreshed = await refreshIfStale({
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken ?? '',
+    expiresAt: tokens.expiresAt ?? 0,
+  });
+  if (!refreshed) {
+    throw new Error(
+      `Could not refresh OAuth token for ${email}. Sign in again: claude switch ${email} then claude (browser flow).`,
+    );
+  }
+  // If refreshIfStale actually rotated the access token, persist it.
+  if (refreshed.accessToken !== tokens.accessToken) {
+    persistRefreshedOauth(email, accountsDirPath, {
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken,
+      expiresAt: typeof refreshed.expiresAt === 'number'
+        ? refreshed.expiresAt
+        : Number(refreshed.expiresAt),
+    });
+  }
+  return fetchUsageCached(accountsDirPath, refreshed.accessToken, {
+    force: true,
+    account: email,
+  });
 }
 
 /**
