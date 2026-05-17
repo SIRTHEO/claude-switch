@@ -22,9 +22,23 @@ export function handleAliasSet(
   console.log(`Alias set: ${name} → ${email}`);
 }
 
-export function handleAliasList(ctx: CommandContext): void {
+export interface AliasListOptions {
+  json: boolean;
+}
+
+export function handleAliasList(
+  ctx: CommandContext,
+  opts: AliasListOptions = { json: false },
+): void {
   const aliases = listAliases(ctx.accountsDirPath);
   const entries = Object.entries(aliases);
+
+  if (opts.json) {
+    const payload = entries.map(([alias, email]) => ({ alias, email }));
+    process.stdout.write(`${JSON.stringify(payload)}\n`);
+    return;
+  }
+
   if (entries.length === 0) {
     console.log('No aliases. Set one with: claude switch alias <name> <email>');
     return;

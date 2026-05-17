@@ -9,18 +9,54 @@ import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
 import { getAutoFallbackConfig, setAutoFallbackConfig } from '../auto-fallback.js';
 import type { CommandContext } from './context.js';
 
+export interface FallbackOptions {
+  json: boolean;
+}
+
 export function handleFallback(
   ctx: CommandContext,
   mode: 'on' | 'off' | 'status',
+  opts: FallbackOptions = { json: false },
 ): void {
   const { claudeJsonPath, accountsDirPath } = ctx;
   if (mode === 'status') {
     const on = isFallbackEnabled(accountsDirPath);
+    const auto = getAutoFallbackConfig(accountsDirPath);
     const current = getCurrent(claudeJsonPath);
     const hasKey = current ? !!getApiKey(current, accountsDirPath) : false;
-    console.log(`Fallback: ${on ? 'on' : 'off'}`);
+
+    if (opts.json) {
+      // Atomic snapshot — the GUI reads fallback + auto-revert + auto-engage
+      // off a single command instead of stitching three text outputs.
+      process.stdout.write(
+        `${JSON.stringify({
+          enabled: on,
+          autoRevert: {
+            enabled: auto.enabled,
+            threshold: auto.threshold,
+          },
+          autoEngage: {
+            enabled: auto.engageEnabled,
+            threshold: auto.engageThreshold,
+          },
+          activeAccount: current || null,
+          hasApiKey: hasKey,
+        })}\n`,
+      );
+      return;
+    }
+
+    console.log(`Fallback to API key:           ${on ? 'ON' : 'OFF'}`);
+    console.log(
+      `auto-revert (5h+7d below ${auto.threshold}%): ${auto.enabled ? 'ON' : 'OFF'}`,
+    );
+    console.log(
+      `auto-engage (5h or 7d ≥ ${auto.engageThreshold}%):  ${auto.engageEnabled ? 'ON' : 'OFF'}`,
+    );
     if (current) {
-      console.log(`Active account ${current}: ${hasKey ? 'has API key' : 'no API key (run: claude switch apikey set)'}`);
+      console.log(
+        `\nActive account ${current}: ${hasKey ? 'has API key' : 'no API key (run: claude switch apikey set)'}`,
+      );
     }
     if (on && current && !hasKey) {
       console.log('Warning: fallback is on but the active account has no saved API key — claude will use OAuth.');
