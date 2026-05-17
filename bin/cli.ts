@@ -88,7 +88,7 @@ export type Command =
   | { action: 'route-add'; pattern: string | undefined; target: string | undefined }
   | { action: 'route-list' }
   | { action: 'route-remove'; pattern: string | undefined }
-  | { action: 'route-test'; cwd: string | undefined }
+  | { action: 'route-test'; cwd: string | undefined; json: boolean }
   | { action: 'dashboard' }
   | { action: 'cache-health'; sessionPath: string | undefined; json: boolean };
 
@@ -234,7 +234,7 @@ export function parseCommand(args: string[]): Command {
         return { action: 'route-remove', pattern: args[3] };
       }
       if (sub2 === 'test') {
-        return { action: 'route-test', cwd: args[3] };
+        return { action: 'route-test', cwd: args[3], json: args.includes('--json') };
       }
       throw new ExitError('Usage: claude switch route <add|list|remove|test> [args]');
     }
@@ -310,7 +310,7 @@ async function main(): Promise<void> {
   if (cmd.action === 'route-list')   { handleRouteList(statuslineCtx); return; }
   if (cmd.action === 'route-add')    { handleRouteAdd(statuslineCtx, cmd.pattern, cmd.target); return; }
   if (cmd.action === 'route-remove') { handleRouteRemove(statuslineCtx, cmd.pattern); return; }
-  if (cmd.action === 'route-test')   { handleRouteTest(statuslineCtx, cmd.cwd); return; }
+  if (cmd.action === 'route-test')   { handleRouteTest(statuslineCtx, cmd.cwd, { json: cmd.json }); return; }
 
   // Check for update (reads cache synchronously — never blocks). Passthrough
   // is included so long Claude sessions can show a hint, but updates are

@@ -250,6 +250,7 @@ describe('parseCommand', () => {
     assert.deepEqual(parseCommand(['switch', 'route', 'test']), {
       action: 'route-test',
       cwd: undefined,
+      json: false,
     });
   });
 
@@ -257,6 +258,15 @@ describe('parseCommand', () => {
     assert.deepEqual(parseCommand(['switch', 'route', 'test', '/some/path']), {
       action: 'route-test',
       cwd: '/some/path',
+      json: false,
+    });
+  });
+
+  it('parses "switch route test --json"', () => {
+    assert.deepEqual(parseCommand(['switch', 'route', 'test', '--json']), {
+      action: 'route-test',
+      cwd: '--json',
+      json: true,
     });
   });
 
