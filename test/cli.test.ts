@@ -12,11 +12,15 @@ describe('parseCommand', () => {
   });
 
   it('parses "switch list"', () => {
-    assert.deepEqual(parseCommand(['switch', 'list']), { action: 'list' });
+    assert.deepEqual(parseCommand(['switch', 'list']), { action: 'list', json: false });
   });
 
   it('parses "switch ls" as list', () => {
-    assert.deepEqual(parseCommand(['switch', 'ls']), { action: 'list' });
+    assert.deepEqual(parseCommand(['switch', 'ls']), { action: 'list', json: false });
+  });
+
+  it('parses "switch list --json"', () => {
+    assert.deepEqual(parseCommand(['switch', 'list', '--json']), { action: 'list', json: true });
   });
 
   it('parses "switch remove email"', () => {

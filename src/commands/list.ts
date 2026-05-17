@@ -1,23 +1,55 @@
 // src/commands/list.ts
 // `claude switch list` — prints saved accounts with active marker + aliases.
+//
+// Two output modes:
+//   - default: human-readable text (with the active marker and [aliases])
+//   - --json:  machine-readable AccountSummary[] for the GUI bridge
+//
+// The GUI prefers JSON because the human format ordering shifted between
+// CLI releases and broke text parsers downstream. The JSON contract is
+// the single source of truth.
 
 import { getCurrent, list as listAccounts } from '../accounts.js';
 import { getAliasesForEmail } from '../aliases.js';
 import type { CommandContext } from './context.js';
 import { errMessage } from '../errors.js';
 
-export function handleList(ctx: CommandContext): void {
+export interface ListOptions {
+  json: boolean;
+}
+
+interface AccountSummary {
+  email: string;
+  alias: string | null;
+  aliases: string[];
+  active: boolean;
+}
+
+export function handleList(ctx: CommandContext, opts: ListOptions = { json: false }): void {
   const { claudeJsonPath, accountsDirPath } = ctx;
   const accounts = listAccounts(accountsDirPath);
 
-  // EACCES on ~/.claude.json shouldn't break `list` — historically this
-  // command returned the saved account list even if the active marker
-  // was unreadable. Surface the issue on stderr but keep the listing.
   let current = '';
   try {
     current = getCurrent(claudeJsonPath);
   } catch (e) {
-    process.stderr.write(`Note: could not determine active account — ${errMessage(e)}\n\n`);
+    if (!opts.json) {
+      process.stderr.write(`Note: could not determine active account — ${errMessage(e)}\n\n`);
+    }
+  }
+
+  if (opts.json) {
+    const payload: AccountSummary[] = accounts.map((email) => {
+      const aliases = getAliasesForEmail(email, accountsDirPath);
+      return {
+        email,
+        alias: aliases[0] ?? null,
+        aliases,
+        active: email === current,
+      };
+    });
+    process.stdout.write(`${JSON.stringify(payload)}\n`);
+    return;
   }
 
   if (accounts.length === 0) {

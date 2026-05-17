@@ -128,3 +128,38 @@ jobs:
             echo "::error::coverage ${LINE_PCT}% is below the ${COVERAGE_FLOOR}% floor"
             exit 1
           fi
+
+  # ---------------------------------------------------------------------------
+  # GUI job — separate from the multi-platform server matrix because the GUI
+  # is a Tauri desktop app; a single Linux runner is enough to verify the
+  # frontend bundle. Lint, parser tests, and a typecheck-aware build all run
+  # under gui/ scoped npm scripts so the gates match what `npm run build`
+  # produces locally.
+  # ---------------------------------------------------------------------------
+  gui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gui
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test (parsers)
+        run: npm test
+
+      - name: Build (typecheck + vite)
+        run: npm run build

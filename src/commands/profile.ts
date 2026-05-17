@@ -15,9 +15,29 @@ import { getTokenHealth } from '../token.js';
 import { findClaude } from './_helpers.js';
 import type { CommandContext } from './context.js';
 
-export async function handleProfileList(): Promise<void> {
+export interface ProfileListOptions {
+  json: boolean;
+}
+
+export async function handleProfileList(
+  opts: ProfileListOptions = { json: false },
+): Promise<void> {
   const { listProfiles, readProfile } = await import('../profiles.js');
   const profiles = listProfiles();
+
+  if (opts.json) {
+    const payload = profiles.map((name) => {
+      const info = readProfile(name);
+      return {
+        name,
+        account: info.hasLogin ? info.emailAddress ?? null : null,
+        hasLogin: info.hasLogin,
+      };
+    });
+    process.stdout.write(`${JSON.stringify(payload)}\n`);
+    return;
+  }
+
   if (profiles.length === 0) {
     console.log('No profiles. Create one with: claude switch profile create <name>');
     return;
