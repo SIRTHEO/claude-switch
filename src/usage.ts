@@ -326,7 +326,7 @@ export async function fetchUsageCached(
  * Returns null if the account file doesn't exist, isn't parseable, or
  * doesn't carry an accessToken.
  */
-export function readAccountOauth(
+function readAccountOauth(
   email: string,
   accountsDirPath: string,
 ): { accessToken: string; refreshToken?: string; expiresAt?: number | string } | null {
