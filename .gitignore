@@ -1,21 +1,37 @@
+# ---------------------------------------------------------------------------
+# claude-switch — root .gitignore
+#
+# Umbrella patterns; child .gitignore files (gui/, gui/src-tauri/) only
+# list things scoped to themselves. Anything universal (node_modules,
+# build output, OS junk, AI tooling, local notes) lives here and applies
+# to the whole tree.
+# ---------------------------------------------------------------------------
+
+# Build output + dependency artifacts (anywhere in the tree)
 node_modules/
 dist/
+build/
+*.tsbuildinfo
 
-# Harness / Claude Code dev tooling — local-only, not part of the product
-.harness/
-.harness-mem/
+# OS and editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# AI assistant tool configs — local-only, never product surface
 .claude/
-.claude-plugin/
-.understand-anything/
+.claude-*
+.harness*
+.understand-*
 hooks/
 !src/ui/hooks/
-harness.toml
 CLAUDE.md
 AGENTS.md
+harness.toml
 
-# Internal planning / research docs
+# Project-local notes — planning, brand context, internal experiments.
+# Harness reads them; they never get pushed.
 Plans.md
+PRODUCT.md
+DESIGN.md
 EXPERIMENT.md
-
-# OS junk
-.DS_Store
