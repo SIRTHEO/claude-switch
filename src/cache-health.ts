@@ -164,9 +164,9 @@ export function readSessionJsonl(filePath: string): AssistantTurn[] {
 // ---------------------------------------------------------------------------
 
 /** Minimum cache_creation value (exclusive) to consider a turn a cache flush. */
-export const FLUSH_CREATION_THRESHOLD = 5000;
+const FLUSH_CREATION_THRESHOLD = 5000;
 /** Maximum cache_read value (exclusive) that can coexist with a flush. */
-export const FLUSH_READ_THRESHOLD = 1000;
+const FLUSH_READ_THRESHOLD = 1000;
 
 /**
  * Compute cache health metrics from a list of `AssistantTurn` entries.
