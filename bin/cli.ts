@@ -63,7 +63,7 @@ export type Command =
   | { action: 'completions'; shell: string | undefined }
   | { action: 'passthrough'; args: string[] }
   | { action: 'alias-set'; name: string; email: string }
-  | { action: 'alias-list' }
+  | { action: 'alias-list'; json: boolean }
   | { action: 'alias-remove'; name: string | undefined }
   | { action: 'temporary-switch'; target: string | undefined; args: string[] }
   | { action: 'setup' }
@@ -71,7 +71,7 @@ export type Command =
   | { action: 'apikey-set'; target: string | undefined }
   | { action: 'apikey-remove'; target: string | undefined }
   | { action: 'apikey-show'; target: string | undefined }
-  | { action: 'fallback'; mode: 'on' | 'off' | 'status' }
+  | { action: 'fallback'; mode: 'on' | 'off' | 'status'; json: boolean }
   | { action: 'fallback-auto'; mode: 'on' | 'off' | 'status'; threshold?: number }
   | { action: 'fallback-auto-engage'; mode: 'on' | 'off' | 'status'; threshold?: number }
   | { action: 'usage'; force: boolean; refreshOnly: boolean }
@@ -88,7 +88,7 @@ export type Command =
   | { action: 'profile-status'; name: string | undefined }
   | { action: 'profile-import'; email: string; profileName?: string }
   | { action: 'route-add'; pattern: string | undefined; target: string | undefined }
-  | { action: 'route-list' }
+  | { action: 'route-list'; json: boolean }
   | { action: 'route-remove'; pattern: string | undefined }
   | { action: 'route-test'; cwd: string | undefined; json: boolean }
   | { action: 'dashboard' }
@@ -132,9 +132,10 @@ export function parseCommand(args: string[]): Command {
     }
     case 'fallback': {
       const sub2 = args[2];
-      if (!sub2 || sub2 === 'status') return { action: 'fallback', mode: 'status' };
-      if (sub2 === 'on') return { action: 'fallback', mode: 'on' };
-      if (sub2 === 'off') return { action: 'fallback', mode: 'off' };
+      const fbJson = args.includes('--json');
+      if (!sub2 || sub2 === 'status') return { action: 'fallback', mode: 'status', json: fbJson };
+      if (sub2 === 'on') return { action: 'fallback', mode: 'on', json: fbJson };
+      if (sub2 === 'off') return { action: 'fallback', mode: 'off', json: fbJson };
       // Sub-tree map. The legacy `auto` alias was retired after v3.4 —
       // `auto-revert` is the only canonical name now.
       const SUBTREE_ACTIONS: Record<string, 'fallback-auto' | 'fallback-auto-engage'> = {
@@ -214,7 +215,9 @@ export function parseCommand(args: string[]): Command {
     }
     case 'alias': {
       const sub2 = args[2];
-      if (!sub2 || sub2 === '--list') return { action: 'alias-list' };
+      if (!sub2 || sub2 === '--list') {
+        return { action: 'alias-list', json: args.includes('--json') };
+      }
       if (sub2 === '--remove') {
         if (!args[3]) throw new ExitError('Usage: claude switch alias --remove <name>');
         return { action: 'alias-remove', name: args[3] };
@@ -254,7 +257,9 @@ export function parseCommand(args: string[]): Command {
     }
     case 'route': {
       const sub2 = args[2];
-      if (!sub2 || sub2 === 'list' || sub2 === 'ls') return { action: 'route-list' };
+      if (!sub2 || sub2 === 'list' || sub2 === 'ls') {
+        return { action: 'route-list', json: args.includes('--json') };
+      }
       if (sub2 === 'add') {
         return { action: 'route-add', pattern: args[3], target: args[4] };
       }
@@ -335,7 +340,7 @@ async function main(): Promise<void> {
   // (`<accountsDirPath>/.routing.json`). Read-only `list` + `test` are
   // safe to run anywhere; `add` and `remove` mutate the file under the
   // accounts-dir lock. Early-return so we skip the update prompt.
-  if (cmd.action === 'route-list')   { handleRouteList(statuslineCtx); return; }
+  if (cmd.action === 'route-list')   { handleRouteList(statuslineCtx, { json: cmd.json }); return; }
   if (cmd.action === 'route-add')    { handleRouteAdd(statuslineCtx, cmd.pattern, cmd.target); return; }
   if (cmd.action === 'route-remove') { handleRouteRemove(statuslineCtx, cmd.pattern); return; }
   if (cmd.action === 'route-test')   { handleRouteTest(statuslineCtx, cmd.cwd, { json: cmd.json }); return; }
@@ -423,7 +428,7 @@ async function main(): Promise<void> {
       break;
 
     case 'alias-list':
-      handleAliasList(ctx);
+      handleAliasList(ctx, { json: cmd.json });
       break;
 
     case 'alias-remove':
@@ -451,7 +456,7 @@ async function main(): Promise<void> {
       break;
 
     case 'fallback':
-      handleFallback(ctx, cmd.mode);
+      handleFallback(ctx, cmd.mode, { json: cmd.json });
       break;
 
     case 'fallback-auto':

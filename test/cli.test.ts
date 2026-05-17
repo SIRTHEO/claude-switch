@@ -70,7 +70,7 @@ describe('parseCommand', () => {
 
   it('parses "switch alias --list"', () => {
     assert.deepEqual(parseCommand(['switch', 'alias', '--list']),
-      { action: 'alias-list' });
+      { action: 'alias-list', json: false });
   });
 
   it('parses "switch alias --remove work"', () => {
@@ -80,7 +80,7 @@ describe('parseCommand', () => {
 
   it('parses "switch alias" with no args as alias-list', () => {
     assert.deepEqual(parseCommand(['switch', 'alias']),
-      { action: 'alias-list' });
+      { action: 'alias-list', json: false });
   });
 
   it('parses "--as work" as temporary-switch', () => {
@@ -156,22 +156,22 @@ describe('parseCommand', () => {
 
   it('parses "switch fallback on"', () => {
     assert.deepEqual(parseCommand(['switch', 'fallback', 'on']),
-      { action: 'fallback', mode: 'on' });
+      { action: 'fallback', mode: 'on', json: false });
   });
 
   it('parses "switch fallback off"', () => {
     assert.deepEqual(parseCommand(['switch', 'fallback', 'off']),
-      { action: 'fallback', mode: 'off' });
+      { action: 'fallback', mode: 'off', json: false });
   });
 
   it('parses "switch fallback" with no arg as status', () => {
     assert.deepEqual(parseCommand(['switch', 'fallback']),
-      { action: 'fallback', mode: 'status' });
+      { action: 'fallback', mode: 'status', json: false });
   });
 
   it('parses "switch fallback status"', () => {
     assert.deepEqual(parseCommand(['switch', 'fallback', 'status']),
-      { action: 'fallback', mode: 'status' });
+      { action: 'fallback', mode: 'status', json: false });
   });
 
   it('throws on unknown fallback subcommand', () => {
@@ -208,15 +208,15 @@ describe('parseCommand', () => {
   // ---- route sub-tree ----
 
   it('parses "switch route" as list (default)', () => {
-    assert.deepEqual(parseCommand(['switch', 'route']), { action: 'route-list' });
+    assert.deepEqual(parseCommand(['switch', 'route']), { action: 'route-list', json: false });
   });
 
   it('parses "switch route list"', () => {
-    assert.deepEqual(parseCommand(['switch', 'route', 'list']), { action: 'route-list' });
+    assert.deepEqual(parseCommand(['switch', 'route', 'list']), { action: 'route-list', json: false });
   });
 
   it('parses "switch route ls" as list', () => {
-    assert.deepEqual(parseCommand(['switch', 'route', 'ls']), { action: 'route-list' });
+    assert.deepEqual(parseCommand(['switch', 'route', 'ls']), { action: 'route-list', json: false });
   });
 
   it('parses "switch route add <pattern> <email>"', () => {

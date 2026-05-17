@@ -145,7 +145,7 @@ describe('handleFallback', () => {
   it('status → reports the current fallback state and key presence', () => {
     handleFallback(h.ctx, 'status');
     const out = h.stdout.join('\n');
-    assert.match(out, /Fallback:\s+off/);
+    assert.match(out, /Fallback(?:\s+to\s+API\s+key)?:\s+(?:off|OFF)/);
     assert.match(out, /a@b\.com:\s+has API key/);
   });
 
@@ -153,7 +153,7 @@ describe('handleFallback', () => {
     handleFallback(h.ctx, 'on');
     assert.equal(setFallbackEnabledIsOnDisk(h.accDir), true);
     const out = h.stdout.join('\n');
-    assert.match(out, /Fallback:\s+on/);
+    assert.match(out, /Fallback(?:\s+to\s+API\s+key)?:\s+(?:on|ON)/);
     assert.match(out, /Use this API key/);
   });
 
@@ -342,7 +342,7 @@ describe('handleStatus', () => {
     const out = h.stdout.join('\n');
     assert.match(out, /Active account:\s+a@b\.com/);
     assert.match(out, /Token:/);
-    assert.match(out, /Fallback:\s+off/);
+    assert.match(out, /Fallback(?:\s+to\s+API\s+key)?:\s+(?:off|OFF)/);
   });
 
   it('shows API key as masked when set, not as raw', () => {

@@ -138,8 +138,26 @@ export function handleRouteAdd(
 // route list
 // ---------------------------------------------------------------------------
 
-export function handleRouteList(ctx: CommandContext): void {
+export interface RouteListOptions {
+  json: boolean;
+}
+
+export function handleRouteList(
+  ctx: CommandContext,
+  opts: RouteListOptions = { json: false },
+): void {
   const file = readRoutingFileStrict(ctx.accountsDirPath);
+
+  if (opts.json) {
+    const payload = file.rules.map((r) => ({
+      pattern: r.match,
+      target: r.account ?? r.alias ?? '',
+      kind: r.account ? ('email' as const) : ('alias' as const),
+    }));
+    process.stdout.write(`${JSON.stringify(payload)}\n`);
+    return;
+  }
+
   if (file.rules.length === 0) {
     console.log('No global routing rules. Add one with: claude switch route add <pattern> <email|alias>');
     return;
