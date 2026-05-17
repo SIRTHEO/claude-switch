@@ -55,7 +55,7 @@ export type Command =
   | { action: 'switch-interactive' }
   | { action: 'switch-to'; target: string }
   | { action: 'add' }
-  | { action: 'list' }
+  | { action: 'list'; json: boolean }
   | { action: 'remove'; email: string | undefined }
   | { action: 'status' }
   | { action: 'help' }
@@ -80,7 +80,7 @@ export type Command =
   | { action: 'statusline-install'; variant: 'plain' | 'embedded' | 'ccstatusline' }
   | { action: 'statusline-uninstall' }
   | { action: 'statusline-status' }
-  | { action: 'profile-list' }
+  | { action: 'profile-list'; json: boolean }
   | { action: 'profile-create'; name: string }
   | { action: 'profile-use'; name: string; args: string[] }
   | { action: 'profile-login'; name: string }
@@ -109,7 +109,7 @@ export function parseCommand(args: string[]): Command {
   switch (sub) {
     case 'add': return { action: 'add' };
     case 'list':
-    case 'ls': return { action: 'list' };
+    case 'ls': return { action: 'list', json: args.includes('--json') };
     case 'dashboard':
     case 'dash': return { action: 'dashboard' };
     case 'remove':
@@ -224,7 +224,9 @@ export function parseCommand(args: string[]): Command {
     }
     case 'profile': {
       const sub2 = args[2];
-      if (!sub2 || sub2 === 'list' || sub2 === 'ls') return { action: 'profile-list' };
+      if (!sub2 || sub2 === 'list' || sub2 === 'ls') {
+        return { action: 'profile-list', json: args.includes('--json') };
+      }
       if (sub2 === 'create') {
         if (!args[3]) throw new ExitError('Usage: claude switch profile create <name>');
         return { action: 'profile-create', name: args[3] };
@@ -321,7 +323,7 @@ async function main(): Promise<void> {
   // Profile subcommands — isolated per-terminal claude sessions via
   // CLAUDE_CONFIG_DIR. Early-return so they skip the update-check / pending
   // -restore preludes; profile flows manage their own spawn lifecycle.
-  if (cmd.action === 'profile-list')   { await handleProfileList(); return; }
+  if (cmd.action === 'profile-list')   { await handleProfileList({ json: cmd.json }); return; }
   if (cmd.action === 'profile-create') { await handleProfileCreate(cmd.name); return; }
   if (cmd.action === 'profile-status') { await handleProfileStatus(cmd.name); return; }
   if (cmd.action === 'profile-login')  { await handleProfileLogin(statuslineCtx, cmd.name); return; }
@@ -413,7 +415,7 @@ async function main(): Promise<void> {
       break;
 
     case 'list':
-      handleList(ctx);
+      handleList(ctx, { json: cmd.json });
       break;
 
     case 'alias-set':

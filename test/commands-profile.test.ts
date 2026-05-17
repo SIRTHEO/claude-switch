@@ -76,10 +76,18 @@ function teardown(h: Harness): void {
 
 function captureStdout(h: Harness): () => void {
   const origLog = console.log;
+  const origWrite = process.stdout.write.bind(process.stdout);
   console.log = (...args: unknown[]) => {
     h.stdout.push(args.map(String).join(' '));
   };
-  return () => { console.log = origLog; };
+  process.stdout.write = (chunk: string | Uint8Array, ..._rest: unknown[]): boolean => {
+    h.stdout.push(String(chunk));
+    return true;
+  };
+  return () => {
+    console.log = origLog;
+    process.stdout.write = origWrite;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +123,28 @@ describe('handleProfileList', () => {
     await handleProfileList();
     const out = h.stdout.join('\n');
     assert.match(out, /work/);
+  });
+
+  it('emits a JSON array on --json (no banner)', async () => {
+    const profileDir = path.join(h.fakeHome, '.claude', 'profiles', 'work');
+    fs.mkdirSync(profileDir, { recursive: true });
+    h.stdout.length = 0;
+    await handleProfileList({ json: true });
+    const parsed = JSON.parse(h.stdout.join('').trim()) as Array<{
+      name: string;
+      account: string | null;
+      hasLogin: boolean;
+    }>;
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0]?.name, 'work');
+    assert.equal(parsed[0]?.hasLogin, false);
+    assert.equal(parsed[0]?.account, null);
+  });
+
+  it('emits "[]" on --json when no profiles exist', async () => {
+    h.stdout.length = 0;
+    await handleProfileList({ json: true });
+    assert.deepEqual(JSON.parse(h.stdout.join('').trim()), []);
   });
 });
 

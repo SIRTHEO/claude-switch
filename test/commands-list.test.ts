@@ -56,9 +56,14 @@ function teardown(h: Harness): void {
 
 function captureOutput(h: Harness): () => void {
   const origLog = console.log;
+  const origStdoutWrite = process.stdout.write.bind(process.stdout);
   const origStderrWrite = process.stderr.write.bind(process.stderr);
   console.log = (...args: unknown[]) => {
     h.stdout.push(args.map(String).join(' '));
+  };
+  process.stdout.write = (chunk: string | Uint8Array, ..._rest: unknown[]): boolean => {
+    h.stdout.push(String(chunk));
+    return true;
   };
   process.stderr.write = (chunk: string | Uint8Array, ..._rest: unknown[]): boolean => {
     h.stderr.push(String(chunk));
@@ -66,6 +71,7 @@ function captureOutput(h: Harness): () => void {
   };
   return () => {
     console.log = origLog;
+    process.stdout.write = origStdoutWrite;
     process.stderr.write = origStderrWrite;
   };
 }
@@ -155,5 +161,73 @@ describe('handleList — with accounts', () => {
     assert.match(errOut, /could not determine active account/);
     assert.ok(h.stdout.some(l => l.includes('active@example.com')),
       'should still list accounts even when active marker unreadable');
+  });
+});
+
+describe('handleList — --json', () => {
+  let h: Harness;
+  let restore: () => void;
+
+  beforeEach(() => {
+    h = setup('active@example.com');
+    restore = captureOutput(h);
+  });
+
+  afterEach(() => {
+    restore();
+    teardown(h);
+  });
+
+  it('emits a single JSON line on stdout (no banner, no padding)', () => {
+    saveAccount('other@example.com', h.claudeJson, h.accDir);
+    setAlias('work', 'active@example.com', h.accDir);
+    h.stdout.length = 0;
+    handleList(h.ctx, { json: true });
+
+    const out = h.stdout.join('');
+    // Single-line JSON array. Must be parseable as-is.
+    const parsed = JSON.parse(out.trim()) as Array<{
+      email: string;
+      alias: string | null;
+      aliases: string[];
+      active: boolean;
+    }>;
+    assert.equal(parsed.length, 2);
+    const active = parsed.find((p) => p.email === 'active@example.com');
+    assert.equal(active?.active, true);
+    assert.equal(active?.alias, 'work');
+    assert.deepEqual(active?.aliases, ['work']);
+    const other = parsed.find((p) => p.email === 'other@example.com');
+    assert.equal(other?.active, false);
+    assert.equal(other?.alias, null);
+  });
+
+  it('emits "[]" when no accounts are saved', () => {
+    // Replace fixture: empty accounts dir, no active marker.
+    fs.rmSync(h.accDir, { recursive: true, force: true });
+    fs.mkdirSync(h.accDir, { recursive: true });
+    fs.writeFileSync(h.claudeJson, '{}');
+    h.stdout.length = 0;
+    handleList(h.ctx, { json: true });
+    assert.deepEqual(JSON.parse(h.stdout.join('').trim()), []);
+  });
+
+  it('does NOT write the legacy "Note: could not determine…" banner to stderr', () => {
+    if (process.platform === 'win32') return;
+    fs.chmodSync(h.claudeJson, 0o000);
+    try {
+      handleList(h.ctx, { json: true });
+    } finally {
+      fs.chmodSync(h.claudeJson, 0o644);
+    }
+    // JSON mode must not write the "could not determine active account"
+    // note that the human path emits — pipelines key on stderr quietness
+    // specifically for that ambiguity warning, not for unrelated module
+    // warnings (Keychain-disable banner etc.) that fire regardless of mode.
+    const joined = h.stderr.join('');
+    assert.ok(
+      !/could not determine active account/i.test(joined),
+      'list-specific stderr note must be suppressed in --json mode',
+    );
   });
 });
