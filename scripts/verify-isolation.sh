@@ -17,7 +17,7 @@ fail()  { echo "  ✗ $*"; FAIL=$((FAIL+1)); }
 warn()  { echo "  ⚠ $*"; WARN=$((WARN+1)); }
 header() { echo ""; echo "═══ $* ═══"; }
 
-CLI="${CLI:-/Users/theo/personal/claude-switch/dist/bin/cli.js}"
+CLI="${CLI:-$(cd "$(dirname "$0")/.." && pwd)/dist/bin/cli.js}"
 if [ ! -f "$CLI" ]; then
   echo "Build the project first: npm run build"
   echo "Or set CLI env var to a valid dist/bin/cli.js"
