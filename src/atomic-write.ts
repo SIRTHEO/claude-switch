@@ -11,14 +11,46 @@
 //   - .usage-cache.json (usage.ts)
 // — keeping the safety pattern in one place avoids drift like the bug
 // where aliases.ts shipped without { mode: 0o600 }.
+//
+// Symlink safety: the temp file is opened with O_CREAT|O_EXCL on POSIX
+// platforms so that a pre-existing symlink at the .tmp path cannot
+// redirect the write into an attacker-controlled location. fs.writeFile-
+// Sync without the flag silently follows symlinks; we don't.
 
 import fs from 'node:fs';
 
 export function writeJsonAtomic(file: string, data: unknown, indent = 2): void {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, indent), { mode: 0o600 });
-  if (process.platform !== 'win32') {
-    fs.chmodSync(tmp, 0o600);
+  const tmp = `${file}.tmp`;
+  const payload = JSON.stringify(data, null, indent);
+
+  if (process.platform === 'win32') {
+    // O_EXCL on Windows over node:fs doesn't deny symlink targets the
+    // way it does on POSIX (NTFS ACL model is different). Fall back to
+    // the simpler writeFileSync path; the 0o700 directory protections
+    // around credential dirs are the load-bearing defense there.
+    fs.writeFileSync(tmp, payload, { mode: 0o600 });
+  } else {
+    // O_WRONLY|O_CREAT|O_EXCL refuses if `tmp` already exists, so a
+    // symlink planted there can't redirect this write. Any stale .tmp
+    // from a crashed previous write is unlinked first so we still make
+    // forward progress on retry.
+    try {
+      fs.unlinkSync(tmp);
+    } catch (e) {
+      // ENOENT (no stale file) is expected; anything else is fatal.
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    }
+    const fd = fs.openSync(
+      tmp,
+      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL,
+      0o600,
+    );
+    try {
+      fs.writeSync(fd, payload);
+    } finally {
+      fs.closeSync(fd);
+    }
   }
+
   fs.renameSync(tmp, file);
 }
