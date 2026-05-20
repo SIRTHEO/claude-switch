@@ -68,16 +68,17 @@ function writeAccountFile(email: string, opts: { apiKey?: string } = {}): void {
 function captureStderr(fn: () => void): string {
   let captured = '';
   const original = process.stderr.write.bind(process.stderr);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only monkey-patch
-  (process.stderr as any).write = (chunk: string | Uint8Array) => {
+  const writableStderr = process.stderr as NodeJS.WriteStream & {
+    write: (chunk: string | Uint8Array) => boolean;
+  };
+  writableStderr.write = (chunk: string | Uint8Array) => {
     captured += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
     return true;
   };
   try {
     fn();
   } finally {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- restore
-    (process.stderr as any).write = original;
+    writableStderr.write = original;
   }
   return captured;
 }
