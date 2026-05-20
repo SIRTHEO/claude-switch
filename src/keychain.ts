@@ -91,13 +91,34 @@ function writeKeychainAt(account: string, data: KeychainData): void {
  * AND account. Used to land profile entries on the per-config-dir
  * service Claude Code derives from the CLAUDE_CONFIG_DIR path.
  */
-function writeKeychainAtService(service: string, account: string, data: KeychainData): void {
+function writeKeychainAtService(
+  service: string,
+  account: string,
+  data: KeychainData,
+  trustedBins: string[] = [],
+): void {
   if (process.platform !== 'darwin') return;
   if (!account) throw new Error('writeKeychain requires a non-empty account name');
+  // Build ACL: include /usr/bin/security (so our own CLI keeps read access)
+  // plus any provided trusted binaries (typically the real `claude` binary
+  // so the native Mach-O app can read its own Keychain entry without an
+  // interactive prompt). Without -T the entry's ACL is bound only to the
+  // creating process, causing claude to silently fall back to OAuth login.
+  const aclArgs: string[] = ['-T', '/usr/bin/security'];
+  for (const bin of trustedBins) {
+    if (bin) aclArgs.push('-T', bin);
+  }
   try {
     execFileSync(
       'security',
-      ['add-generic-password', '-s', service, '-a', account, '-w', JSON.stringify(data), '-U'],
+      [
+        'add-generic-password',
+        '-s', service,
+        '-a', account,
+        '-w', JSON.stringify(data),
+        ...aclArgs,
+        '-U',
+      ],
       // Capture stderr separately so we can surface diagnostics without
       // re-throwing Node's default error.message — which embeds argv,
       // and our argv contains the OAuth tokens.
@@ -187,9 +208,21 @@ export function readKeychainForConfigDir(configDir: string | null): KeychainData
   return readKeychainAtService(claudeKeychainServiceFor(configDir), claudeKeychainAccount());
 }
 
-/** Convenience write keyed by config dir + the canonical OS username. */
-export function writeKeychainForConfigDir(configDir: string | null, data: KeychainData): void {
-  writeKeychainAtService(claudeKeychainServiceFor(configDir), claudeKeychainAccount(), data);
+/** Convenience write keyed by config dir + the canonical OS username.
+ *  `trustedBins` is forwarded to the underlying ACL (`security -T <bin>`)
+ *  so native binaries (e.g. real `claude`) can read the entry without
+ *  interactive Keychain prompts. */
+export function writeKeychainForConfigDir(
+  configDir: string | null,
+  data: KeychainData,
+  trustedBins: string[] = [],
+): void {
+  writeKeychainAtService(
+    claudeKeychainServiceFor(configDir),
+    claudeKeychainAccount(),
+    data,
+    trustedBins,
+  );
 }
 
 /** Convenience delete keyed by config dir + the canonical OS username. */

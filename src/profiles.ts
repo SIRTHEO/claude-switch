@@ -27,6 +27,19 @@ import {
 import { getCurrent, isSafeEmail, resolvedAccountFile, syncActiveSnapshotIfStale } from './accounts.js';
 import { claudeJsonPath } from './paths.js';
 import { errMessage, debugProfiles } from './errors.js';
+import { findClaudeBinary } from './find-claude.js';
+
+/**
+ * Trusted-bins list passed to `security -T` when writing a profile
+ * Keychain entry. Resolves the real `claude` binary (native Mach-O) so
+ * Claude Code can read its own Keychain entry without an interactive
+ * prompt. Without this, the entry's ACL stays bound to the creating
+ * process (claude-switch) and claude silently falls back to OAuth login.
+ */
+function profileKeychainTrustedBins(): string[] {
+  const bin = findClaudeBinary(import.meta.url);
+  return bin ? [bin] : [];
+}
 
 // Conservative naming rules so a profile name is never ambiguous on
 // disk, in shell completions, or in error messages. Letters, digits,
@@ -365,7 +378,16 @@ export function importProfileFromAccount(
   // ONLY the userID to the JSON — no oauthAccount. That way readProfile()
   // returns hasLogin=false and `profile use` correctly refuses to spawn
   // claude, prompting the user to run `profile login` first.
-  const claudeJson: Record<string, unknown> = { userID };
+  // `hasCompletedOnboarding` is the gate Claude Code 2.x checks before
+  // attempting to read OAuth tokens from the Keychain. Without it the
+  // binary shows the full welcome wizard (theme picker → "Select login
+  // method"), bypassing the Keychain entry entirely even when valid
+  // credentials are present. Set it here so imported profiles enter
+  // the REPL directly.
+  const claudeJson: Record<string, unknown> = {
+    userID,
+    hasCompletedOnboarding: true,
+  };
   let wroteToKeychain = false;
   let needsLogin = false;
 
@@ -382,7 +404,7 @@ export function importProfileFromAccount(
   if (_keychain) {
     if (useKeychain) {
       try {
-        writeKeychainForConfigDir(dir, _keychain);
+        writeKeychainForConfigDir(dir, _keychain, profileKeychainTrustedBins());
         wroteToKeychain = true;
         debugProfiles(`keychainWrite=success service=per-config-dir account=${dir} (import from snapshot)`);
       } catch (writeErr) {
@@ -412,6 +434,29 @@ export function importProfileFromAccount(
   }
 
   writeJsonAtomic(path.join(dir, '.claude.json'), claudeJson);
+
+  // Carry the user's global statusLine config into the profile's
+  // settings.json so the badge (e.g. `claude switch sl` + ccstatusline)
+  // also renders inside isolated profile sessions. Without this, the
+  // profile starts with no statusline and the user can't tell which
+  // account the terminal is bound to. Best-effort: skip silently if
+  // the global settings file is missing or unreadable.
+  try {
+    const globalSettingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+    if (fs.existsSync(globalSettingsPath)) {
+      const raw = fs.readFileSync(globalSettingsPath, 'utf8');
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (parsed.statusLine) {
+        const profileSettingsPath = path.join(dir, 'settings.json');
+        const existing = fs.existsSync(profileSettingsPath)
+          ? (JSON.parse(fs.readFileSync(profileSettingsPath, 'utf8')) as Record<string, unknown>)
+          : {};
+        writeJsonAtomic(profileSettingsPath, { ...existing, statusLine: parsed.statusLine });
+      }
+    }
+  } catch {
+    /* best-effort — statusline propagation is non-critical */
+  }
 
   // If the imported email is the currently-active account, overwrite
   // the Keychain entry we just wrote (from the legacy snapshot, which
@@ -493,7 +538,7 @@ function captureLiveCredentialsForActiveAccount(
   }
 
   try {
-    writeKeychainForConfigDir(profileDir, live);
+    writeKeychainForConfigDir(profileDir, live, profileKeychainTrustedBins());
     debugProfiles(`keychainWrite=success service=per-config-dir account=${profileDir} (live capture)`);
     return true;
   } catch (writeErr) {
@@ -569,7 +614,7 @@ export async function ensureProfileForAccount(
       debugProfiles(`recoveryAttempted=true legacyKeychain=${hasKeychain} reason=${hasLoginReason} profileDir=${profileDir}`);
       if (!legacy._keychain) return false;
       try {
-        writeKeychainForConfigDir(profileDir, legacy._keychain);
+        writeKeychainForConfigDir(profileDir, legacy._keychain, profileKeychainTrustedBins());
         debugProfiles(`keychainWrite=success service=per-config-dir account=${profileDir}`);
         return true;
       } catch (writeErr) {
