@@ -10,6 +10,13 @@
 * **statusline:** cache-health badge for Claude Code billing-bug visibility (Phase 15.4) ([baa415c](https://github.com/SIRTHEO/claude-switch/commit/baa415c))
 * **cli:** claude switch cache-health subcommand for billing-bug diagnostics (Phase 15.5) ([c65b171](https://github.com/SIRTHEO/claude-switch/commit/c65b171))
 
+## [3.7.1](https://github.com/SIRTHEO/claude-switch/compare/v3.7.0...v3.7.1) (2026-05-20)
+
+
+### Documentation
+
+* **readme:** rewrite with honest competitor comparison and security trade-offs ([1a3d557](https://github.com/SIRTHEO/claude-switch/commit/1a3d557221736d476afdcef9f0569fabb111e28c))
+
 ## [3.7.0](https://github.com/SIRTHEO/claude-switch/compare/v3.5.1...v3.7.0) (2026-05-15)
 
 
