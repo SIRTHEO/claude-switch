@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 140" font-family="ui-sans-serif, -apple-system, 'SF Pro Display', Inter, system-ui, sans-serif">
+  <defs>
+    <linearGradient id="switchGrad" x1="0" y1="0" x2="1" y2="0.4">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+    <style>
+      .claude-text { fill: #18181b; }
+      @media (prefers-color-scheme: dark) {
+        .claude-text { fill: #fafaf9; }
+      }
+      .hyphen { fill: #a1a1aa; }
+      @media (prefers-color-scheme: dark) {
+        .hyphen { fill: #52525b; }
+      }
+    </style>
+  </defs>
+  <text x="360" y="100" text-anchor="middle" font-size="92" font-weight="800" letter-spacing="-4" class="claude-text">claude<tspan class="hyphen" font-weight="400" dx="-2">-</tspan><tspan fill="url(#switchGrad)" dx="-2">switch</tspan></text>
+</svg>

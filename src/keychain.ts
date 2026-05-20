@@ -46,7 +46,8 @@ function candidateAccounts(): string[] {
 }
 
 /**
- * Phase 12.6 — defense against H5 ("env inquinato").
+ * Defense against polluted env: warn when the disable flag leaks into
+ * production.
  *
  * Warn (once per process, on stderr) when the disable flag is set OUTSIDE
  * a test context. The flag is meant for our test suite + sandboxed
