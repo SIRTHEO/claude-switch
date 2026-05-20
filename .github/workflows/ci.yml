@@ -64,6 +64,7 @@ jobs:
           # across files. Real-Keychain coverage lives in the dedicated
           # apikey-keychain.test.ts which opts back in via this env var.
           CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1'
+          CLAUDE_SWITCH_TESTING: '1'
         # Two-segment glob lists root-level + one-deep test files. We
         # don't enable globstar/`**` to keep behaviour identical across
         # shells. Add another segment if the test tree grows deeper.
@@ -74,6 +75,7 @@ jobs:
         shell: pwsh
         env:
           CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1'
+          CLAUDE_SWITCH_TESTING: '1'
         run: |
           $files = Get-ChildItem -Path dist/test -Recurse -Filter "*.test.js" | ForEach-Object { $_.FullName }
           node --test @files
@@ -89,6 +91,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
         env:
           CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1'
+          CLAUDE_SWITCH_TESTING: '1'
           COVERAGE_FLOOR: '78'
         run: |
           set -o pipefail
