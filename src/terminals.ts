@@ -178,9 +178,18 @@ export interface LaunchOptions {
  * Throws when the terminal id is not recognised on this platform.
  */
 export function launchInTerminal(opts: LaunchOptions): void {
-  if (process.platform === 'darwin') return launchDarwin(opts);
-  if (process.platform === 'linux') return launchLinux(opts);
-  if (process.platform === 'win32') return launchWindows(opts);
+  if (process.platform === 'darwin') {
+    launchDarwin(opts);
+    return;
+  }
+  if (process.platform === 'linux') {
+    launchLinux(opts);
+    return;
+  }
+  if (process.platform === 'win32') {
+    launchWindows(opts);
+    return;
+  }
   throw new Error(`Unsupported platform: ${process.platform}`);
 }
 
