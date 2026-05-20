@@ -17,6 +17,10 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # gh CLI's `pr merge --auto` reads repo metadata from a local git
+      # working tree. Without this checkout the step fails with "fatal:
+      # not a git repository", leaving the release PR open forever.
+      - uses: actions/checkout@v6
       - uses: googleapis/release-please-action@v5
         id: release
         with:
