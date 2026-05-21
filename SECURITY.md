@@ -163,6 +163,76 @@ hook to forward a header we'd inject, so the secret would have to live
 in the URL path, which means it'd also live in `ANTHROPIC_BASE_URL`, an
 env var the same-user attacker can already read.
 
+## macOS Keychain partition-list prompts
+
+### The symptom
+
+On macOS, every `claude switch <account>` may pop up the system password
+dialog (`security wants to use the Confidential Information stored in
+"Claude Code-credentials"`). Even clicking **Always Allow** doesn't make
+it stop — the next swap prompts again.
+
+### Why it happens
+
+macOS Sierra+ adds a second access gate to every Keychain item alongside
+the classic ACL: `kSecAttrPartitionList`. An item is locked to the
+code-signing identities listed there. The `claude` binary creates the
+`Claude Code-credentials*` entries with a partition restricted to
+Anthropic's team-ID, so `/usr/bin/security` (Apple team, what claude-switch
+shells out to) is **outside the partition list** and prompts every time.
+Clicking "Always Allow" sticks the ACL entry but not the partition list,
+so it doesn't persist across the next prompt.
+
+### Fix (one-time, requires the macOS user password once)
+
+For each Claude Keychain item, expand the partition list to include
+Apple-signed CLI tools. Replace `<acct>` with `Claude Code-credentials`
+for the global item, and with your macOS username for any per-config-dir
+items (`Claude Code-credentials-<hash>`):
+
+```bash
+# 1. global entry
+security set-generic-password-partition-list \
+  -S "apple-tool:" \
+  -s "Claude Code-credentials" \
+  -a "Claude Code-credentials"
+
+# 2. discover per-config-dir entries (if any) and run the same for each
+security dump-keychain 2>/dev/null | \
+  grep -oE '"Claude Code-credentials-[0-9a-f]{8}"' | sort -u
+# For each one returned, run:
+#   security set-generic-password-partition-list \
+#     -S "apple-tool:" -s "<service>" -a "<your-username>"
+```
+
+You'll be asked for your macOS login password once per item. After that,
+swaps no longer prompt.
+
+### What's the security trade-off
+
+The partition list previously locked the item to a single team-ID. After
+the change, `apple-tool:` (the category that includes `/usr/bin/security`)
+can also unlock it. If you'd rather be more permissive (e.g. allow
+Apple-signed GUI apps too, useful only if some third-party tool on your
+Mac legitimately needs to read the entry), use `-S "apple-tool:,apple:"`.
+**Do not** add `unsigned:` unless you understand that this category
+covers arbitrary unsigned binaries running as your user — i.e. a local
+malware would no longer be prompted before reading the entry.
+
+The blast radius is narrow: only the three (or so) `Claude Code-credentials*`
+entries are touched, not the rest of your Keychain.
+
+### Why claude-switch doesn't do this automatically
+
+`security set-generic-password-partition-list` needs `-k <keychain-password>`
+to run non-interactively; without it macOS prompts for the password
+itself. Automating the fix would mean either prompting the user for their
+macOS password during a swap (worse UX than the current "one annoying
+dialog" cycle) or shipping a one-off setup helper. The maintainer's
+current call is to document the procedure rather than automate it; a
+contribution that wires it into an opt-in `claude switch setup-keychain`
+command would be welcome.
+
 ## Reporting a vulnerability
 
 If you find a security issue — credential leak, privilege escalation,

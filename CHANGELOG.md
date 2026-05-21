@@ -5,10 +5,7 @@
 
 ## Unreleased
 
-### Features
-
-* **statusline:** cache-health badge for Claude Code billing-bug visibility ([baa415c](https://github.com/SIRTHEO/claude-switch/commit/baa415c))
-* **cli:** claude switch cache-health subcommand for billing-bug diagnostics ([c65b171](https://github.com/SIRTHEO/claude-switch/commit/c65b171))
+(empty — release-please will repopulate from conventional-commit subjects)
 
 ## [3.8.0](https://github.com/SIRTHEO/claude-switch/compare/v3.7.0...v3.8.0) (2026-05-21)
 

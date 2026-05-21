@@ -305,6 +305,7 @@ Not a claude-switch bug. Known issues in the Claude Code client / Anthropic bill
 | Fallback on but Claude still uses OAuth | First time Claude Code sees a new key it asks `Use this API key? [y/N]`, press **y** |
 | Usage stats show nothing | Available for Max/Pro subscribers only |
 | Unsure whether claude is billed via OAuth or API key | [SECURITY.md, Silent API-key risk](SECURITY.md#silent-api-key-risk-claudejson-snapshot-leak): 3 `jq` commands to verify |
+| macOS asks for the keychain password on every `claude switch` | One-time partition-list expansion: [SECURITY.md, macOS Keychain partition-list prompts](SECURITY.md#macos-keychain-partition-list-prompts). After running it, swaps stop prompting. |
 | Max/Pro window exhausting faster than expected | Run `claude switch cache-health` and see [above](#-why-is-my-maxpro-plan-exhausting-faster-than-expected) |
 | Anything else | [Open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) or ping **`sirtheo`** on Discord |
 
