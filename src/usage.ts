@@ -21,7 +21,7 @@ import { writeJsonAtomic } from './atomic-write.js';
 import { errMessage } from './errors.js';
 import { isSafeEmail } from './accounts.js';
 import type { AccountSnapshot } from './account-snapshot.js';
-import { type HttpPort, fetchHttpAdapter, hasGlobalFetch } from './http.js';
+import { type HttpPort, fetchHttpAdapter, hasGlobalFetch, readBodyCapped } from './http.js';
 
 const ENDPOINT_HOST = 'api.anthropic.com';
 const ENDPOINT_PATH = '/api/oauth/usage';
@@ -193,35 +193,8 @@ interface FetchError {
 }
 export type FetchUsageOutcome = FetchResult | FetchRateLimited | FetchError;
 
-/**
- * Read a Response body but abort once it exceeds `max` bytes — preserves the
- * early-abort DoS guard the old https streaming reader had (fetch's `text()`
- * would download the whole body before we could check the size). Falls back
- * to `text()` when the response exposes no readable stream.
- */
-async function readBodyCapped(res: Response, max: number): Promise<{ text: string; tooLarge: boolean }> {
-  const reader = res.body?.getReader();
-  if (!reader) {
-    const text = await res.text();
-    return { text, tooLarge: text.length > max };
-  }
-  const decoder = new TextDecoder();
-  let text = '';
-  let bytes = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    bytes += value.byteLength;
-    if (bytes > max) {
-      await reader.cancel();
-      return { text, tooLarge: true };
-    }
-    text += decoder.decode(value, { stream: true });
-  }
-  text += decoder.decode();
-  return { text, tooLarge: false };
-}
+// `readBodyCapped` was extracted to `src/http.ts` so oauth-refresh.ts can
+// reuse the same DoS guard. Same shape, no behaviour change.
 
 /**
  * Fetch the subscription usage directly. Caller is responsible for caching —

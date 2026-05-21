@@ -18,11 +18,16 @@
 // "Open account isolated" hot path.
 
 import type { ClaudeAiOauth } from './keychain.js';
-import { type HttpPort, fetchHttpAdapter, hasGlobalFetch } from './http.js';
+import { type HttpPort, fetchHttpAdapter, hasGlobalFetch, readBodyCapped } from './http.js';
 
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const ANTHROPIC_BETA = 'oauth-2025-04-20';
+
+// The OAuth refresh response is ~5 short JSON fields (a few KB at most).
+// 1 MB is plenty of slack while still bounding an unbounded-response DoS
+// from a compromised endpoint (e.g. DNS poisoning + cert bypass).
+const MAX_REFRESH_BODY_BYTES = 1 * 1024 * 1024;
 
 // Refresh access tokens that are less than this many milliseconds from
 // expiry. Mirrors the buffer claude itself uses (≈60s) so behaviour
@@ -87,9 +92,21 @@ export async function refreshAccessToken(
 
   if (!res.ok) return null;
 
+  // Stream the body with a hard cap so a hostile / misbehaving endpoint
+  // can't OOM us by returning an unbounded payload. Falls back to "no
+  // refresh, caller does the login path" on cap-exceeded — same shape as
+  // every other failure here.
+  let raw: { text: string; tooLarge: boolean };
+  try {
+    raw = await readBodyCapped(res, MAX_REFRESH_BODY_BYTES);
+  } catch {
+    return null;
+  }
+  if (raw.tooLarge) return null;
+
   let body: RefreshResponse;
   try {
-    body = (await res.json()) as RefreshResponse;
+    body = JSON.parse(raw.text) as RefreshResponse;
   } catch {
     return null;
   }

@@ -147,6 +147,19 @@ describe('refreshAccessToken', () => {
     const result = await refreshAccessToken('rt', { http: fetch });
     assert.deepEqual(result?.scopes, ['user:inference', 'user:profile']);
   });
+
+  it('rejects a response body that exceeds the 1MB DoS cap', async () => {
+    // Pad valid JSON with whitespace inside a string field so the wire
+    // bytes blow past 1 MB while staying syntactically valid — the cap
+    // must catch this before parsing.
+    const padding = 'x'.repeat(2 * 1024 * 1024); // 2 MB
+    const fetch = fakeFetch(() => new Response(
+      JSON.stringify({ access_token: 'a', expires_in: 100, _pad: padding }),
+      { status: 200 },
+    ));
+    const result = await refreshAccessToken('rt', { http: fetch });
+    assert.equal(result, null, 'oversize body must fall through to needsLogin');
+  });
 });
 
 describe('refreshIfStale', () => {
