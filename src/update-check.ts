@@ -14,8 +14,8 @@ import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { type ProcessPort, nodeProcessAdapter } from './process.js';
 
 const PACKAGE_NAME = '@sirtheo/claude-switch';
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
@@ -208,14 +208,14 @@ export function detectInstallCommand(): string[] {
  * Runs the detected install command with live stdio.
  * Returns true if the process exited successfully.
  */
-export function performUpdate(): boolean {
+export function performUpdate(deps?: { process?: ProcessPort }): boolean {
   const [cmd, ...args] = detectInstallCommand();
   if (!cmd) {
     console.error('Could not detect install command for self-update.');
     return false;
   }
   console.log(`Running: ${cmd} ${args.join(' ')}\n`);
-  const result = spawnSync(cmd, args, { stdio: 'inherit' });
+  const result = (deps?.process ?? nodeProcessAdapter).spawnSync(cmd, args, { stdio: 'inherit' });
   return result.status === 0 && !result.error;
 }
 
