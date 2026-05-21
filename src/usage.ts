@@ -11,7 +11,6 @@
 // 429 keep returning 429 indefinitely. We cache responses for 15 minutes by
 // default and skip fetching while the cache is fresh.
 
-import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -21,6 +20,7 @@ import { readKeychain } from './keychain.js';
 import { writeJsonAtomic } from './atomic-write.js';
 import { errMessage } from './errors.js';
 import { isSafeEmail } from './accounts.js';
+import { type HttpPort, fetchHttpAdapter, hasGlobalFetch } from './http.js';
 
 const ENDPOINT_HOST = 'api.anthropic.com';
 const ENDPOINT_PATH = '/api/oauth/usage';
@@ -193,62 +193,97 @@ interface FetchError {
 export type FetchUsageOutcome = FetchResult | FetchRateLimited | FetchError;
 
 /**
- * Fetch the subscription usage directly. Caller is responsible for caching —
- * see fetchUsageCached() for the cache-aware version.
+ * Read a Response body but abort once it exceeds `max` bytes — preserves the
+ * early-abort DoS guard the old https streaming reader had (fetch's `text()`
+ * would download the whole body before we could check the size). Falls back
+ * to `text()` when the response exposes no readable stream.
  */
-export function fetchUsage(accessToken: string): Promise<FetchUsageOutcome> {
-  return new Promise((resolve) => {
-    const req = https.request(
-      {
-        host: ENDPOINT_HOST,
-        path: ENDPOINT_PATH,
-        method: 'GET',
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-          'anthropic-beta': BETA_HEADER,
-          accept: 'application/json',
-          'user-agent': 'claude-switch',
-        },
-        timeout: FETCH_TIMEOUT_MS,
+async function readBodyCapped(res: Response, max: number): Promise<{ text: string; tooLarge: boolean }> {
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const text = await res.text();
+    return { text, tooLarge: text.length > max };
+  }
+  const decoder = new TextDecoder();
+  let text = '';
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    bytes += value.byteLength;
+    if (bytes > max) {
+      await reader.cancel();
+      return { text, tooLarge: true };
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  text += decoder.decode();
+  return { text, tooLarge: false };
+}
+
+/**
+ * Fetch the subscription usage directly. Caller is responsible for caching —
+ * see fetchUsageCached() for the cache-aware version. The HTTP call goes
+ * through an injected `HttpPort` (defaults to the global fetch); tests inject
+ * a fake via `deps.http`.
+ */
+export async function fetchUsage(
+  accessToken: string,
+  deps: { http?: HttpPort } = {},
+): Promise<FetchUsageOutcome> {
+  if (!deps.http && !hasGlobalFetch()) {
+    return { ok: false, rateLimited: false, error: 'no fetch available' };
+  }
+  const http = deps.http ?? fetchHttpAdapter;
+
+  let res: Response;
+  try {
+    res = await http(`https://${ENDPOINT_HOST}${ENDPOINT_PATH}`, {
+      method: 'GET',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'anthropic-beta': BETA_HEADER,
+        accept: 'application/json',
+        'user-agent': 'claude-switch',
       },
-      (res) => {
-        let body = '';
-        let aborted = false;
-        res.on('data', (chunk: Buffer) => {
-          if (aborted) return;
-          body += chunk.toString();
-          if (body.length > MAX_BODY_BYTES) {
-            aborted = true;
-            res.destroy();
-          }
-        });
-        res.on('end', () => {
-          if (res.statusCode === 429) {
-            resolve({ ok: false, rateLimited: true, retryAfterSec: parseRetryAfter(res.headers['retry-after']) });
-            return;
-          }
-          if (res.statusCode !== 200) {
-            resolve({ ok: false, rateLimited: false, error: `HTTP ${res.statusCode}` });
-            return;
-          }
-          try {
-            const parsed: unknown = JSON.parse(body);
-            if (isUsagePayloadShaped(parsed)) {
-              resolve({ ok: true, payload: parsed });
-            } else {
-              const preview = body.slice(0, 300).replace(/[\r\n]+/g, ' ');
-              resolve({ ok: false, rateLimited: false, error: `unexpected response shape: ${preview}` });
-            }
-          } catch (e) {
-            resolve({ ok: false, rateLimited: false, error: `parse error: ${errMessage(e)}` });
-          }
-        });
-      },
-    );
-    req.on('error', (e) => resolve({ ok: false, rateLimited: false, error: e.message }));
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, rateLimited: false, error: 'timeout' }); });
-    req.end();
-  });
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch (e) {
+    const name = (e as { name?: string } | null)?.name;
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      return { ok: false, rateLimited: false, error: 'timeout' };
+    }
+    return { ok: false, rateLimited: false, error: errMessage(e) };
+  }
+
+  if (res.status === 429) {
+    return { ok: false, rateLimited: true, retryAfterSec: parseRetryAfter(res.headers.get('retry-after') ?? undefined) };
+  }
+  if (res.status !== 200) {
+    return { ok: false, rateLimited: false, error: `HTTP ${res.status}` };
+  }
+
+  let read: { text: string; tooLarge: boolean };
+  try {
+    read = await readBodyCapped(res, MAX_BODY_BYTES);
+  } catch (e) {
+    return { ok: false, rateLimited: false, error: `read error: ${errMessage(e)}` };
+  }
+  if (read.tooLarge) {
+    return { ok: false, rateLimited: false, error: 'response too large' };
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(read.text);
+    if (isUsagePayloadShaped(parsed)) {
+      return { ok: true, payload: parsed };
+    }
+    const preview = read.text.slice(0, 300).replace(/[\r\n]+/g, ' ');
+    return { ok: false, rateLimited: false, error: `unexpected response shape: ${preview}` };
+  } catch (e) {
+    return { ok: false, rateLimited: false, error: `parse error: ${errMessage(e)}` };
+  }
 }
 
 /**
