@@ -13,7 +13,7 @@
 //
 // Windows is unsupported (no portable `ps`). Returns 0 there.
 
-import { execFileSync } from 'node:child_process';
+import { type ProcessPort, nodeProcessAdapter } from './process.js';
 
 export interface ActiveSessionsResult {
   /** Number of likely-active claude sessions that aren't this process. */
@@ -34,6 +34,7 @@ export interface ActiveSessionsResult {
 export function countActiveClaudeSessions(
   realClaudePath: string | null,
   selfPid: number = process.pid,
+  deps: { process?: ProcessPort } = {},
 ): ActiveSessionsResult {
   if (!realClaudePath) {
     return { count: 0, unsupportedReason: 'no-real-claude' };
@@ -42,19 +43,21 @@ export function countActiveClaudeSessions(
     return { count: 0, unsupportedReason: 'windows' };
   }
 
-  let raw: string;
-  try {
-    // ps -ax: every process the user can see, no controlling-terminal filter.
-    // -o pid=,command=  : just pid + command line, no header.
-    // Works on macOS BSD ps and GNU/Linux procps ps with the same flags.
-    raw = execFileSync('ps', ['-ax', '-o', 'pid=,command='], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 1500,
-    });
-  } catch {
+  const proc = deps.process ?? nodeProcessAdapter;
+  // ps -ax: every process the user can see, no controlling-terminal filter.
+  // -o pid=,command=  : just pid + command line, no header.
+  // Works on macOS BSD ps and GNU/Linux procps ps with the same flags.
+  // spawnSync (unlike execFileSync) never throws — a spawn error or a
+  // non-zero exit lands on the result, so a failed/absent `ps` degrades to
+  // the same ps-unavailable signal the old try/catch produced.
+  const result = proc.spawnSync('ps', ['-ax', '-o', 'pid=,command='], {
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: 1500,
+  });
+  if (result.error || result.status !== 0 || result.stdout == null) {
     return { count: 0, unsupportedReason: 'ps-unavailable' };
   }
+  const raw = result.stdout.toString();
 
   // Build a regex that matches `<realClaudePath>` only when followed by
   // whitespace or end-of-line. Avoids false-positives like
