@@ -26,10 +26,6 @@ export function readKeychain(): KeychainData | null {
   return defaultCredentialStore.readOAuth();
 }
 
-export function writeKeychain(data: KeychainData): void {
-  defaultCredentialStore.writeOAuth(data);
-}
-
 /** Convenience read keyed by config dir + the canonical OS username. */
 export function readKeychainForConfigDir(configDir: string | null): KeychainData | null {
   return defaultCredentialStore.readOAuthForConfigDir(configDir);

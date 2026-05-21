@@ -146,7 +146,7 @@ export function saveApiKeyAndMaybeInit(
   return { smartEnabled };
 }
 
-export interface AutoDisableResult {
+interface AutoDisableResult {
   /** True when this call disabled fallback. False when nothing was done. */
   disabled: boolean;
   fivePct?: number;
@@ -202,7 +202,7 @@ export function maybeAutoDisableFallback(
   return result;
 }
 
-export interface AutoEngageResult {
+interface AutoEngageResult {
   /** True when this call enabled fallback. False when nothing was done. */
   engaged: boolean;
   fivePct?: number;

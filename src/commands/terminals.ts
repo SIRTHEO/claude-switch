@@ -4,7 +4,7 @@
 
 import { detectTerminals } from '../terminals.js';
 
-export interface TerminalsOptions {
+interface TerminalsOptions {
   json: boolean;
 }
 

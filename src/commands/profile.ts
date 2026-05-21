@@ -16,7 +16,7 @@ import { findClaude } from './_helpers.js';
 import type { CommandContext } from './context.js';
 import type { ProfileEntry } from '../contract.js';
 
-export interface ProfileListOptions {
+interface ProfileListOptions {
   json: boolean;
 }
 
@@ -169,17 +169,16 @@ export async function handleProfileLogin(ctx: CommandContext, name: string): Pro
 }
 
 /**
- * Spawn the profile's `claude` session inside a NEW window of the
- * specified terminal emulator. The current process exits immediately
- * after handing the launch off so the GUI / launching shell returns
- * focus to the user. Used by the GUI's per-profile "Launch in ▾"
- * picker.
+ * Resolve a profile name into a launchable bundle (info + isolated config-dir
+ * + the real claude binary), throwing ExitError on every precondition: the
+ * profile doesn't exist, can't be read, or hasn't been logged in yet. Two
+ * handlers below ran the exact same preamble — keep it in one place so the
+ * error messages stay consistent.
  */
-export async function handleProfileLaunch(
+async function resolveActiveProfile(
   ctx: CommandContext,
   name: string,
-  terminalId: string,
-): Promise<void> {
+) {
   const { profilePath, profileExists, readProfile } = await import('../profiles.js');
   if (!profileExists(name)) {
     throw new ExitError(
@@ -197,8 +196,26 @@ export async function handleProfileLaunch(
       `Profile "${name}" has no login yet. Run: claude switch profile login ${name}`,
     );
   }
-  const dir = profilePath(name);
-  const claudeBin = findClaude(ctx.selfUrl);
+  return {
+    info,
+    dir: profilePath(name),
+    claudeBin: findClaude(ctx.selfUrl),
+  };
+}
+
+/**
+ * Spawn the profile's `claude` session inside a NEW window of the
+ * specified terminal emulator. The current process exits immediately
+ * after handing the launch off so the GUI / launching shell returns
+ * focus to the user. Used by the GUI's per-profile "Launch in ▾"
+ * picker.
+ */
+export async function handleProfileLaunch(
+  ctx: CommandContext,
+  name: string,
+  terminalId: string,
+): Promise<void> {
+  const { dir, claudeBin } = await resolveActiveProfile(ctx, name);
   const { launchInTerminal } = await import('../terminals.js');
   try {
     launchInTerminal({
@@ -218,25 +235,7 @@ export async function handleProfileUse(
   name: string,
   passthroughArgs: string[],
 ): Promise<never> {
-  const { profilePath, profileExists, readProfile } = await import('../profiles.js');
-  if (!profileExists(name)) {
-    throw new ExitError(
-      `Profile "${name}" does not exist. Create it with: claude switch profile create ${name}`,
-    );
-  }
-  let info: ReturnType<typeof readProfile>;
-  try {
-    info = readProfile(name);
-  } catch (e) {
-    throw new ExitError(errMessage(e));
-  }
-  if (!info.hasLogin) {
-    throw new ExitError(
-      `Profile "${name}" has no login yet. Run: claude switch profile login ${name}`,
-    );
-  }
-  const dir = profilePath(name);
-  const claudeBin = findClaude(ctx.selfUrl);
+  const { info, dir, claudeBin } = await resolveActiveProfile(ctx, name);
   process.stderr.write(`🔑 ${name} (profile, isolated) — ${info.emailAddress}\n\n`);
   const { buildSpawnArgs } = await import('../proxy.js');
   const { command, args, options } = buildSpawnArgs(claudeBin, passthroughArgs, process.platform, {

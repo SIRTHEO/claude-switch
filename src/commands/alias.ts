@@ -23,7 +23,7 @@ export function handleAliasSet(
   console.log(`Alias set: ${name} → ${email}`);
 }
 
-export interface AliasListOptions {
+interface AliasListOptions {
   json: boolean;
 }
 

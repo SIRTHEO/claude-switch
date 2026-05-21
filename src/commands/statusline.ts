@@ -32,7 +32,7 @@ import type { StatuslineSnapshot } from '../contract.js';
 // Render — read-only, hot-path
 // --------------------------------------------------------------------------
 
-export interface StatuslineOptions {
+interface StatuslineOptions {
   format: 'compact' | 'full' | 'json' | 'embedded';
   color: boolean;
   noCacheHealth?: boolean;

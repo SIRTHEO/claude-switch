@@ -232,7 +232,7 @@ export function summariseCacheHealth(
 /**
  * Options for {@link loadActiveSessionHealth}.
  */
-export interface LoadHealthOptions {
+interface LoadHealthOptions {
   /** Absolute path to `~/.claude/projects` (or equivalent). Default: `~/.claude/projects`. */
   claudeProjectsDir?: string;
   /** Working directory of the target project. Default: `process.cwd()`. */
