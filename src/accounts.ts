@@ -1,11 +1,11 @@
 import fs from 'node:fs';
-import { readKeychain, writeKeychain, type KeychainData } from './keychain.js';
-import { keychainAvailable, readApiKeyFromKeychain } from './apikey-keychain.js';
+import type { KeychainData } from './keychain.js';
 import { writeJsonAtomic } from './atomic-write.js';
 import { withLock } from './lock.js';
 import { errnoCode } from './errors.js';
 import { isSafeEmail, resolvedAccountFile } from './account-paths.js';
 import { type AccountRepository, fsAccountRepo } from './account-repository.js';
+import { type CredentialStore, defaultCredentialStore } from './credential-store.js';
 
 // Re-exported so existing importers (apikey.ts, profiles.ts, usage.ts,
 // preferences.ts, commands/*) keep importing them from accounts.js unchanged.
@@ -30,13 +30,14 @@ export function save(
   email: string,
   claudeJsonPath: string,
   accountsDirPath: string,
-  deps?: { repo?: AccountRepository },
+  deps?: { repo?: AccountRepository; credentials?: CredentialStore },
 ): void {
   if (!email || !isSafeEmail(email)) {
     throw new Error(`Email contains characters unsafe for filenames: ${email}`);
   }
 
   const repo = deps?.repo ?? fsAccountRepo;
+  const credentials = deps?.credentials ?? defaultCredentialStore;
 
   let data: Record<string, unknown>;
   try {
@@ -56,7 +57,7 @@ export function save(
   // a save() round-trip doesn't accidentally erase it; the keychainRestored
   // contract on subsequent loads stays correct.
   const keychainDisabled = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1';
-  const keychainData = keychainDisabled ? null : readKeychain();
+  const keychainData = keychainDisabled ? null : credentials.readOAuth();
   const accountPayload: Record<string, unknown> = { ...(data.oauthAccount || {}) };
   if (keychainData) {
     accountPayload._keychain = keychainData;
@@ -235,9 +236,10 @@ export function load(
   email: string,
   claudeJsonPath: string,
   accountsDirPath: string,
-  deps?: { repo?: AccountRepository },
+  deps?: { repo?: AccountRepository; credentials?: CredentialStore },
 ): { keychainRestored: boolean } {
   const repo = deps?.repo ?? fsAccountRepo;
+  const credentials = deps?.credentials ?? defaultCredentialStore;
 
   // loadRaw rejects symlinked account files and a missing file with explicit
   // errors, and surfaces invalid JSON — the same security-critical sequence
@@ -288,8 +290,8 @@ export function load(
   // they relied on the silent persistence.
   const claudeSwitchTracksApiKey = (() => {
     if (typeof _apiKeyLegacy === 'string' && _apiKeyLegacy) return true;
-    if (keychainAvailable() && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1') {
-      return readApiKeyFromKeychain(email) !== null;
+    if (credentials.available() && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1') {
+      return credentials.readApiKey(email) !== null;
     }
     return false;
   })();
@@ -347,7 +349,7 @@ export function load(
   // otherwise prompt for authorization and either block forever or fail).
   if (keychainRestored && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1') {
     try {
-      writeKeychain(_keychain as KeychainData);
+      credentials.writeOAuth(_keychain as KeychainData);
     } catch (e) {
       try {
         writeJson({ ...data, oauthAccount: previousOauthAccount });
