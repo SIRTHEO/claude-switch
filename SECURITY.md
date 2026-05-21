@@ -118,6 +118,51 @@ so no key value ever reaches the command line. The CLI's non-interactive
 `promptSecret` was also hardened to resolve on stdin EOF (empty stdin no
 longer hangs the process).
 
+## Loopback proxy authentication
+
+### The exposure
+
+While `claude` runs, claude-switch starts a local HTTP proxy on
+`127.0.0.1:<random-port>` that forwards every request to
+`api.anthropic.com` with the user's OAuth token or API key attached.
+The bind is loopback-only, but loopback is reachable from two sources
+that are not the `claude` CLI:
+
+1. **Other processes running as the same user**, which can connect to
+   the port and have requests forwarded with the user's credentials.
+2. **Browsers, via DNS rebinding** — a malicious site whose DNS resolves
+   to `127.0.0.1` becomes "same-origin" with the proxy and can fetch it
+   cross-origin without CORS preflight (for simple requests) or with
+   bypassed checks (no-cors mode).
+
+### What is mitigated
+
+Two header checks at the top of the request handler:
+
+- **`Origin` must be absent.** Browsers always set `Origin` on
+  cross-origin fetches; the `claude` CLI does not. An `Origin` header
+  alone is a reliable "this came from a browser" signal, regardless of
+  whether DNS rebinding shifted same-origin to loopback.
+- **`Host` must match `127.0.0.1:<port>` or `localhost:<port>`.** The
+  `claude` CLI is configured with `ANTHROPIC_BASE_URL=http://127.0.0.1:<port>`
+  and sends that hostname in `Host`. A DNS-rebinding browser sends the
+  original site's hostname (e.g. `attacker.com:<port>`) and is rejected.
+
+Rejections return HTTP 403 with a structured JSON error and increment
+the `rejectedAuth` counter surfaced in `claude switch status`.
+
+### What is **not** mitigated
+
+A local process running as the same user that mimics the CLI's HTTP
+shape exactly (no `Origin`, correct `Host`) still passes the gate and
+will get requests forwarded. The threat model here is the same as any
+local dev server: don't run untrusted code as your user during a
+`claude` session. A shared-secret token between proxy and CLI was
+considered and rejected for now — the `claude` binary doesn't expose a
+hook to forward a header we'd inject, so the secret would have to live
+in the URL path, which means it'd also live in `ANTHROPIC_BASE_URL`, an
+env var the same-user attacker can already read.
+
 ## Reporting a vulnerability
 
 If you find a security issue — credential leak, privilege escalation,
