@@ -74,6 +74,8 @@ export interface ProxyRuntimeState {
     apiKeyRetries: number;
     upstreamErrors: number;
     bodySniffsTriggered: number;
+    /** Requests dropped by the auth gate (DNS rebinding or browser Origin). */
+    rejectedAuth: number;
   };
   /** Reason of the most recent OAuth → API-key retry (e.g. "subscription
    *  returned 429" or "subscription error in response body"). Null when
@@ -262,7 +264,15 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
     apiKeyRetries: 0,         // OAuth → API-key per-request retry
     upstreamErrors: 0,        // network failure connecting to upstream
     bodySniffsTriggered: 0,   // body matched looksLikeErrorBody on a 200
+    rejectedAuth: 0,          // request blocked by Host/Origin auth check
   };
+
+  // Populated in the listen callback once the OS-assigned port is known.
+  // The set covers the literal Host headers a legitimate caller can send;
+  // anything else (e.g. a DNS-rebinding browser using `Host: evil.com`) is
+  // rejected before the body is read. See the auth check at the top of the
+  // request handler below.
+  let allowedHostHeaders: Set<string> = new Set();
   let lastRetryReason: string | null = null;
 
   const recordOauthFailure = (): void => {
@@ -360,6 +370,42 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
 
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
+      // Auth gate — runs BEFORE we touch the body. Closes two specific
+      // exposures of a loopback HTTP server that forwards the user's API
+      // key upstream:
+      //   1. Cross-origin browser fetches (incl. DNS rebinding where a
+      //      malicious site resolves its domain to 127.0.0.1). Browsers
+      //      always send Origin on cross-origin requests; the claude CLI
+      //      doesn't send Origin at all. So an Origin header at all is a
+      //      reliable "this came from a browser" signal.
+      //   2. Host-header mismatches (the other half of the DNS-rebinding
+      //      defence — even when CORS is bypassed via no-cors mode, the
+      //      browser still sends the original site's hostname in Host).
+      // Same-user local processes mimicking the claude CLI exactly can
+      // still pass these checks; that residual is documented in SECURITY.md.
+      const reqOrigin = req.headers['origin'];
+      const reqHost = req.headers['host'];
+      const authOk =
+        reqOrigin === undefined &&
+        typeof reqHost === 'string' &&
+        allowedHostHeaders.has(reqHost);
+      if (!authOk) {
+        counters.rejectedAuth++;
+        dbg(`auth-reject: host=${String(reqHost)} origin=${String(reqOrigin)}`);
+        res.writeHead(403, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({
+          type: 'error',
+          error: {
+            type: 'forbidden',
+            message: 'claude-switch proxy: request rejected (unexpected Host or Origin header)',
+          },
+        }));
+        // Drain the request to keep the connection healthy for any
+        // follow-up retry from a legitimate client.
+        req.resume();
+        return;
+      }
+
       const chunks: Buffer[] = [];
       let receivedLen = 0;
       let requestTooLarge = false;
@@ -526,6 +572,13 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
     server.on('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address() as AddressInfo; // safe: server is bound to a TCP address, never a pipe, so address() is always AddressInfo here
+      // Build the allow-list of Host headers a legitimate client may send.
+      // claude is configured with `ANTHROPIC_BASE_URL=http://127.0.0.1:<port>`
+      // so it will always send `127.0.0.1:<port>`. `localhost:<port>` is
+      // accepted too because some HTTP clients normalise loopback to it; a
+      // browser doing DNS rebinding would send the attacker's domain
+      // instead, which we drop.
+      allowedHostHeaders = new Set([`127.0.0.1:${addr.port}`, `localhost:${addr.port}`]);
       // Emit initial runtime mode marker. `oauth-burst` is only entered
       // after threshold failures, never at startup; we always boot in
       // either `oauth-first` or `api-first`.

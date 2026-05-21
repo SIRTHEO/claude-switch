@@ -978,3 +978,105 @@ describe('startFallbackProxy — runtime mode marker (Phase 13.6)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Auth gate (20.18) — anti-loopback-abuse + anti-DNS-rebinding
+// ---------------------------------------------------------------------------
+
+describe('proxy auth gate', () => {
+  it('forwards a request with the expected loopback Host header', async () => {
+    let reached = false;
+    const upstream = await createUpstream((_req, res) => {
+      reached = true;
+      res.writeHead(200); res.end('ok');
+    });
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url,
+    });
+    try {
+      // Node's http.request sets `Host: 127.0.0.1:<port>` automatically from
+      // the URL — same shape the claude binary sends under ANTHROPIC_BASE_URL.
+      const { status } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        headers: { authorization: 'Bearer tok' }, body: '{}',
+      });
+      assert.equal(status, 200);
+      assert.equal(reached, true, 'upstream should have been called');
+      assert.equal(proxy.state().counters.rejectedAuth, 0);
+    } finally {
+      await new Promise<void>((r) => proxy.close(() => r()));
+      await upstream.close();
+    }
+  });
+
+  it('rejects a request whose Host header points at a different domain (DNS rebinding)', async () => {
+    let upstreamHit = false;
+    const upstream = await createUpstream((_req, res) => {
+      upstreamHit = true;
+      res.writeHead(200); res.end('ok');
+    });
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url,
+    });
+    try {
+      const { status, body } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        // DNS-rebinding browser would resolve attacker.example to 127.0.0.1
+        // and send the original hostname in Host.
+        headers: { host: 'attacker.example:1234', authorization: 'Bearer tok' },
+        body: '{}',
+      });
+      assert.equal(status, 403);
+      assert.match(body, /Host or Origin/);
+      assert.equal(upstreamHit, false, 'upstream MUST NOT be called for a rejected request');
+      assert.equal(proxy.state().counters.rejectedAuth, 1);
+    } finally {
+      await new Promise<void>((r) => proxy.close(() => r()));
+      await upstream.close();
+    }
+  });
+
+  it('rejects a request that carries an Origin header (browser cross-origin)', async () => {
+    let upstreamHit = false;
+    const upstream = await createUpstream((_req, res) => {
+      upstreamHit = true;
+      res.writeHead(200); res.end('ok');
+    });
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url,
+    });
+    try {
+      const { status } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        headers: {
+          // Host is fine; Origin alone is enough to flag it as a browser.
+          origin: 'https://evil.example',
+          authorization: 'Bearer tok',
+        },
+        body: '{}',
+      });
+      assert.equal(status, 403);
+      assert.equal(upstreamHit, false);
+      assert.equal(proxy.state().counters.rejectedAuth, 1);
+    } finally {
+      await new Promise<void>((r) => proxy.close(() => r()));
+      await upstream.close();
+    }
+  });
+
+  it('accepts `localhost:<port>` as an alias for the loopback Host', async () => {
+    const upstream = await createUpstream((_req, res) => { res.writeHead(200); res.end('ok'); });
+    const proxy = await startFallbackProxy({
+      apiKey: 'sk-ant-api03-key', mode: 'oauth-first', upstreamBase: upstream.url,
+    });
+    try {
+      const { status } = await httpRequest(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        // Some HTTP clients normalise loopback to `localhost`; accept that
+        // shape too so we don't accidentally lock out a legitimate caller.
+        headers: { host: `localhost:${proxy.port}`, authorization: 'Bearer tok' },
+        body: '{}',
+      });
+      assert.equal(status, 200);
+    } finally {
+      await new Promise<void>((r) => proxy.close(() => r()));
+      await upstream.close();
+    }
+  });
+});
