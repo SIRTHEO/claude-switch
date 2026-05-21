@@ -15,7 +15,7 @@ import type { CommandContext } from './context.js';
 import { errMessage } from '../errors.js';
 import type { AccountSummary } from '../contract.js';
 
-export interface ListOptions {
+interface ListOptions {
   json: boolean;
 }
 

@@ -24,7 +24,7 @@ import {
 import type { CacheHealthSummary, FlushEvent } from '../cache-health.js';
 import type { CacheHealthReport } from '../contract.js';
 
-export interface CacheHealthOptions {
+interface CacheHealthOptions {
   /** Absolute path to a specific JSONL file to parse (bypasses active-session lookup). */
   sessionPath?: string;
   /** When true, output JSON instead of human-readable text. */

@@ -139,7 +139,7 @@ export function handleRouteAdd(
 // route list
 // ---------------------------------------------------------------------------
 
-export interface RouteListOptions {
+interface RouteListOptions {
   json: boolean;
 }
 
@@ -199,7 +199,7 @@ export function handleRouteRemove(ctx: CommandContext, pattern: string | undefin
 // route test
 // ---------------------------------------------------------------------------
 
-export interface RouteTestOptions {
+interface RouteTestOptions {
   json: boolean;
 }
 

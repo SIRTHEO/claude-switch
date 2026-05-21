@@ -88,7 +88,7 @@ export function detectShellConfigs(home?: string): string[] {
   }
 
   return candidates.filter(f => {
-    try { fs.accessSync(f); return true; } catch { return false; }
+    try { fs.accessSync(f); return true; } catch { return false; } // not present → don't include
   });
 }
 

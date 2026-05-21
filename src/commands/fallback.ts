@@ -10,7 +10,7 @@ import { getAutoFallbackConfig, setAutoFallbackConfig } from '../auto-fallback.j
 import type { CommandContext } from './context.js';
 import type { FallbackStatus } from '../contract.js';
 
-export interface FallbackOptions {
+interface FallbackOptions {
   json: boolean;
 }
 

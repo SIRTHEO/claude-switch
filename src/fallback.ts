@@ -25,7 +25,7 @@ export function isFallbackAutoEngaged(accountsDirPath: string): boolean {
   return fallback.enabled && fallback.autoEngaged;
 }
 
-export interface SetFallbackOpts {
+interface SetFallbackOpts {
   /** When true, also marks the flag as engaged-by-auto. Used by
    *  `maybeAutoEngageFallback`. Manual toggles leave it false (default)
    *  so the statusline shows them as "manual API". */

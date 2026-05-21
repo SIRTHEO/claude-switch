@@ -159,7 +159,7 @@ function detectWindows(proc: ProcessPort): TerminalEntry[] {
 // Launch a command in a specific terminal
 // ---------------------------------------------------------------------------
 
-export interface LaunchOptions {
+interface LaunchOptions {
   /** Terminal id from detectTerminals(). Required. */
   terminalId: string;
   /** Working directory the new window should start in. Defaults to home. */

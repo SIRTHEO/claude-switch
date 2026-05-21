@@ -106,7 +106,14 @@ describe('warnUntrackedApiKeyIfNeeded', () => {
       if (saved !== undefined) process.env.NODE_ENV = saved;
     });
 
-    assert.equal(out, '', 'Expected no banner when key is tracked');
+    // The KeychainAdapter may emit an incidental "DISABLE_KEYCHAIN=1 is set"
+    // bypass-warning when NODE_ENV is unset for this test (it has its own
+    // one-shot latch). What we care about is the production "untracked
+    // apiKey" banner — assert that specific banner is absent.
+    assert.ok(
+      !out.includes('NOT tracked'),
+      `Expected no untracked-apiKey banner when key is tracked, got: ${JSON.stringify(out)}`,
+    );
   });
 
   it('Case B: apiKey NOT tracked + claude.json apiKey populated → banner emitted', () => {
@@ -149,7 +156,12 @@ describe('warnUntrackedApiKeyIfNeeded', () => {
       if (savedEnv !== undefined) process.env.NODE_ENV = savedEnv;
     }
 
-    assert.equal(out, '', 'Expected no banner when claude.json has no apiKey');
+    // Same incidental-warning consideration as Case A — assert absence of
+    // the specific untracked-apiKey banner.
+    assert.ok(
+      !out.includes('NOT tracked'),
+      `Expected no untracked-apiKey banner when claude.json has no apiKey, got: ${JSON.stringify(out)}`,
+    );
   });
 
   it('Case D1: NODE_ENV=test suppresses the banner', () => {
