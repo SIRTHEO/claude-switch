@@ -307,9 +307,13 @@ export function load(
     }
     throw e;
   }
-  // Snapshot the previous oauthAccount so we can roll the JSON back if the
+  // Snapshot the WHOLE pre-load claude.json so we can roll it back if the
   // Keychain write fails afterwards (keeps the two sources of truth in sync).
-  const previousOauthAccount = data.oauthAccount;
+  // Capturing the full object — not just oauthAccount — is load-bearing:
+  // load() also rewrites `apiKey` / `customApiKeyResponses` below, so an
+  // oauthAccount-only restore left the new account's api-key state behind,
+  // a silent disalignment between claude.json and the Keychain.
+  const originalClaudeJson = structuredClone(data);
   data.oauthAccount = oauthAccount;
 
   // Restore (or actively CLEAR) the API-key acceptance state. Clearing is
@@ -351,9 +355,22 @@ export function load(
     try {
       credentials.writeOAuth(_keychain as KeychainData);
     } catch (e) {
+      // Keychain write failed AFTER claude.json was rewritten. Restore the
+      // whole pre-load claude.json so the two sources don't drift.
       try {
-        writeJson({ ...data, oauthAccount: previousOauthAccount });
-      } catch { /* best-effort rollback */ }
+        writeJson(originalClaudeJson);
+      } catch (rollbackErr) {
+        // The rollback ITSELF failed: claude.json may now be inconsistent with
+        // the Keychain and we cannot repair it. Surface it (never silent) so
+        // the user can recover manually. The _keychain payload (tokens) is
+        // never logged — only the generic fs/Keychain error messages.
+        process.stderr.write(
+          `claude-switch: failed to roll back ${claudeJsonPath} after a Keychain ` +
+          `write error — credentials may be inconsistent. ` +
+          `Keychain error: ${e instanceof Error ? e.message : String(e)}. ` +
+          `Rollback error: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}.\n`,
+        );
+      }
       throw e;
     }
   }
