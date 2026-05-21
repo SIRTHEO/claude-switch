@@ -1,35 +1,14 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { readKeychain, writeKeychain, type KeychainData } from './keychain.js';
 import { keychainAvailable, readApiKeyFromKeychain } from './apikey-keychain.js';
 import { writeJsonAtomic } from './atomic-write.js';
 import { withLock } from './lock.js';
 import { errnoCode } from './errors.js';
+import { isSafeEmail, resolvedAccountFile } from './account-paths.js';
 
-// Whitelist of characters allowed in account names. RFC 5321 email local-part
-// can contain more than this, but accepting only [A-Za-z0-9._+@-] covers ~all
-// real-world emails and blocks shell metacharacters ($, `, (, ), ;, &, |,
-// space, newline, etc.) that would otherwise allow command injection through
-// downstream consumers like shell completions (compgen -W).
-const SAFE_EMAIL_CHARS = /^[A-Za-z0-9._+@-]+$/;
-
-export function isSafeEmail(email: string): boolean {
-  return SAFE_EMAIL_CHARS.test(email);
-}
-
-/**
- * Resolve `<email>.json` inside `accountsDirPath`, refusing any value that
- * escapes the directory (path traversal). Used by accounts.ts and apikey.ts
- * — both produce files in the same dir with the same naming scheme.
- */
-export function resolvedAccountFile(email: string, accountsDirPath: string): string {
-  const base = path.resolve(accountsDirPath);
-  const resolved = path.resolve(accountsDirPath, `${email}.json`);
-  if (!resolved.startsWith(base + path.sep)) {
-    throw new Error(`Email resolves outside accounts directory: ${email}`);
-  }
-  return resolved;
-}
+// Re-exported so existing importers (apikey.ts, profiles.ts, usage.ts,
+// preferences.ts, commands/*) keep importing them from accounts.js unchanged.
+export { isSafeEmail, resolvedAccountFile } from './account-paths.js';
 
 export function getCurrent(claudeJsonPath: string): string {
   try {
