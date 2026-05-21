@@ -10,19 +10,9 @@ import { readUsageCacheForAccount, type UsageCache } from '../usage.js';
 import { isSafeEmail } from '../accounts.js';
 import { ExitError } from '../errors.js';
 import type { CommandContext } from './context.js';
+import type { UsageSnapshot } from '../contract.js';
 
-export interface UsageSnapshotJson {
-  account: string;
-  fetchedAt: number | null;
-  ageSec: number | null;
-  fiveHourPct: number | null;
-  sevenDayPct: number | null;
-  sevenDayOpusPct: number | null;
-  sevenDaySonnetPct: number | null;
-  rateLimitedUntil: number | null;
-}
-
-function shape(email: string, cache: UsageCache | null): UsageSnapshotJson {
+function shape(email: string, cache: UsageCache | null): UsageSnapshot {
   if (!cache?.payload) {
     return {
       account: email,

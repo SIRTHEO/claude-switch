@@ -14,6 +14,7 @@ import { ExitError, errMessage } from '../errors.js';
 import { getTokenHealth } from '../token.js';
 import { findClaude } from './_helpers.js';
 import type { CommandContext } from './context.js';
+import type { ProfileEntry } from '../contract.js';
 
 export interface ProfileListOptions {
   json: boolean;
@@ -26,7 +27,7 @@ export async function handleProfileList(
   const profiles = listProfiles();
 
   if (opts.json) {
-    const payload = profiles.map((name) => {
+    const payload: ProfileEntry[] = profiles.map((name) => {
       const info = readProfile(name);
       return {
         name,
