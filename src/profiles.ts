@@ -22,11 +22,11 @@ import {
   readKeychain,
   readKeychainForConfigDir,
   writeKeychainForConfigDir,
-  type KeychainData,
 } from './keychain.js';
-import { getCurrent, isSafeEmail, resolvedAccountFile, syncActiveSnapshotIfStale } from './accounts.js';
+import { getCurrent, isSafeEmail, resolvedAccountFile, save, syncActiveSnapshotIfStale } from './accounts.js';
 import { claudeJsonPath } from './paths.js';
 import { errMessage, debugProfiles } from './errors.js';
+import type { AccountSnapshot } from './account-snapshot.js';
 import { findClaudeBinary } from './find-claude.js';
 
 /**
@@ -217,14 +217,7 @@ function freshUserID(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-interface LegacyAccountFile {
-  emailAddress?: string;
-  _keychain?: KeychainData;
-  // …other oauthAccount fields (accountUuid, organization, etc.)
-  [k: string]: unknown;
-}
-
-function readLegacyAccount(email: string, accountsDirPath: string): LegacyAccountFile {
+function readLegacyAccount(email: string, accountsDirPath: string): AccountSnapshot {
   // Reject anything that isn't a safe email up front so we never feed a
   // raw `../../etc/passwd` into `path.join`. Mirrors the guard that
   // `accounts.ts` applies on its read/write paths.
@@ -254,7 +247,7 @@ function readLegacyAccount(email: string, accountsDirPath: string): LegacyAccoun
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(`${file} does not contain an object.`);
   }
-  return parsed as LegacyAccountFile;
+  return parsed as AccountSnapshot;
 }
 
 /**
@@ -288,7 +281,7 @@ export async function refreshLegacySnapshotIfStale(
   // claude already rotated.
   syncActiveSnapshotIfStale(claudeJsonPath(), accountsDirPath);
 
-  let legacy: LegacyAccountFile;
+  let legacy: AccountSnapshot;
   try {
     legacy = readLegacyAccount(email, accountsDirPath);
   } catch {
@@ -308,7 +301,7 @@ export async function refreshLegacySnapshotIfStale(
   // preserve every other field — only `_keychain.claudeAiOauth` is
   // replaced. Other claudeCode-specific block (`mcpOAuth` etc.) stays
   // untouched.
-  const next: LegacyAccountFile = {
+  const next: AccountSnapshot = {
     ...legacy,
     _keychain: {
       ...legacy._keychain,
@@ -698,6 +691,37 @@ export async function ensureProfileForAccount(
       needsLogin,
       created: false,
     };
+  }
+
+  // H1 — the account was authenticated directly (e.g. `claude /login`) and
+  // never captured as a legacy snapshot, so `importProfileFromAccount` below
+  // would throw "No saved account". When the email coincides with the active
+  // account, capture an implicit snapshot from the live claude.json (+ default
+  // Keychain) first, giving the import a source to read. This matches what an
+  // explicit `claude switch save` would have produced. Opt-out via
+  // CLAUDE_SWITCH_NO_IMPLICIT_SAVE=1 for one release of back-compat for anyone
+  // relying on the previous throw behaviour.
+  if (process.env.CLAUDE_SWITCH_NO_IMPLICIT_SAVE !== '1') {
+    let legacyExists = false;
+    try {
+      legacyExists = fs.existsSync(resolvedAccountFile(email, accountsDirPath));
+    } catch { /* unsafe email → let importProfileFromAccount surface it */ }
+    if (!legacyExists) {
+      let activeEmail = '';
+      try {
+        activeEmail = getCurrent(claudeJsonPath());
+      } catch { /* claude.json unreadable → skip implicit save */ }
+      if (activeEmail && activeEmail === email) {
+        try {
+          save(email, claudeJsonPath(), accountsDirPath);
+          debugProfiles(`implicitSave=true reason=active-no-legacy profileDir=<accounts>`);
+        } catch (saveErr) {
+          debugProfiles(`implicitSave=failed err=${errMessage(saveErr)}`);
+        }
+      } else {
+        debugProfiles(`implicitSave=skipped reason=${activeEmail ? 'email-not-active' : 'no-active-account'}`);
+      }
+    }
   }
 
   debugProfiles(`emailMatch=false profileFound=false importing from legacy account`);

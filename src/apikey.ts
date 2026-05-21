@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import { isSafeEmail, resolvedAccountFile } from './accounts.js';
 import { writeJsonAtomic } from './atomic-write.js';
 import { errnoCode } from './errors.js';
+import type { AccountSnapshot } from './account-snapshot.js';
 import {
   keychainAvailable,
   readApiKeyFromKeychain,
@@ -33,12 +34,12 @@ function accountFilePath(email: string, accountsDirPath: string): string {
   return resolvedAccountFile(email, accountsDirPath);
 }
 
-function readAccountFile(file: string): Record<string, unknown> | null {
+function readAccountFile(file: string): AccountSnapshot | null {
   try {
     const raw = fs.readFileSync(file, 'utf-8');
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
-    return parsed as Record<string, unknown>;
+    return parsed as AccountSnapshot;
   } catch (e) {
     if (errnoCode(e) === 'ENOENT') return null;
     if (e instanceof SyntaxError) {

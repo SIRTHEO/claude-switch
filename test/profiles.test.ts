@@ -343,6 +343,59 @@ describe('ensureProfileForAccount', () => {
     assert.strictEqual(result.profileName, 'ready');
   });
 
+  // H1 — implicit snapshot when the active account was never saved as legacy.
+  // The npm-test default sets CLAUDE_SWITCH_DISABLE_KEYCHAIN=1, so save()
+  // writes a legacy file WITHOUT a _keychain block. We therefore assert that
+  // the legacy file is created and the profile is imported — NOT that
+  // needsLogin=false (live Keychain capture is exercised manually, same policy
+  // as tryRecoverFromLegacy).
+
+  it('implicit-saves a legacy snapshot when the active account has none', async () => {
+    // Active account is "active@x.com" in ~/.claude.json; no legacy file yet.
+    fs.writeFileSync(
+      path.join(tmpHome, '.claude.json'),
+      JSON.stringify({ oauthAccount: { emailAddress: 'active@x.com' } }),
+    );
+    const legacyFile = path.join(accountsDir, 'active@x.com.json');
+    assert.ok(!fs.existsSync(legacyFile), 'precondition: no legacy file');
+
+    const result = await ensureProfileForAccount('active@x.com', accountsDir);
+
+    assert.ok(fs.existsSync(legacyFile), 'implicit save created the legacy snapshot');
+    assert.strictEqual(result.created, true);
+    assert.ok(profileExists(result.profileName));
+  });
+
+  it('does NOT implicit-save when the email differs from the active account', async () => {
+    // Active account is "other@x.com"; caller asks for "target@x.com" which
+    // has no legacy file. Snapshotting here would capture the wrong tokens
+    // under the wrong email, so the implicit save must be skipped and the
+    // import falls through to its existing "No saved account" throw.
+    fs.writeFileSync(
+      path.join(tmpHome, '.claude.json'),
+      JSON.stringify({ oauthAccount: { emailAddress: 'other@x.com' } }),
+    );
+    await assert.rejects(() => ensureProfileForAccount('target@x.com', accountsDir));
+    assert.ok(
+      !fs.existsSync(path.join(accountsDir, 'target@x.com.json')),
+      'no legacy file fabricated for a non-active email',
+    );
+  });
+
+  it('skips implicit save when CLAUDE_SWITCH_NO_IMPLICIT_SAVE=1', async () => {
+    fs.writeFileSync(
+      path.join(tmpHome, '.claude.json'),
+      JSON.stringify({ oauthAccount: { emailAddress: 'active@x.com' } }),
+    );
+    process.env.CLAUDE_SWITCH_NO_IMPLICIT_SAVE = '1';
+    try {
+      await assert.rejects(() => ensureProfileForAccount('active@x.com', accountsDir));
+      assert.ok(!fs.existsSync(path.join(accountsDir, 'active@x.com.json')));
+    } finally {
+      delete process.env.CLAUDE_SWITCH_NO_IMPLICIT_SAVE;
+    }
+  });
+
   // Regressions: live-Keychain capture for the active-account isolated path.
   // All tests below run with CLAUDE_SWITCH_DISABLE_KEYCHAIN=1
   // (the npm-test default), so the live-capture helper is a no-op by
@@ -355,20 +408,21 @@ describe('ensureProfileForAccount', () => {
   // The actual live capture on darwin is exercised manually — the same
   // policy already in place for tryRecoverFromLegacy since v3.5.
 
-  it('live capture is a no-op when CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 (active email, no snapshot)', async () => {
-    // Simulate: active account is "active@x.com", no legacy snapshot file
-    // exists. Without Keychain access, the helper cannot fabricate
-    // credentials. Result: needsLogin=true (the honest answer).
+  it('active email + no snapshot: implicit save imports, but no fabricated credentials under disable flag', async () => {
+    // Active account is "active@x.com", no legacy snapshot file exists.
+    // The implicit-save path (H1 fix) now captures a snapshot from the live
+    // claude.json so the import succeeds instead of throwing "No saved
+    // account". But under CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 the snapshot has no
+    // _keychain block, so credentials are NOT fabricated → needsLogin=true.
     const claudeJsonPath = path.join(tmpHome, '.claude.json');
     fs.mkdirSync(path.dirname(claudeJsonPath), { recursive: true });
     fs.writeFileSync(claudeJsonPath, JSON.stringify({
       oauthAccount: { emailAddress: 'active@x.com' },
     }));
-    // No accounts file → import path → must reject (no legacy snapshot to import).
-    await assert.rejects(
-      () => ensureProfileForAccount('active@x.com', accountsDir),
-      /No saved account for active@x\.com/,
-    );
+    const result = await ensureProfileForAccount('active@x.com', accountsDir);
+    assert.strictEqual(result.created, true);
+    assert.strictEqual(result.needsLogin, true,
+      'no _keychain in implicit snapshot + Keychain disabled → genuine login still required');
   });
 
   it('live capture is a no-op for non-active email (legacy path still authoritative)', async () => {

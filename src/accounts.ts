@@ -6,6 +6,7 @@ import { errnoCode } from './errors.js';
 import { isSafeEmail, resolvedAccountFile } from './account-paths.js';
 import { type AccountRepository, fsAccountRepo } from './account-repository.js';
 import { type CredentialStore, defaultCredentialStore } from './credential-store.js';
+import type { AccountSnapshot } from './account-snapshot.js';
 
 // Re-exported so existing importers (apikey.ts, profiles.ts, usage.ts,
 // preferences.ts, commands/*) keep importing them from accounts.js unchanged.
@@ -58,7 +59,7 @@ export function save(
   // contract on subsequent loads stays correct.
   const keychainDisabled = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1';
   const keychainData = keychainDisabled ? null : credentials.readOAuth();
-  const accountPayload: Record<string, unknown> = { ...(data.oauthAccount || {}) };
+  const accountPayload: AccountSnapshot = { ...(data.oauthAccount || {}) };
   if (keychainData) {
     accountPayload._keychain = keychainData;
   } else if (keychainDisabled) {
@@ -245,6 +246,7 @@ export function load(
   // errors, and surfaces invalid JSON — the same security-critical sequence
   // accounts.ts performed inline before the repository extraction.
   const accountData = repo.loadRaw(email, accountsDirPath);
+
 
   // Strip internal fields so they never leak into ~/.claude.json.
   const {
