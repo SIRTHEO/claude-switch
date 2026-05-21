@@ -303,6 +303,25 @@ describe('triggerBackgroundUsageRefresh', () => {
     }
     assert.strictEqual(returned, true);
   });
+
+  it('spawns the detached refresh through an injected ProcessPort', () => {
+    let captured: { command?: string; args?: readonly string[]; options?: unknown } = {};
+    let unrefCalled = false;
+    triggerBackgroundUsageRefresh({
+      process: {
+        spawn: (command, args, options) => {
+          captured = { command, args, options };
+          return { unref: () => { unrefCalled = true; } } as unknown as import('node:child_process').ChildProcess;
+        },
+        spawnSync: () => { throw new Error('spawnSync not expected'); },
+      },
+    });
+    assert.strictEqual(captured.command, process.execPath);
+    assert.deepStrictEqual(captured.args?.slice(1), ['switch', 'usage', '--refresh-only']);
+    assert.match(String(captured.args?.[0]), /bin\/cli\.js$/);
+    assert.strictEqual((captured.options as { detached?: boolean }).detached, true);
+    assert.strictEqual(unrefCalled, true);
+  });
 });
 
 // ----- Phase 13.2 — per-account usage cache -----

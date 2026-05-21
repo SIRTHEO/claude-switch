@@ -7,7 +7,7 @@
 // Keeping the orchestrator outside React keeps spawn handling and process
 // exits straightforward — Ink owns rendering, this owns control flow.
 
-import { spawnSync } from 'node:child_process';
+import { nodeProcessAdapter } from '../process.js';
 
 import { getCurrent } from '../accounts.js';
 import { ExitError } from '../errors.js';
@@ -216,7 +216,7 @@ async function handleSwitched(
   }
 
   const { command, args, options } = buildSpawnArgs(bin, [], process.platform, extraEnv);
-  const result = spawnSync(command, args, options);
+  const result = nodeProcessAdapter.spawnSync(command, args, options);
   if (result.error) {
     throw new ExitError(`Error: could not launch claude: ${result.error.message}`, 1);
   }

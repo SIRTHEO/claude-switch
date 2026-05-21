@@ -11,6 +11,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { errnoCode } from './errors.js';
 
 const STALE_LOCK_MS = 30_000;
@@ -58,21 +59,56 @@ function reclaimIfStale(file: string): boolean {
   } catch {
     return false;
   }
-  const ageMs = Date.now() - stat.mtimeMs;
-  let pid = 0;
+  const staleMtimeMs = stat.mtimeMs;
+  let stalePid = 0;
   try {
-    pid = parseInt(fs.readFileSync(file, 'utf-8').trim(), 10);
+    stalePid = parseInt(fs.readFileSync(file, 'utf-8').trim(), 10);
   } catch { /* unreadable */ }
 
-  const stale = ageMs > STALE_LOCK_MS && (!pid || !isProcessAlive(pid));
+  const stale = Date.now() - staleMtimeMs > STALE_LOCK_MS && (!stalePid || !isProcessAlive(stalePid));
   if (!stale) return false;
 
+  // Claim the right to reclaim by atomically renaming the stale file to a
+  // private tombstone. rename(2) is atomic: of N racers only one moves a
+  // given path; every other gets ENOENT and falls back to the normal
+  // acquire retry. This is what closes the documented double-claim race —
+  // previously two processes could both `unlink(file)` after seeing the
+  // same stale lock, the second deleting whatever fresh claim had landed in
+  // between.
+  const tomb = `${file}.stale.${process.pid}.${randomBytes(8).toString('hex')}`;
   try {
-    fs.unlinkSync(file);
-    return true;
+    fs.renameSync(file, tomb);
   } catch {
+    // Lost the rename race (someone else reclaimed it) or the file is gone.
     return false;
   }
+
+  // Guard the stat→rename window: a competitor may have fully reclaimed the
+  // stale lock AND written a FRESH claim before our rename ran, in which
+  // case we just moved a live lock aside. Confirm the tombstone is byte-for
+  // -byte the stale lock we judged (same mtime + pid); if not, restore it.
+  let tombPid = 0;
+  let tombMtimeMs = -1;
+  try {
+    tombMtimeMs = fs.statSync(tomb).mtimeMs;
+    tombPid = parseInt(fs.readFileSync(tomb, 'utf-8').trim(), 10);
+  } catch { /* unreadable; treat as not-matching below */ }
+
+  if (tombMtimeMs === staleMtimeMs && tombPid === stalePid) {
+    try { fs.unlinkSync(tomb); } catch { /* already gone */ }
+    return true;
+  }
+
+  // Mis-grab: put the live lock back. POSIX rename clobbers atomically, so a
+  // fourth racer that recreated `file` meanwhile would be overwritten — that
+  // is benign for this advisory lock (release only unlinks, never reads the
+  // pid, and the restored mtime stays fresh so no false reclaim follows).
+  try {
+    fs.renameSync(tomb, file);
+  } catch {
+    try { fs.unlinkSync(tomb); } catch { /* best-effort */ }
+  }
+  return false;
 }
 
 /**

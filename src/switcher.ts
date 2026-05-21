@@ -1,7 +1,7 @@
 // src/switcher.ts
 import readline from 'node:readline';
-import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import fs from 'node:fs';
+import { type ProcessPort, nodeProcessAdapter } from './process.js';
 import { getCurrent, save, load, list, syncActiveSnapshotIfStale } from './accounts.js';
 import { setAlias } from './aliases.js';
 import { buildSpawnArgs } from './proxy.js';
@@ -13,7 +13,7 @@ import { updateState, updateStateInLock } from './state-store.js';
 import { shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh } from './usage.js';
 
 export interface SwitcherDeps {
-  spawnSyncFn?: (command: string, args: string[], options: object) => SpawnSyncReturns<Buffer>;
+  process?: ProcessPort;
   askFn?: (question: string) => Promise<string>;
   exitFn?: (code: number) => never;
   getTokenHealthFn?: (claudeJsonPath: string) => { status: string } | null;
@@ -249,7 +249,7 @@ export async function runTemporarySwitch(
   extraEnv?: NodeJS.ProcessEnv | null,
   deps?: SwitcherDeps,
 ): Promise<never> {
-  const doSpawnSync = deps?.spawnSyncFn ?? spawnSync;
+  const doSpawnSync = (deps?.process ?? nodeProcessAdapter).spawnSync;
   const doExit: (code: number) => never = deps?.exitFn ?? ((code: number) => process.exit(code));
   const doSave = deps?.saveFn ?? save;
   const doLoad = deps?.loadFn ?? load;
@@ -357,7 +357,7 @@ export async function reAuthenticate(
   accountsDirPath: string,
   deps?: SwitcherDeps,
 ): Promise<string | null> {
-  const doSpawnSync = deps?.spawnSyncFn ?? spawnSync;
+  const doSpawnSync = (deps?.process ?? nodeProcessAdapter).spawnSync;
   const { getTokenHealth } = await import('./token.js');
   const getHealth = deps?.getTokenHealthFn ?? getTokenHealth;
   const emailBefore = getCurrent(claudeJsonPath);
@@ -378,7 +378,7 @@ export async function reAuthenticate(
 
 export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string, deps?: SwitcherDeps): Promise<void> {
   const ask = deps?.askFn ?? defaultAsk;
-  const doSpawnSync = deps?.spawnSyncFn ?? spawnSync;
+  const doSpawnSync = (deps?.process ?? nodeProcessAdapter).spawnSync;
   const currentEmail = getCurrent(claudeJsonPath);
   const expectedEmail = await ask('Email to add (press Enter to skip): ');
 

@@ -347,6 +347,7 @@ import {
   addAccount,
   type SwitcherDeps,
 } from '../src/switcher.js';
+import type { ProcessPort } from '../src/process.js';
 
 describe('reAuthOutcome — re-auth decision logic', () => {
   it('success: token was broken, login fixed it (same account)', () => {
@@ -423,7 +424,7 @@ function makeExitFn(): { exitFn: (code: number) => never; codes: number[] } {
   return { exitFn, codes };
 }
 
-function makeSpawnFn(exitCode = 0, error?: Error): SwitcherDeps['spawnSyncFn'] {
+function makeSpawnFn(exitCode = 0, error?: Error): ProcessPort['spawnSync'] {
   return (_cmd, _args, _opts) => ({
     pid: 1,
     output: [],
@@ -433,6 +434,15 @@ function makeSpawnFn(exitCode = 0, error?: Error): SwitcherDeps['spawnSyncFn'] {
     signal: null,
     error,
   });
+}
+
+// Wrap a spawnSync stub into a ProcessPort. `spawn` is never expected in the
+// switcher flows under test — calling it surfaces a wiring mistake loudly.
+function procWith(spawnSync: ProcessPort['spawnSync']): ProcessPort {
+  return {
+    spawn: () => { throw new Error('spawn not expected in this flow'); },
+    spawnSync,
+  };
 }
 
 describe('switchInteractive — with mocked ask', () => {
@@ -624,7 +634,7 @@ describe('runTemporarySwitch — with mocked spawnSync + exitFn', () => {
   it('exits with child process status when targetEmail === current', async () => {
     fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'me@x.com' } }));
     const { exitFn, codes } = makeExitFn();
-    const deps: SwitcherDeps = { spawnSyncFn: makeSpawnFn(42), exitFn };
+    const deps: SwitcherDeps = { process: procWith(makeSpawnFn(42)), exitFn };
     await assert.rejects(
       () => runTemporarySwitch('claude', 'me@x.com', [], claudeJson, accDir, null, deps),
       /exit:42/,
@@ -635,7 +645,7 @@ describe('runTemporarySwitch — with mocked spawnSync + exitFn', () => {
   it('exits code 1 on spawnSync error when targetEmail === current', async () => {
     fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'me@x.com' } }));
     const { exitFn, codes } = makeExitFn();
-    const deps: SwitcherDeps = { spawnSyncFn: makeSpawnFn(0, new Error('ENOENT')), exitFn };
+    const deps: SwitcherDeps = { process: procWith(makeSpawnFn(0, new Error('ENOENT'))), exitFn };
     await assert.rejects(
       () => runTemporarySwitch('claude', 'me@x.com', [], claudeJson, accDir, null, deps),
       /exit:1/,
@@ -649,7 +659,7 @@ describe('runTemporarySwitch — with mocked spawnSync + exitFn', () => {
     fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com', _keychain: 'yes' }));
     const { exitFn, codes } = makeExitFn();
     const deps: SwitcherDeps = {
-      spawnSyncFn: makeSpawnFn(7),
+      process: procWith(makeSpawnFn(7)),
       exitFn,
       saveFn: (email, sourcePath, accountsPath) => {
         const data = JSON.parse(fs.readFileSync(sourcePath, 'utf-8'));
@@ -690,7 +700,7 @@ describe('reAuthenticate — with mocked spawnSync', () => {
 
   it('returns null when login leaves no active account', async () => {
     fs.writeFileSync(claudeJson, JSON.stringify({}));
-    const deps: SwitcherDeps = { spawnSyncFn: makeSpawnFn(0) };
+    const deps: SwitcherDeps = { process: procWith(makeSpawnFn(0)) };
     const result = await reAuthenticate('claude', claudeJson, accDir, deps);
     assert.strictEqual(result, null);
   });
@@ -702,15 +712,15 @@ describe('reAuthenticate — with mocked spawnSync', () => {
     fs.writeFileSync(claudeJson, JSON.stringify({
       oauthAccount: { emailAddress: 'me@x.com', accessToken: 'tok-old', expiresAt: 1 },
     }));
-    const spawnFn: SwitcherDeps['spawnSyncFn'] = (cmd, args, opts) => {
+    const spawnFn: ProcessPort['spawnSync'] = (cmd, args, opts) => {
       // Simulate login: write fresh token
       fs.writeFileSync(claudeJson, JSON.stringify({
         oauthAccount: { emailAddress: 'me@x.com', accessToken: 'tok-fresh', expiresAt: Date.now() + 9_999_999 },
       }));
-      return makeSpawnFn(0)!(cmd, args, opts);
+      return makeSpawnFn(0)(cmd, args, opts);
     };
     const deps: SwitcherDeps = {
-      spawnSyncFn: spawnFn,
+      process: procWith(spawnFn),
       getTokenHealthFn: pathToRead => {
         const data = JSON.parse(fs.readFileSync(pathToRead, 'utf-8'));
         const expiresAt = data.oauthAccount?.expiresAt ?? 0;
@@ -744,7 +754,7 @@ describe('addAccount — with mocked ask + spawnSync', () => {
     const answers = ['new@x.com'];
     const deps: SwitcherDeps = {
       askFn: async () => answers.shift() ?? '',
-      spawnSyncFn: makeSpawnFn(0),
+      process: procWith(makeSpawnFn(0)),
     };
     await assert.rejects(() => addAccount('claude', claudeJson, accDir, deps), /Login failed/);
   });
@@ -755,7 +765,7 @@ describe('addAccount — with mocked ask + spawnSync', () => {
     const answers = [''];
     const deps: SwitcherDeps = {
       askFn: async () => answers.shift() ?? '',
-      spawnSyncFn: makeSpawnFn(0),
+      process: procWith(makeSpawnFn(0)),
     };
     const logged: string[] = [];
     const origLog = console.log;
@@ -772,13 +782,13 @@ describe('addAccount — with mocked ask + spawnSync', () => {
     fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'curr@x.com' } }));
     fs.writeFileSync(path.join(accDir, 'curr@x.com.json'), JSON.stringify({ emailAddress: 'curr@x.com' }));
     const answers = ['new@x.com', 'myalias'];
-    const spawnFn: SwitcherDeps['spawnSyncFn'] = (cmd, args, opts) => {
+    const spawnFn: ProcessPort['spawnSync'] = (cmd, args, opts) => {
       fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'new@x.com' } }));
-      return makeSpawnFn(0)!(cmd, args, opts);
+      return makeSpawnFn(0)(cmd, args, opts);
     };
     const deps: SwitcherDeps = {
       askFn: async () => answers.shift() ?? '',
-      spawnSyncFn: spawnFn,
+      process: procWith(spawnFn),
     };
     await addAccount('claude', claudeJson, accDir, deps);
     assert.ok(fs.existsSync(path.join(accDir, 'new@x.com.json')));

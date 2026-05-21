@@ -24,7 +24,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
+import { type ProcessPort, nodeProcessAdapter } from './process.js';
 
 export interface TerminalEntry {
   id: string;
@@ -35,10 +35,11 @@ export interface TerminalEntry {
 }
 
 /** Detect every terminal emulator the launcher can target on this host. */
-export function detectTerminals(): TerminalEntry[] {
+export function detectTerminals(deps: { process?: ProcessPort } = {}): TerminalEntry[] {
+  const proc = deps.process ?? nodeProcessAdapter;
   if (process.platform === 'darwin') return detectDarwin();
-  if (process.platform === 'linux') return detectLinux();
-  if (process.platform === 'win32') return detectWindows();
+  if (process.platform === 'linux') return detectLinux(proc);
+  if (process.platform === 'win32') return detectWindows(proc);
   return [];
 }
 
@@ -105,9 +106,9 @@ const LINUX_BINS: LinuxBin[] = [
   { id: 'xterm', label: 'xterm', bin: 'xterm' },
 ];
 
-function detectLinux(): TerminalEntry[] {
-  const which = (bin: string) => spawnSync('which', [bin], { stdio: 'pipe' }).status === 0;
-  const xdgDefault = readXdgDefaultTerminal();
+function detectLinux(proc: ProcessPort): TerminalEntry[] {
+  const which = (bin: string) => proc.spawnSync('which', [bin], { stdio: 'pipe' }).status === 0;
+  const xdgDefault = readXdgDefaultTerminal(proc);
   return LINUX_BINS.filter((b) => which(b.bin)).map((b) => ({
     id: b.id,
     label: b.label,
@@ -116,8 +117,8 @@ function detectLinux(): TerminalEntry[] {
   }));
 }
 
-function readXdgDefaultTerminal(): string | null {
-  const probe = spawnSync('xdg-mime', ['query', 'default', 'x-scheme-handler/terminal'], {
+function readXdgDefaultTerminal(proc: ProcessPort): string | null {
+  const probe = proc.spawnSync('xdg-mime', ['query', 'default', 'x-scheme-handler/terminal'], {
     stdio: 'pipe',
   });
   if (probe.status !== 0) return null;
@@ -142,9 +143,9 @@ const WIN_BINS: WinBin[] = [
   { id: 'alacritty', label: 'Alacritty', exe: 'alacritty.exe' },
 ];
 
-function detectWindows(): TerminalEntry[] {
+function detectWindows(proc: ProcessPort): TerminalEntry[] {
   return WIN_BINS.filter((w) => {
-    const r = spawnSync('where.exe', [w.exe], { stdio: 'pipe' });
+    const r = proc.spawnSync('where.exe', [w.exe], { stdio: 'pipe' });
     return r.status === 0;
   }).map((w) => ({
     id: w.id,
@@ -177,17 +178,18 @@ export interface LaunchOptions {
  *
  * Throws when the terminal id is not recognised on this platform.
  */
-export function launchInTerminal(opts: LaunchOptions): void {
+export function launchInTerminal(opts: LaunchOptions, deps: { process?: ProcessPort } = {}): void {
+  const proc = deps.process ?? nodeProcessAdapter;
   if (process.platform === 'darwin') {
-    launchDarwin(opts);
+    launchDarwin(opts, proc);
     return;
   }
   if (process.platform === 'linux') {
-    launchLinux(opts);
+    launchLinux(opts, proc);
     return;
   }
   if (process.platform === 'win32') {
-    launchWindows(opts);
+    launchWindows(opts, proc);
     return;
   }
   throw new Error(`Unsupported platform: ${process.platform}`);
@@ -211,12 +213,12 @@ function shellCommand(opts: LaunchOptions): string {
   return `${cd} ${env} ${cmd}`.trim();
 }
 
-function launchDarwin(opts: LaunchOptions): void {
+function launchDarwin(opts: LaunchOptions, proc: ProcessPort): void {
   const shell = shellCommand(opts);
   if (opts.terminalId === 'terminal') {
     const script = `tell application "Terminal" to do script "${escapeAppleScriptString(shell)}"`;
-    spawnSync('osascript', ['-e', script], { stdio: 'pipe' });
-    spawnSync('osascript', ['-e', 'tell application "Terminal" to activate'], { stdio: 'pipe' });
+    proc.spawnSync('osascript', ['-e', script], { stdio: 'pipe' });
+    proc.spawnSync('osascript', ['-e', 'tell application "Terminal" to activate'], { stdio: 'pipe' });
     return;
   }
   if (opts.terminalId === 'iterm2') {
@@ -226,7 +228,7 @@ function launchDarwin(opts: LaunchOptions): void {
       `  tell current session of current window to write text "${escapeAppleScriptString(shell)}"`,
       'end tell',
     ].join('\n');
-    spawnSync('osascript', ['-e', script], { stdio: 'pipe' });
+    proc.spawnSync('osascript', ['-e', script], { stdio: 'pipe' });
     return;
   }
   // Most other macOS terminal apps accept the command on argv via `open -na`.
@@ -234,33 +236,33 @@ function launchDarwin(opts: LaunchOptions): void {
   if (!appName) throw new Error(`Unknown terminal id on macOS: ${opts.terminalId}`);
   // Wrap the command in a bash login shell so PATH inherits and `claude`
   // resolves the same way it would in an interactive terminal.
-  spawnSync(
+  proc.spawnSync(
     'open',
     ['-na', appName, '--args', '-l', '-c', shell],
     { stdio: 'pipe' },
   );
 }
 
-function launchLinux(opts: LaunchOptions): void {
+function launchLinux(opts: LaunchOptions, proc: ProcessPort): void {
   const bin = LINUX_BINS.find((b) => b.id === opts.terminalId);
   if (!bin) throw new Error(`Unknown terminal id on Linux: ${opts.terminalId}`);
   const shell = shellCommand(opts);
   // Most Linux terminals accept `-e <cmd>` or `--command <cmd>` to run a
   // single command in the new window; we wrap in `bash -lc` so the env
   // export prefix lands correctly.
-  const child = spawn(bin.bin, ['-e', 'bash', '-lc', shell], {
+  const child = proc.spawn(bin.bin, ['-e', 'bash', '-lc', shell], {
     stdio: 'ignore',
     detached: true,
   });
   child.unref();
 }
 
-function launchWindows(opts: LaunchOptions): void {
+function launchWindows(opts: LaunchOptions, proc: ProcessPort): void {
   const bin = WIN_BINS.find((w) => w.id === opts.terminalId);
   if (!bin) throw new Error(`Unknown terminal id on Windows: ${opts.terminalId}`);
   const cmd = opts.command.join(' ');
   const cwd = opts.cwd ? `--starting-directory "${opts.cwd}"` : '';
-  const child = spawn(bin.exe, [cwd, cmd].filter(Boolean), {
+  const child = proc.spawn(bin.exe, [cwd, cmd].filter(Boolean), {
     stdio: 'ignore',
     detached: true,
   });

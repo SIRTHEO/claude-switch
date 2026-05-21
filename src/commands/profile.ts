@@ -92,6 +92,8 @@ export async function handleProfileStatus(name: string | undefined): Promise<voi
     let keychainLine = '(not applicable on this platform)';
     if (process.platform === 'darwin') {
       const { claudeKeychainServiceFor, claudeKeychainAccount } = await import('../keychain.js');
+      // Keychain probe — stays on raw spawnSync until CredentialStore lands
+      // (this `security` call belongs to that port, not ProcessPort).
       const { spawnSync } = await import('node:child_process');
       const service = claudeKeychainServiceFor(info.path);
       const account = claudeKeychainAccount();
@@ -152,8 +154,8 @@ export async function handleProfileLogin(ctx: CommandContext, name: string): Pro
   const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform, {
     CLAUDE_CONFIG_DIR: dir,
   });
-  const { spawnSync } = await import('node:child_process');
-  spawnSync(command, args, options);
+  const { nodeProcessAdapter } = await import('../process.js');
+  nodeProcessAdapter.spawnSync(command, args, options);
 
   const info = readProfile(name);
   if (info.emailAddress) {
@@ -239,8 +241,8 @@ export async function handleProfileUse(
   const { command, args, options } = buildSpawnArgs(claudeBin, passthroughArgs, process.platform, {
     CLAUDE_CONFIG_DIR: dir,
   });
-  const { spawnSync } = await import('node:child_process');
-  const result = spawnSync(command, args, options);
+  const { nodeProcessAdapter } = await import('../process.js');
+  const result = nodeProcessAdapter.spawnSync(command, args, options);
   if (result.error) {
     console.error(`Error: could not run claude: ${result.error.message}`);
     process.exit(1);

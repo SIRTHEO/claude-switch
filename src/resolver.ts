@@ -57,7 +57,7 @@ export function resolve({ envBin, selfPath, pathEnv }: ResolveOptions): string |
       if (isClaudeSwitchWrapper(envBin)) return null;
       return envBin;
     } catch {
-      return null;
+      return null; // not accessible/executable → env var unusable
     }
   }
 
@@ -74,14 +74,14 @@ export function resolve({ envBin, selfPath, pathEnv }: ResolveOptions): string |
       try {
         fs.accessSync(candidate, fs.constants.X_OK);
       } catch {
-        continue;
+        continue; // not present/executable on this PATH entry → next candidate
       }
 
       // Skip self
       try {
         if (fs.realpathSync(candidate) === selfPath) continue;
       } catch {
-        continue;
+        continue; // unresolvable symlink → can't trust it, skip
       }
 
       // Skip other claude-switch wrappers
@@ -98,13 +98,13 @@ export function resolve({ envBin, selfPath, pathEnv }: ResolveOptions): string |
     try {
       fs.accessSync(knownPath, fs.constants.X_OK);
     } catch {
-      continue;
+      continue; // known path not present/executable → next fallback
     }
     if (isClaudeSwitchWrapper(knownPath)) continue;
     try {
       if (fs.realpathSync(knownPath) === selfPath) continue;
     } catch {
-      continue;
+      continue; // unresolvable symlink → can't trust it, skip
     }
     return knownPath;
   }

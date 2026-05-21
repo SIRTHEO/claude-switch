@@ -1,35 +1,15 @@
 import fs from 'node:fs';
-import path from 'node:path';
-import { readKeychain, writeKeychain, type KeychainData } from './keychain.js';
-import { keychainAvailable, readApiKeyFromKeychain } from './apikey-keychain.js';
+import type { KeychainData } from './keychain.js';
 import { writeJsonAtomic } from './atomic-write.js';
 import { withLock } from './lock.js';
 import { errnoCode } from './errors.js';
+import { isSafeEmail, resolvedAccountFile } from './account-paths.js';
+import { type AccountRepository, fsAccountRepo } from './account-repository.js';
+import { type CredentialStore, defaultCredentialStore } from './credential-store.js';
 
-// Whitelist of characters allowed in account names. RFC 5321 email local-part
-// can contain more than this, but accepting only [A-Za-z0-9._+@-] covers ~all
-// real-world emails and blocks shell metacharacters ($, `, (, ), ;, &, |,
-// space, newline, etc.) that would otherwise allow command injection through
-// downstream consumers like shell completions (compgen -W).
-const SAFE_EMAIL_CHARS = /^[A-Za-z0-9._+@-]+$/;
-
-export function isSafeEmail(email: string): boolean {
-  return SAFE_EMAIL_CHARS.test(email);
-}
-
-/**
- * Resolve `<email>.json` inside `accountsDirPath`, refusing any value that
- * escapes the directory (path traversal). Used by accounts.ts and apikey.ts
- * — both produce files in the same dir with the same naming scheme.
- */
-export function resolvedAccountFile(email: string, accountsDirPath: string): string {
-  const base = path.resolve(accountsDirPath);
-  const resolved = path.resolve(accountsDirPath, `${email}.json`);
-  if (!resolved.startsWith(base + path.sep)) {
-    throw new Error(`Email resolves outside accounts directory: ${email}`);
-  }
-  return resolved;
-}
+// Re-exported so existing importers (apikey.ts, profiles.ts, usage.ts,
+// preferences.ts, commands/*) keep importing them from accounts.js unchanged.
+export { isSafeEmail, resolvedAccountFile } from './account-paths.js';
 
 export function getCurrent(claudeJsonPath: string): string {
   try {
@@ -46,12 +26,18 @@ export function getCurrent(claudeJsonPath: string): string {
   }
 }
 
-export function save(email: string, claudeJsonPath: string, accountsDirPath: string): void {
+export function save(
+  email: string,
+  claudeJsonPath: string,
+  accountsDirPath: string,
+  deps?: { repo?: AccountRepository; credentials?: CredentialStore },
+): void {
   if (!email || !isSafeEmail(email)) {
     throw new Error(`Email contains characters unsafe for filenames: ${email}`);
   }
 
-  fs.mkdirSync(accountsDirPath, { recursive: true, mode: 0o700 });
+  const repo = deps?.repo ?? fsAccountRepo;
+  const credentials = deps?.credentials ?? defaultCredentialStore;
 
   let data: Record<string, unknown>;
   try {
@@ -71,7 +57,7 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
   // a save() round-trip doesn't accidentally erase it; the keychainRestored
   // contract on subsequent loads stays correct.
   const keychainDisabled = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1';
-  const keychainData = keychainDisabled ? null : readKeychain();
+  const keychainData = keychainDisabled ? null : credentials.readOAuth();
   const accountPayload: Record<string, unknown> = { ...(data.oauthAccount || {}) };
   if (keychainData) {
     accountPayload._keychain = keychainData;
@@ -79,13 +65,11 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
     // Preserve an existing snapshot's _keychain block when running under
     // the disable flag — better than overwriting it with "absent".
     try {
-      const existingFile = resolvedAccountFile(email, accountsDirPath);
-      const existingRaw = fs.readFileSync(existingFile, 'utf-8');
-      const existing = JSON.parse(existingRaw);
+      const existing = repo.read(email, accountsDirPath);
       if (existing && typeof existing === 'object' && existing._keychain) {
         accountPayload._keychain = existing._keychain;
       }
-    } catch { /* file doesn't exist yet or is unreadable — leave _keychain absent */ }
+    } catch { /* unreadable / unparseable — leave _keychain absent */ }
   }
 
   // Snapshot the API-key acceptance state so it does NOT leak across
@@ -108,69 +92,53 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
 
   // Preserve any per-account API key (used for fallback when subscription
   // limits are hit) AND per-account preferences across re-saves, since
-  // save() rewrites the whole file.
-  const accountFile = resolvedAccountFile(email, accountsDirPath);
-  try {
-    const existing = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
+  // save() rewrites the whole file. repo.read returns null for a first save
+  // (ENOENT) and rethrows parse / non-ENOENT errors, matching the previous
+  // behaviour.
+  const existing = repo.read(email, accountsDirPath);
+  if (existing) {
     if (typeof existing._apiKey === 'string' && existing._apiKey) {
       accountPayload._apiKey = existing._apiKey;
     }
     if (existing._prefs && typeof existing._prefs === 'object') {
       accountPayload._prefs = existing._prefs;
     }
-  } catch (e) {
-    if (errnoCode(e) !== 'ENOENT') throw e;
-    // ENOENT: first save for this account — nothing to preserve.
   }
 
-  writeJsonAtomic(accountFile, accountPayload);
+  repo.write(email, accountsDirPath, accountPayload);
 }
 
-export function list(accountsDirPath: string): string[] {
-  try {
-    const files = fs.readdirSync(accountsDirPath);
-    const candidates = files
-      .filter(f => f.endsWith('.json') && !f.startsWith('.') && f !== 'aliases.json')
-      .map(f => f.replace(/\.json$/, ''));
-    const safe = candidates.filter(isSafeEmail);
-    // Surface (don't silence) accounts that an older claude-switch saved
-    // with characters now rejected by the tighter SAFE_EMAIL_CHARS allowlist
-    // (RFC 5321 permits !, #, $, %, etc. in the local-part — we don't, to
-    // keep them safe in shell completions). Without this warning the file
-    // would still exist on disk but vanish from `list`, `status`, the
-    // picker, etc., looking like data loss.
-    if (safe.length !== candidates.length && process.env.CLAUDE_SWITCH_QUIET !== '1') {
-      const dropped = candidates.filter(c => !safe.includes(c));
-      process.stderr.write(
-        `claude-switch: ${dropped.length} saved account(s) were skipped because their\n` +
-        `  email contains characters not allowed in the current naming scheme:\n` +
-        `    ${dropped.join(', ')}\n` +
-        `  The files in ~/.claude/accounts/ are intact. Re-add the account with\n` +
-        `  a simpler email or rename the file to recover it.\n\n`,
-      );
-    }
-    return safe;
-  } catch {
-    // ENOENT (first run, accounts dir not yet created) is the most
-    // common path here, but any other readdir failure (permission,
-    // I/O) gets treated the same way: surface "no accounts saved"
-    // rather than crash a status read. The dispatcher's first-run
-    // path then guides the user into `claude switch add` instead of
-    // dumping a stack trace.
-    return [];
+export function list(accountsDirPath: string, deps?: { repo?: AccountRepository }): string[] {
+  // repo.list already returns [] on any readdir failure (ENOENT first run,
+  // permission, I/O) — surface "no accounts saved" rather than crash a status
+  // read. The dispatcher's first-run path then guides the user into
+  // `claude switch add` instead of dumping a stack trace.
+  const files = (deps?.repo ?? fsAccountRepo).list(accountsDirPath);
+  const candidates = files
+    .filter(f => f.endsWith('.json') && !f.startsWith('.') && f !== 'aliases.json')
+    .map(f => f.replace(/\.json$/, ''));
+  const safe = candidates.filter(isSafeEmail);
+  // Surface (don't silence) accounts that an older claude-switch saved
+  // with characters now rejected by the tighter SAFE_EMAIL_CHARS allowlist
+  // (RFC 5321 permits !, #, $, %, etc. in the local-part — we don't, to
+  // keep them safe in shell completions). Without this warning the file
+  // would still exist on disk but vanish from `list`, `status`, the
+  // picker, etc., looking like data loss.
+  if (safe.length !== candidates.length && process.env.CLAUDE_SWITCH_QUIET !== '1') {
+    const dropped = candidates.filter(c => !safe.includes(c));
+    process.stderr.write(
+      `claude-switch: ${dropped.length} saved account(s) were skipped because their\n` +
+      `  email contains characters not allowed in the current naming scheme:\n` +
+      `    ${dropped.join(', ')}\n` +
+      `  The files in ~/.claude/accounts/ are intact. Re-add the account with\n` +
+      `  a simpler email or rename the file to recover it.\n\n`,
+    );
   }
+  return safe;
 }
 
-export function remove(email: string, accountsDirPath: string): void {
-  const accountFile = resolvedAccountFile(email, accountsDirPath);
-  try {
-    fs.unlinkSync(accountFile);
-  } catch (e) {
-    if (errnoCode(e) === 'ENOENT') {
-      throw new Error(`No saved account for ${email}`);
-    }
-    throw e;
-  }
+export function remove(email: string, accountsDirPath: string, deps?: { repo?: AccountRepository }): void {
+  (deps?.repo ?? fsAccountRepo).remove(email, accountsDirPath);
 }
 
 /**
@@ -186,13 +154,14 @@ export function removeSafely(
   email: string,
   claudeJsonPath: string,
   accountsDirPath: string,
+  deps?: { repo?: AccountRepository },
 ): void {
   withLock(accountsDirPath, () => {
     const currentNow = getCurrent(claudeJsonPath);
     if (currentNow === email) {
       throw new Error('Cannot remove the active account. Switch to another one first.');
     }
-    remove(email, accountsDirPath);
+    remove(email, accountsDirPath, deps);
   });
 }
 
@@ -263,27 +232,19 @@ export function syncActiveSnapshotIfStale(
   }
 }
 
-export function load(email: string, claudeJsonPath: string, accountsDirPath: string): { keychainRestored: boolean } {
-  const accountFile = resolvedAccountFile(email, accountsDirPath);
+export function load(
+  email: string,
+  claudeJsonPath: string,
+  accountsDirPath: string,
+  deps?: { repo?: AccountRepository; credentials?: CredentialStore },
+): { keychainRestored: boolean } {
+  const repo = deps?.repo ?? fsAccountRepo;
+  const credentials = deps?.credentials ?? defaultCredentialStore;
 
-  // Reject symlinks to prevent symlink-based file read attacks
-  const fileStat = fs.lstatSync(accountFile, { throwIfNoEntry: false });
-  if (!fileStat) {
-    throw new Error(`No saved account for ${email}`);
-  }
-  if (fileStat.isSymbolicLink()) {
-    throw new Error(`Account file for ${email} is a symbolic link and cannot be trusted`);
-  }
-
-  let accountData: Record<string, unknown>;
-  try {
-    accountData = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
-  } catch (e) {
-    if (e instanceof SyntaxError) {
-      throw new Error(`${accountFile} contains invalid JSON. Please fix or delete it.`);
-    }
-    throw e;
-  }
+  // loadRaw rejects symlinked account files and a missing file with explicit
+  // errors, and surfaces invalid JSON — the same security-critical sequence
+  // accounts.ts performed inline before the repository extraction.
+  const accountData = repo.loadRaw(email, accountsDirPath);
 
   // Strip internal fields so they never leak into ~/.claude.json.
   const {
@@ -329,8 +290,8 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   // they relied on the silent persistence.
   const claudeSwitchTracksApiKey = (() => {
     if (typeof _apiKeyLegacy === 'string' && _apiKeyLegacy) return true;
-    if (keychainAvailable() && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1') {
-      return readApiKeyFromKeychain(email) !== null;
+    if (credentials.available() && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1') {
+      return credentials.readApiKey(email) !== null;
     }
     return false;
   })();
@@ -346,9 +307,13 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
     }
     throw e;
   }
-  // Snapshot the previous oauthAccount so we can roll the JSON back if the
+  // Snapshot the WHOLE pre-load claude.json so we can roll it back if the
   // Keychain write fails afterwards (keeps the two sources of truth in sync).
-  const previousOauthAccount = data.oauthAccount;
+  // Capturing the full object — not just oauthAccount — is load-bearing:
+  // load() also rewrites `apiKey` / `customApiKeyResponses` below, so an
+  // oauthAccount-only restore left the new account's api-key state behind,
+  // a silent disalignment between claude.json and the Keychain.
+  const originalClaudeJson = structuredClone(data);
   data.oauthAccount = oauthAccount;
 
   // Restore (or actively CLEAR) the API-key acceptance state. Clearing is
@@ -388,11 +353,24 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
   // otherwise prompt for authorization and either block forever or fail).
   if (keychainRestored && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1') {
     try {
-      writeKeychain(_keychain as KeychainData);
+      credentials.writeOAuth(_keychain as KeychainData);
     } catch (e) {
+      // Keychain write failed AFTER claude.json was rewritten. Restore the
+      // whole pre-load claude.json so the two sources don't drift.
       try {
-        writeJson({ ...data, oauthAccount: previousOauthAccount });
-      } catch { /* best-effort rollback */ }
+        writeJson(originalClaudeJson);
+      } catch (rollbackErr) {
+        // The rollback ITSELF failed: claude.json may now be inconsistent with
+        // the Keychain and we cannot repair it. Surface it (never silent) so
+        // the user can recover manually. The _keychain payload (tokens) is
+        // never logged — only the generic fs/Keychain error messages.
+        process.stderr.write(
+          `claude-switch: failed to roll back ${claudeJsonPath} after a Keychain ` +
+          `write error — credentials may be inconsistent. ` +
+          `Keychain error: ${e instanceof Error ? e.message : String(e)}. ` +
+          `Rollback error: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}.\n`,
+        );
+      }
       throw e;
     }
   }

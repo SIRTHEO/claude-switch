@@ -1,5 +1,5 @@
 // src/proxy.ts
-import { spawn } from 'node:child_process';
+import { type ProcessPort, nodeProcessAdapter } from './process.js';
 
 interface SpawnOptions {
   stdio: 'inherit';
@@ -33,7 +33,12 @@ export function buildSpawnArgs(
   return { command: binaryPath, args, options };
 }
 
-export function run(binaryPath: string, args: string[], extraEnv?: NodeJS.ProcessEnv | null): never {
+export function run(
+  binaryPath: string,
+  args: string[],
+  extraEnv?: NodeJS.ProcessEnv | null,
+  deps?: { process?: ProcessPort },
+): never {
   const { command, args: spawnArgs, options } = buildSpawnArgs(
     binaryPath,
     args,
@@ -45,7 +50,7 @@ export function run(binaryPath: string, args: string[], extraEnv?: NodeJS.Proces
   // the fallback proxy on 127.0.0.1) can serve requests while claude is
   // running. spawnSync blocks the loop — fatal when claude depends on a
   // proxy hosted in this same process via ANTHROPIC_BASE_URL.
-  const child = spawn(command, spawnArgs, options);
+  const child = (deps?.process ?? nodeProcessAdapter).spawn(command, spawnArgs, options);
 
   child.on('error', (err) => {
     console.error(`Error: could not run claude: ${err.message}`);

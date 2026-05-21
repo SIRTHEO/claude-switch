@@ -34,10 +34,17 @@ export async function promptSecret(question: string): Promise<string> {
     // Non-interactive: read first line from pipe.
     const rl = readline.createInterface({ input: process.stdin });
     return new Promise((resolveFn) => {
-      rl.once('line', (line) => {
+      let resolved = false;
+      const done = (value: string): void => {
+        if (resolved) return;
+        resolved = true;
         rl.close();
-        resolveFn(line.trim());
-      });
+        resolveFn(value);
+      };
+      rl.once('line', (line) => done(line.trim()));
+      // EOF with no line (empty/closed stdin) must not hang the process —
+      // resolve empty so the caller hits its "no key on stdin" guard.
+      rl.once('close', () => done(''));
     });
   }
 
