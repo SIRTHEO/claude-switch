@@ -14,7 +14,7 @@
 import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { type ProcessPort, nodeProcessAdapter } from './process.js';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { readKeychain } from './keychain.js';
@@ -651,7 +651,7 @@ export function updateUsageCacheFromHeaders(
  * immediately — Claude Code renders the line as soon as we return, and the
  * next redraw picks up the freshly-written cache.
  */
-export function triggerBackgroundUsageRefresh(): void {
+export function triggerBackgroundUsageRefresh(deps: { process?: ProcessPort } = {}): void {
   let selfPath: string;
   try {
     selfPath = fileURLToPath(import.meta.url);
@@ -660,8 +660,9 @@ export function triggerBackgroundUsageRefresh(): void {
   }
   // selfPath is .../dist/src/usage.js; the CLI entry sits at .../dist/bin/cli.js
   const cliPath = path.resolve(path.dirname(selfPath), '..', 'bin', 'cli.js');
+  const proc = deps.process ?? nodeProcessAdapter;
   try {
-    const child = spawn(process.execPath, [cliPath, 'switch', 'usage', '--refresh-only'], {
+    const child = proc.spawn(process.execPath, [cliPath, 'switch', 'usage', '--refresh-only'], {
       detached: true,
       stdio: 'ignore',
       env: process.env,
