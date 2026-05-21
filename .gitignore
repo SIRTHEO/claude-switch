@@ -18,8 +18,10 @@ build/
 Thumbs.db
 *.swp
 
-# AI assistant tool configs — local-only, never product surface
-.claude/
+# AI assistant tool configs — local-only, never product surface.
+# Exception: .claude/rules/ is tracked (project conventions, propagated to all clones).
+.claude/*
+!.claude/rules/
 .claude-*
 .harness*
 .understand-*
