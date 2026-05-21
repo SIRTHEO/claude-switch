@@ -1,45 +1,14 @@
 # Changelog
 
-<!-- Phase 14.3 note: the untracked-apiKey warning added in this release is
+<!-- Note: the untracked-apiKey warning added in this release is
      transitional and will be removed in the next minor release. -->
 
 ## Unreleased
 
 ### Features
 
-* **statusline:** cache-health badge for Claude Code billing-bug visibility (Phase 15.4) ([baa415c](https://github.com/SIRTHEO/claude-switch/commit/baa415c))
-* **cli:** claude switch cache-health subcommand for billing-bug diagnostics (Phase 15.5) ([c65b171](https://github.com/SIRTHEO/claude-switch/commit/c65b171))
-
-## [3.8.0](https://github.com/SIRTHEO/claude-switch/compare/v3.7.0...v3.8.0) (2026-05-20)
-
-
-### Features
-
-* **cli:** --json contract for list and profile list ([3bc0564](https://github.com/SIRTHEO/claude-switch/commit/3bc0564615348d09d20415b52c7c7711dd954c56))
-* **cli:** --json on `route test` ([508fb9e](https://github.com/SIRTHEO/claude-switch/commit/508fb9e6b02d9a84af12fec814fcc92b9e2fdee0))
-* **cli:** --json on alias-list, fallback status, route-list ([35005dc](https://github.com/SIRTHEO/claude-switch/commit/35005dca8a3718ee80d8989239a0b12a6d64c818))
-* **cli:** per-account usage refresh — works for any saved account ([df2ce7e](https://github.com/SIRTHEO/claude-switch/commit/df2ce7e1f06f6fc9d71076392dc37bb26a34ab5a))
-* **cli:** per-profile launch in any detected terminal emulator ([793d90b](https://github.com/SIRTHEO/claude-switch/commit/793d90b2a0e7fd4029d4ec9c42e0df2dcdda751d))
-* **statusline:** embedded format supersedes ccstatusline chain ([eb68d4e](https://github.com/SIRTHEO/claude-switch/commit/eb68d4e36aa62479fc576478fb4be4b642bbb8d8))
-* **usage:** per-account snapshot command ([952c204](https://github.com/SIRTHEO/claude-switch/commit/952c2044b8794e50a2628244d5a9739a677fa489))
-
-
-### Bug Fixes
-
-* **profiles:** unblock isolated profile launch on Claude Code 2.x ([61a96f4](https://github.com/SIRTHEO/claude-switch/commit/61a96f4cf8755fa3ef1ec064ec1989d3a42b0d77))
-* **security:** warn once when Keychain disable flag leaks into prod ([a1cd275](https://github.com/SIRTHEO/claude-switch/commit/a1cd275b6bf20434541d9c163adec3109439b6a3))
-
-
-### Security
-
-* atomic-write symlink safety ([022e0ba](https://github.com/SIRTHEO/claude-switch/commit/022e0bab9111f8d4c368be6629a6aae91193cbf3))
-
-
-### Documentation
-
-* **readme:** promote profile flow + crisper top, add Discord contact ([c853172](https://github.com/SIRTHEO/claude-switch/commit/c85317267aea75c6aa12375ebca6daf95d573505))
-* **readme:** rewrite with honest competitor comparison and security trade-offs ([1a3d557](https://github.com/SIRTHEO/claude-switch/commit/1a3d557221736d476afdcef9f0569fabb111e28c))
-* restore README images + drop dev-process phrasing in keychain.ts ([b303c13](https://github.com/SIRTHEO/claude-switch/commit/b303c13ec7c785b340c3116dd0314f790b269935))
+* **statusline:** cache-health badge for Claude Code billing-bug visibility ([baa415c](https://github.com/SIRTHEO/claude-switch/commit/baa415c))
+* **cli:** claude switch cache-health subcommand for billing-bug diagnostics ([c65b171](https://github.com/SIRTHEO/claude-switch/commit/c65b171))
 
 ## [3.7.0](https://github.com/SIRTHEO/claude-switch/compare/v3.5.1...v3.7.0) (2026-05-15)
 
@@ -103,20 +72,20 @@
 
 ### Bug Fixes
 
-* **switcher:** make auto-flip fallback OAuth-aware (Phase 11.10) ([8a6d0c3](https://github.com/SIRTHEO/claude-switch/commit/8a6d0c3e00d2dd1395ce2d88ca4ad8d7a310bf29))
+* **switcher:** make auto-flip fallback OAuth-aware ([8a6d0c3](https://github.com/SIRTHEO/claude-switch/commit/8a6d0c3e00d2dd1395ce2d88ca4ad8d7a310bf29))
 
 
 ### Refactors
 
-* **errors:** introduce errMessage / errnoCode helpers, drop 22 type casts (Phase 11.7) ([23f3f4e](https://github.com/SIRTHEO/claude-switch/commit/23f3f4ea48b583b4cf089eb36bea581edb2cae9c))
-* **ui:** split home.tsx sub-components into per-file modules (Phase 11.6) ([17b2b39](https://github.com/SIRTHEO/claude-switch/commit/17b2b397cb0b7d580d3d7051a15f7445fc48b983))
-* **ui:** split profiles.tsx menu metadata + pick-list helper (Phase 11.5) ([9117ed0](https://github.com/SIRTHEO/claude-switch/commit/9117ed012fb8d66194e95434410ae30c2e239074))
+* **errors:** introduce errMessage / errnoCode helpers, drop 22 type casts ([23f3f4e](https://github.com/SIRTHEO/claude-switch/commit/23f3f4ea48b583b4cf089eb36bea581edb2cae9c))
+* **ui:** split home.tsx sub-components into per-file modules ([17b2b39](https://github.com/SIRTHEO/claude-switch/commit/17b2b397cb0b7d580d3d7051a15f7445fc48b983))
+* **ui:** split profiles.tsx menu metadata + pick-list helper ([9117ed0](https://github.com/SIRTHEO/claude-switch/commit/9117ed012fb8d66194e95434410ae30c2e239074))
 
 
 ### Documentation
 
-* **internal:** architecture overview (Phase 11.8) ([66a3d9d](https://github.com/SIRTHEO/claude-switch/commit/66a3d9d978a0945d9163fa5a183711a6a3edb37c))
-* **internal:** error-handling audit + policy (Phase 11.4) ([ef466a1](https://github.com/SIRTHEO/claude-switch/commit/ef466a195071f5dabcf5197013a40f7d79606888))
+* **internal:** architecture overview ([66a3d9d](https://github.com/SIRTHEO/claude-switch/commit/66a3d9d978a0945d9163fa5a183711a6a3edb37c))
+* **internal:** error-handling audit + policy ([ef466a1](https://github.com/SIRTHEO/claude-switch/commit/ef466a195071f5dabcf5197013a40f7d79606888))
 
 ## [3.5.0](https://github.com/SIRTHEO/claude-switch/compare/v3.4.1...v3.5.0) (2026-05-07)
 
@@ -358,7 +327,7 @@
 * focus README on claude switch first + auto-update banner ([0a30793](https://github.com/SIRTHEO/claude-switch/commit/0a307938a72b1041a07e75b71877724df18f3509))
 * improve SEO — keywords, topics, first-paragraph density ([20735ae](https://github.com/SIRTHEO/claude-switch/commit/20735aeac8710c29a598e551ae28c72fb131837e))
 * kill the contradiction between "one command" claim and FAQ commands ([8f03581](https://github.com/SIRTHEO/claude-switch/commit/8f03581bc7b668d35361beba1f58f8019d6d2b96))
-* **plans:** add Phase 7 tasks for 2.8.0 (auto-update + one-step isolation) ([d1dd8c9](https://github.com/SIRTHEO/claude-switch/commit/d1dd8c9ee7a7662283b8570a5ff03715837ee123))
+* **plans:** add tasks for 2.8.0 (auto-update + one-step isolation) ([d1dd8c9](https://github.com/SIRTHEO/claude-switch/commit/d1dd8c9ee7a7662283b8570a5ff03715837ee123))
 * **plans:** close 1.3 — profile scripts stay local (CI covered by unit tests) ([003c060](https://github.com/SIRTHEO/claude-switch/commit/003c060c3e549f4d93561f38d4e59a9bb332060c))
 * **plans:** close 2.1 — release-please config audit (no-op) ([5a8c451](https://github.com/SIRTHEO/claude-switch/commit/5a8c45106a0408df36c286a09c1b481b21fb349d))
 * **plans:** close 2.4 (badges no-op) + 2.6 (SLSA verified) ([699c3d0](https://github.com/SIRTHEO/claude-switch/commit/699c3d00e3adbcb4cc8326190a6f4581782d0f24))
@@ -402,7 +371,7 @@
 ### Documentation
 
 * focus README on claude switch first + auto-update banner ([0a30793](https://github.com/SIRTHEO/claude-switch/commit/0a307938a72b1041a07e75b71877724df18f3509))
-* **plans:** add Phase 7 tasks for 2.8.0 (auto-update + one-step isolation) ([d1dd8c9](https://github.com/SIRTHEO/claude-switch/commit/d1dd8c9ee7a7662283b8570a5ff03715837ee123))
+* **plans:** add tasks for 2.8.0 (auto-update + one-step isolation) ([d1dd8c9](https://github.com/SIRTHEO/claude-switch/commit/d1dd8c9ee7a7662283b8570a5ff03715837ee123))
 * **plans:** mark 6.5 complete — 2.7.0 published to npm ([7325c63](https://github.com/SIRTHEO/claude-switch/commit/7325c63625472f8b58fcd6fcfe44b146103444e8))
 
 ## [2.7.0](https://github.com/SIRTHEO/claude-switch/compare/v2.6.1...v2.7.0) (2026-05-04)
