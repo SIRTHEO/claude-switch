@@ -5,6 +5,7 @@ import { writeJsonAtomic } from './atomic-write.js';
 import { withLock } from './lock.js';
 import { errnoCode } from './errors.js';
 import { isSafeEmail, resolvedAccountFile } from './account-paths.js';
+import { type AccountRepository, fsAccountRepo } from './account-repository.js';
 
 // Re-exported so existing importers (apikey.ts, profiles.ts, usage.ts,
 // preferences.ts, commands/*) keep importing them from accounts.js unchanged.
@@ -25,12 +26,17 @@ export function getCurrent(claudeJsonPath: string): string {
   }
 }
 
-export function save(email: string, claudeJsonPath: string, accountsDirPath: string): void {
+export function save(
+  email: string,
+  claudeJsonPath: string,
+  accountsDirPath: string,
+  deps?: { repo?: AccountRepository },
+): void {
   if (!email || !isSafeEmail(email)) {
     throw new Error(`Email contains characters unsafe for filenames: ${email}`);
   }
 
-  fs.mkdirSync(accountsDirPath, { recursive: true, mode: 0o700 });
+  const repo = deps?.repo ?? fsAccountRepo;
 
   let data: Record<string, unknown>;
   try {
@@ -58,13 +64,11 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
     // Preserve an existing snapshot's _keychain block when running under
     // the disable flag — better than overwriting it with "absent".
     try {
-      const existingFile = resolvedAccountFile(email, accountsDirPath);
-      const existingRaw = fs.readFileSync(existingFile, 'utf-8');
-      const existing = JSON.parse(existingRaw);
+      const existing = repo.read(email, accountsDirPath);
       if (existing && typeof existing === 'object' && existing._keychain) {
         accountPayload._keychain = existing._keychain;
       }
-    } catch { /* file doesn't exist yet or is unreadable — leave _keychain absent */ }
+    } catch { /* unreadable / unparseable — leave _keychain absent */ }
   }
 
   // Snapshot the API-key acceptance state so it does NOT leak across
@@ -87,69 +91,53 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
 
   // Preserve any per-account API key (used for fallback when subscription
   // limits are hit) AND per-account preferences across re-saves, since
-  // save() rewrites the whole file.
-  const accountFile = resolvedAccountFile(email, accountsDirPath);
-  try {
-    const existing = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
+  // save() rewrites the whole file. repo.read returns null for a first save
+  // (ENOENT) and rethrows parse / non-ENOENT errors, matching the previous
+  // behaviour.
+  const existing = repo.read(email, accountsDirPath);
+  if (existing) {
     if (typeof existing._apiKey === 'string' && existing._apiKey) {
       accountPayload._apiKey = existing._apiKey;
     }
     if (existing._prefs && typeof existing._prefs === 'object') {
       accountPayload._prefs = existing._prefs;
     }
-  } catch (e) {
-    if (errnoCode(e) !== 'ENOENT') throw e;
-    // ENOENT: first save for this account — nothing to preserve.
   }
 
-  writeJsonAtomic(accountFile, accountPayload);
+  repo.write(email, accountsDirPath, accountPayload);
 }
 
-export function list(accountsDirPath: string): string[] {
-  try {
-    const files = fs.readdirSync(accountsDirPath);
-    const candidates = files
-      .filter(f => f.endsWith('.json') && !f.startsWith('.') && f !== 'aliases.json')
-      .map(f => f.replace(/\.json$/, ''));
-    const safe = candidates.filter(isSafeEmail);
-    // Surface (don't silence) accounts that an older claude-switch saved
-    // with characters now rejected by the tighter SAFE_EMAIL_CHARS allowlist
-    // (RFC 5321 permits !, #, $, %, etc. in the local-part — we don't, to
-    // keep them safe in shell completions). Without this warning the file
-    // would still exist on disk but vanish from `list`, `status`, the
-    // picker, etc., looking like data loss.
-    if (safe.length !== candidates.length && process.env.CLAUDE_SWITCH_QUIET !== '1') {
-      const dropped = candidates.filter(c => !safe.includes(c));
-      process.stderr.write(
-        `claude-switch: ${dropped.length} saved account(s) were skipped because their\n` +
-        `  email contains characters not allowed in the current naming scheme:\n` +
-        `    ${dropped.join(', ')}\n` +
-        `  The files in ~/.claude/accounts/ are intact. Re-add the account with\n` +
-        `  a simpler email or rename the file to recover it.\n\n`,
-      );
-    }
-    return safe;
-  } catch {
-    // ENOENT (first run, accounts dir not yet created) is the most
-    // common path here, but any other readdir failure (permission,
-    // I/O) gets treated the same way: surface "no accounts saved"
-    // rather than crash a status read. The dispatcher's first-run
-    // path then guides the user into `claude switch add` instead of
-    // dumping a stack trace.
-    return [];
+export function list(accountsDirPath: string, deps?: { repo?: AccountRepository }): string[] {
+  // repo.list already returns [] on any readdir failure (ENOENT first run,
+  // permission, I/O) — surface "no accounts saved" rather than crash a status
+  // read. The dispatcher's first-run path then guides the user into
+  // `claude switch add` instead of dumping a stack trace.
+  const files = (deps?.repo ?? fsAccountRepo).list(accountsDirPath);
+  const candidates = files
+    .filter(f => f.endsWith('.json') && !f.startsWith('.') && f !== 'aliases.json')
+    .map(f => f.replace(/\.json$/, ''));
+  const safe = candidates.filter(isSafeEmail);
+  // Surface (don't silence) accounts that an older claude-switch saved
+  // with characters now rejected by the tighter SAFE_EMAIL_CHARS allowlist
+  // (RFC 5321 permits !, #, $, %, etc. in the local-part — we don't, to
+  // keep them safe in shell completions). Without this warning the file
+  // would still exist on disk but vanish from `list`, `status`, the
+  // picker, etc., looking like data loss.
+  if (safe.length !== candidates.length && process.env.CLAUDE_SWITCH_QUIET !== '1') {
+    const dropped = candidates.filter(c => !safe.includes(c));
+    process.stderr.write(
+      `claude-switch: ${dropped.length} saved account(s) were skipped because their\n` +
+      `  email contains characters not allowed in the current naming scheme:\n` +
+      `    ${dropped.join(', ')}\n` +
+      `  The files in ~/.claude/accounts/ are intact. Re-add the account with\n` +
+      `  a simpler email or rename the file to recover it.\n\n`,
+    );
   }
+  return safe;
 }
 
-export function remove(email: string, accountsDirPath: string): void {
-  const accountFile = resolvedAccountFile(email, accountsDirPath);
-  try {
-    fs.unlinkSync(accountFile);
-  } catch (e) {
-    if (errnoCode(e) === 'ENOENT') {
-      throw new Error(`No saved account for ${email}`);
-    }
-    throw e;
-  }
+export function remove(email: string, accountsDirPath: string, deps?: { repo?: AccountRepository }): void {
+  (deps?.repo ?? fsAccountRepo).remove(email, accountsDirPath);
 }
 
 /**
@@ -165,13 +153,14 @@ export function removeSafely(
   email: string,
   claudeJsonPath: string,
   accountsDirPath: string,
+  deps?: { repo?: AccountRepository },
 ): void {
   withLock(accountsDirPath, () => {
     const currentNow = getCurrent(claudeJsonPath);
     if (currentNow === email) {
       throw new Error('Cannot remove the active account. Switch to another one first.');
     }
-    remove(email, accountsDirPath);
+    remove(email, accountsDirPath, deps);
   });
 }
 
@@ -242,27 +231,18 @@ export function syncActiveSnapshotIfStale(
   }
 }
 
-export function load(email: string, claudeJsonPath: string, accountsDirPath: string): { keychainRestored: boolean } {
-  const accountFile = resolvedAccountFile(email, accountsDirPath);
+export function load(
+  email: string,
+  claudeJsonPath: string,
+  accountsDirPath: string,
+  deps?: { repo?: AccountRepository },
+): { keychainRestored: boolean } {
+  const repo = deps?.repo ?? fsAccountRepo;
 
-  // Reject symlinks to prevent symlink-based file read attacks
-  const fileStat = fs.lstatSync(accountFile, { throwIfNoEntry: false });
-  if (!fileStat) {
-    throw new Error(`No saved account for ${email}`);
-  }
-  if (fileStat.isSymbolicLink()) {
-    throw new Error(`Account file for ${email} is a symbolic link and cannot be trusted`);
-  }
-
-  let accountData: Record<string, unknown>;
-  try {
-    accountData = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
-  } catch (e) {
-    if (e instanceof SyntaxError) {
-      throw new Error(`${accountFile} contains invalid JSON. Please fix or delete it.`);
-    }
-    throw e;
-  }
+  // loadRaw rejects symlinked account files and a missing file with explicit
+  // errors, and surfaces invalid JSON — the same security-critical sequence
+  // accounts.ts performed inline before the repository extraction.
+  const accountData = repo.loadRaw(email, accountsDirPath);
 
   // Strip internal fields so they never leak into ~/.claude.json.
   const {

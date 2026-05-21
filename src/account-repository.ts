@@ -59,6 +59,10 @@ class FsAccountRepo implements AccountRepository {
   }
 
   write(email: string, accountsDirPath: string, payload: Record<string, unknown>): void {
+    // Ensure the accounts dir exists with restrictive perms before writing —
+    // this was an explicit mkdirSync at the top of accounts.ts save(); it only
+    // needs to hold by write time, so it lives here now.
+    fs.mkdirSync(accountsDirPath, { recursive: true, mode: 0o700 });
     writeJsonAtomic(resolvedAccountFile(email, accountsDirPath), payload);
   }
 
