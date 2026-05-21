@@ -18,6 +18,7 @@
 // "Open account isolated" hot path.
 
 import type { ClaudeAiOauth } from './keychain.js';
+import { type HttpPort, fetchHttpAdapter, hasGlobalFetch } from './http.js';
 
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
@@ -52,21 +53,22 @@ interface RefreshResponse {
  * `claudeAiOauth` block (mirroring the shape we already store in the
  * Keychain) or null on any failure.
  *
- * The fetch is gated behind `globalThis.fetch` so this stays
- * compatible with Node 18+ without a runtime dependency. Tests can
- * inject a mock via `deps.fetch`.
+ * The HTTP call goes through an injected `HttpPort` (defaults to the global
+ * fetch via `fetchHttpAdapter`), keeping this Node 18+ compatible without a
+ * runtime dependency. Tests inject a fake via `deps.http`.
  */
 export async function refreshAccessToken(
   refreshToken: string,
-  deps: { fetch?: typeof globalThis.fetch; signal?: AbortSignal } = {},
+  deps: { http?: HttpPort } = {},
 ): Promise<ClaudeAiOauth | null> {
   if (!refreshToken) return null;
-  const fetchImpl = deps.fetch ?? globalThis.fetch;
-  if (typeof fetchImpl !== 'function') return null;
+  // No injected port and no global fetch (Node <18) → give up, as before.
+  if (!deps.http && !hasGlobalFetch()) return null;
+  const http = deps.http ?? fetchHttpAdapter;
 
   let res: Response;
   try {
-    res = await fetchImpl(TOKEN_URL, {
+    res = await http(TOKEN_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -77,7 +79,6 @@ export async function refreshAccessToken(
         refresh_token: refreshToken,
         client_id: CLIENT_ID,
       }),
-      signal: deps.signal,
     });
   } catch {
     // Network error — caller falls through to needsLogin.

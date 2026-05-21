@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readUsageCache, readUsageCacheForAccount, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter, readUsageCacheFor, isUsageCacheStale, shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh, parseUsageHeadersIfPresent, updateUsageCacheFromHeaders } from '../src/usage.js';
+import { readUsageCache, readUsageCacheForAccount, fetchUsage, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter, readUsageCacheFor, isUsageCacheStale, shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh, parseUsageHeadersIfPresent, updateUsageCacheFromHeaders } from '../src/usage.js';
 import { createHash } from 'node:crypto';
 
 describe('readUsageCache', () => {
@@ -582,5 +582,67 @@ describe('updateUsageCacheFromHeaders', () => {
     updateUsageCacheFromHeaders(dir, '', 50, 20);
     // No per-account file (we have no email to derive the path from)
     assert.strictEqual(readUsageCacheForAccount(dir, 'placeholder@x.com'), null);
+  });
+});
+
+describe('fetchUsage (HttpPort-injected)', () => {
+  type HttpInit = { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal };
+  const fakeHttp = (impl: (url: string, init?: HttpInit) => Response | Promise<Response>) =>
+    (url: string, init?: HttpInit) => Promise.resolve(impl(url, init));
+
+  const validPayload = { five_hour: { utilization: 30 }, seven_day: { utilization: 5 } };
+
+  it('returns ok + payload on 200 with a valid usage shape', async () => {
+    let captured: { url?: string; init?: HttpInit } = {};
+    const http = fakeHttp((url, init) => {
+      captured = { url, init };
+      return new Response(JSON.stringify(validPayload), { status: 200 });
+    });
+    const out = await fetchUsage('at-1', { http });
+    assert.strictEqual(out.ok, true);
+    assert.ok(out.ok && out.payload.five_hour);
+    assert.match(captured.url ?? '', /api\.anthropic\.com\/api\/oauth\/usage$/);
+    assert.strictEqual(captured.init?.headers?.authorization, 'Bearer at-1');
+  });
+
+  it('flags rate-limited on 429 with retry-after parsed', async () => {
+    const http = fakeHttp(() => new Response('', { status: 429, headers: { 'retry-after': '42' } }));
+    const out = await fetchUsage('at', { http });
+    assert.strictEqual(out.ok, false);
+    assert.ok(!out.ok && out.rateLimited);
+    assert.strictEqual(!out.ok && out.rateLimited ? out.retryAfterSec : null, 42);
+  });
+
+  it('reports HTTP <status> on a non-200/429 response', async () => {
+    const http = fakeHttp(() => new Response('nope', { status: 401 }));
+    const out = await fetchUsage('at', { http });
+    assert.strictEqual(out.ok, false);
+    assert.strictEqual(!out.ok && !out.rateLimited ? out.error : '', 'HTTP 401');
+  });
+
+  it('rejects an unexpected response shape', async () => {
+    const http = fakeHttp(() => new Response(JSON.stringify({ nope: true }), { status: 200 }));
+    const out = await fetchUsage('at', { http });
+    assert.strictEqual(out.ok, false);
+    assert.match(!out.ok && !out.rateLimited ? out.error : '', /unexpected response shape/);
+  });
+
+  it('aborts an over-large body (DoS guard preserved)', async () => {
+    const huge = 'x'.repeat(20 * 1024); // > MAX_BODY_BYTES (16 KiB)
+    const http = fakeHttp(() => new Response(huge, { status: 200 }));
+    const out = await fetchUsage('at', { http });
+    assert.strictEqual(out.ok, false);
+    assert.strictEqual(!out.ok && !out.rateLimited ? out.error : '', 'response too large');
+  });
+
+  it('maps a timeout/abort to a "timeout" error', async () => {
+    const http = () => {
+      const e = new Error('timed out');
+      e.name = 'TimeoutError';
+      return Promise.reject(e);
+    };
+    const out = await fetchUsage('at', { http });
+    assert.strictEqual(out.ok, false);
+    assert.strictEqual(!out.ok && !out.rateLimited ? out.error : '', 'timeout');
   });
 });
