@@ -104,18 +104,19 @@ only exposes another process's argv to the same user or to root, and a
 same-user attacker already has `security` CLI access to the very
 Keychain entries in question.
 
-### Known finding — GUI sidecar passes the API key in argv
+### GUI sidecar API-key passing (resolved)
 
-When the desktop GUI saves an API key it currently spawns the CLI as
+The desktop GUI used to save an API key by spawning the CLI as
 `apikey set <email> --key <key>`, placing the key in the **sidecar
-process** argv (a second, GUI-side exposure window). Two notes:
+process** argv (a second, GUI-side exposure window). This was also
+broken: the CLI argument parser does not read a `--key` flag — `apikey
+set` takes the key from stdin (or the interactive screen) only — so the
+flag was both an exposure and functionally ignored.
 
-1. The CLI argument parser does not read a `--key` flag — `apikey set`
-   takes the key from stdin (or the interactive screen) only. So the
-   flag is both an exposure and functionally ignored.
-2. The correct fix lives at the CLI command layer + GUI, not in the
-   Keychain adapter: the GUI should pipe the key to the CLI's stdin and
-   drop `--key`. Tracked as a follow-up; not addressed in this review.
+Fixed by piping the key to the CLI over **stdin** and dropping the flag,
+so no key value ever reaches the command line. The CLI's non-interactive
+`promptSecret` was also hardened to resolve on stdin EOF (empty stdin no
+longer hangs the process).
 
 ## Reporting a vulnerability
 
