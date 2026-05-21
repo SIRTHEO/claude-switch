@@ -34,12 +34,19 @@ jobs:
       # arms auto-merge so the PR merges automatically once all checks
       # pass — no manual --admin required.
       #
+      # IMPORTANT: uses RELEASE_TOKEN (a PAT), NOT GITHUB_TOKEN.
+      # Pushes by GITHUB_TOKEN do NOT trigger further workflow runs
+      # (anti-loop), so an auto-merge done with GITHUB_TOKEN would
+      # silently skip the subsequent release.yml run that tags + ships
+      # to npm. The PAT push behaves like a human push and re-triggers.
+      #
       # Prerequisite (one-time): enable "Allow auto-merge" in
-      # GitHub → Settings → General for this repository.
+      # GitHub → Settings → General, and store the PAT (repo + workflow
+      # scopes) as repo secret RELEASE_TOKEN.
       - name: Enable auto-merge on release PR
         if: ${{ steps.release.outputs.pr }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           PR=$(gh pr list \
             --head 'release-please--branches--main--components--claude-switch' \
