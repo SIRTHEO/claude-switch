@@ -24,7 +24,7 @@ import {
   writeKeychainForConfigDir,
   type KeychainData,
 } from './keychain.js';
-import { getCurrent, isSafeEmail, resolvedAccountFile, syncActiveSnapshotIfStale } from './accounts.js';
+import { getCurrent, isSafeEmail, resolvedAccountFile, save, syncActiveSnapshotIfStale } from './accounts.js';
 import { claudeJsonPath } from './paths.js';
 import { errMessage, debugProfiles } from './errors.js';
 import { findClaudeBinary } from './find-claude.js';
@@ -698,6 +698,37 @@ export async function ensureProfileForAccount(
       needsLogin,
       created: false,
     };
+  }
+
+  // H1 — the account was authenticated directly (e.g. `claude /login`) and
+  // never captured as a legacy snapshot, so `importProfileFromAccount` below
+  // would throw "No saved account". When the email coincides with the active
+  // account, capture an implicit snapshot from the live claude.json (+ default
+  // Keychain) first, giving the import a source to read. This matches what an
+  // explicit `claude switch save` would have produced. Opt-out via
+  // CLAUDE_SWITCH_NO_IMPLICIT_SAVE=1 for one release of back-compat for anyone
+  // relying on the previous throw behaviour.
+  if (process.env.CLAUDE_SWITCH_NO_IMPLICIT_SAVE !== '1') {
+    let legacyExists = false;
+    try {
+      legacyExists = fs.existsSync(resolvedAccountFile(email, accountsDirPath));
+    } catch { /* unsafe email → let importProfileFromAccount surface it */ }
+    if (!legacyExists) {
+      let activeEmail = '';
+      try {
+        activeEmail = getCurrent(claudeJsonPath());
+      } catch { /* claude.json unreadable → skip implicit save */ }
+      if (activeEmail && activeEmail === email) {
+        try {
+          save(email, claudeJsonPath(), accountsDirPath);
+          debugProfiles(`implicitSave=true reason=active-no-legacy profileDir=<accounts>`);
+        } catch (saveErr) {
+          debugProfiles(`implicitSave=failed err=${errMessage(saveErr)}`);
+        }
+      } else {
+        debugProfiles(`implicitSave=skipped reason=${activeEmail ? 'email-not-active' : 'no-active-account'}`);
+      }
+    }
   }
 
   debugProfiles(`emailMatch=false profileFound=false importing from legacy account`);
