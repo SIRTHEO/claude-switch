@@ -454,7 +454,7 @@ async function preWarmUsageForAutoEngage(
   let email: string;
   try {
     email = getCurrent(claudeJsonPath);
-  } catch { return; }
+  } catch { return; } // no resolvable active account → nothing to auto-engage
   if (!email) return;
   if (!getApiKey(email, accountsDirPath)) return;
 

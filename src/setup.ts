@@ -19,7 +19,7 @@ function isClaudeSwitchWrapper(filePath: string): boolean {
     fs.readSync(fd, buf, 0, 512, 0);
     return buf.toString('utf-8').includes(WRAPPER_MAGIC);
   } catch {
-    return false;
+    return false; // unreadable/missing → treat as not-a-wrapper
   } finally {
     if (fd !== undefined) try { fs.closeSync(fd); } catch { /* ignore */ }
   }
@@ -44,7 +44,7 @@ export function getSavedClaudeBin(binFile?: string): string | null {
 
     return bin;
   } catch {
-    return null;
+    return null; // any read/stat/access failure → no usable saved bin
   }
 }
 
@@ -115,7 +115,7 @@ export function patchShellConfig(filePath: string, npmBinDir: string): boolean {
     fs.appendFileSync(filePath, block, 'utf-8');
     return true;
   } catch {
-    return false;
+    return false; // couldn't read/write the rc file → report PATH not patched
   }
 }
 

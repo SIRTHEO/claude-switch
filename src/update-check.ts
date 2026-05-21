@@ -150,7 +150,7 @@ export function fetchLatestVersionSync(): Promise<string | null> {
       res.on('end', () => {
         try {
           resolve(extractVersion(JSON.parse(body)) ?? null);
-        } catch { resolve(null); }
+        } catch { resolve(null); } // malformed registry response → no update info
       });
     });
     req.on('error', () => resolve(null));

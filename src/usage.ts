@@ -482,7 +482,7 @@ export function getAccessTokenFromKeychain(claudeJsonPathStr?: string): string |
       const oauth = raw?.oauthAccount as Record<string, unknown> | undefined; // safe: nested unknown field, type narrowed before use
       const t = oauth?.accessToken;
       return typeof t === 'string' && t ? t : null;
-    } catch { return null; }
+    } catch { return null; } // missing/corrupt claude.json → no token available
   }
   return null;
 }

@@ -93,11 +93,11 @@ export function listProfiles(): string[] {
       .filter(n => {
         if (!isValidProfileName(n)) return false;
         try { return fs.statSync(path.join(profilesDir(), n)).isDirectory(); }
-        catch { return false; }
+        catch { return false; } // entry vanished mid-scan → not a profile dir
       })
       .sort();
   } catch {
-    return [];
+    return []; // profiles dir missing/unreadable → no profiles
   }
 }
 

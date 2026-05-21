@@ -138,7 +138,7 @@ export function ProfilesScreen({ accountsDirPath, initialNotice, onExit }: Scree
               try {
                 const info = readProfile(name);
                 return `${name.padEnd(20)} ${info.emailAddress ?? '(not logged in)'}`;
-              } catch { return `${name.padEnd(20)} (error reading)`; }
+              } catch { return `${name.padEnd(20)} (error reading)`; } // corrupt profile → show inline, don't crash the list
             }).join('\n');
         setStep({ kind: 'note', title: 'Profiles', body });
         return;
@@ -523,7 +523,7 @@ export async function runProfilesScreen(
       try {
         const info = readProfile(req.profileName);
         loggedIn = !!info.emailAddress && info.hasLogin;
-      } catch { loggedIn = false; }
+      } catch { loggedIn = false; } // unreadable profile → treat as not-logged-in
 
       if (!loggedIn) {
         nextNotice = `Login did not complete for "${req.profileName}". Try again from the menu.`;
