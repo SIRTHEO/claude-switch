@@ -85,6 +85,11 @@ jobs:
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # `npm publish` triggers the `prepublishOnly` hook, which runs
+          # `npm test`. Without this var the disable-keychain banner
+          # fires and the warnUntrackedApiKey assertion regresses.
+          CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1'
+          CLAUDE_SWITCH_TESTING: '1'
       - name: Deprecate older versions
         run: |
           VERSION=$(node -p "require('./package.json').version")
