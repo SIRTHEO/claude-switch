@@ -57,6 +57,66 @@ If command 1 reports no key but command 2 or 3 shows a key present, you were exp
 
 Full root-cause analysis: `.claude/docs/reports/2026-05-13-silent-apikey-after-subscription-exhaustion.md` (internal, not committed to the public repo).
 
+## Credential exposure via process arguments
+
+### The window
+
+Writing a credential to the macOS Keychain shells out to the system
+`security` tool, and the secret travels as a command-line argument:
+
+```
+security add-generic-password -s <service> -a <account> -w <SECRET> -T … -U
+```
+
+For the lifetime of that `security` subprocess (sub-second), `<SECRET>`
+is visible in the process argument vector — i.e. to anything that can
+read `ps`/`proc`-style process listings. The same shape applies to the
+OAuth token blob and the API key.
+
+### What is mitigated, and how
+
+- **Error messages never echo the argv.** Node's default
+  `Error.message` for a failed `execFileSync` embeds the full command
+  line — which here contains the token. Both write paths in the
+  `KeychainAdapter` (`credential-store.ts`, OAuth and API-key) capture
+  the child's stderr separately (`stdio: [.., .., 'pipe']`) and throw a
+  hand-written message that contains only the child's diagnostic, never
+  the argv. This is the applied in-adapter mitigation.
+- **The CLI never logs a key in clear.** `apikey show` / `apikey set`
+  only ever print `maskApiKey(...)`; read paths return the value to the
+  caller but do not log it. Verified across `commands/apikey.ts`.
+- **No clear text on the GUI-captured stdout/stderr.** The CLI emits
+  masked output only; the secret reaches the GUI solely through the
+  explicit `apikey show` contract, by design.
+
+### What is deferred, and why
+
+The argv window of the `security` subprocess itself is **not** closed.
+`security add-generic-password` has no stdin/file route for the password
+— the only alternatives are the inline `-w <value>` (what we use) or an
+interactive tty prompt, neither of which removes argv exposure in a
+scriptable context. Closing it would require replacing the `security`
+CLI with a native Keychain binding (Node-API / `keytar`-style), an
+architectural change out of scope here.
+
+The residual risk is low under this project's threat model: modern macOS
+only exposes another process's argv to the same user or to root, and a
+same-user attacker already has `security` CLI access to the very
+Keychain entries in question.
+
+### Known finding — GUI sidecar passes the API key in argv
+
+When the desktop GUI saves an API key it currently spawns the CLI as
+`apikey set <email> --key <key>`, placing the key in the **sidecar
+process** argv (a second, GUI-side exposure window). Two notes:
+
+1. The CLI argument parser does not read a `--key` flag — `apikey set`
+   takes the key from stdin (or the interactive screen) only. So the
+   flag is both an exposure and functionally ignored.
+2. The correct fix lives at the CLI command layer + GUI, not in the
+   Keychain adapter: the GUI should pipe the key to the CLI's stdin and
+   drop `--key`. Tracked as a follow-up; not addressed in this review.
+
 ## Reporting a vulnerability
 
 If you find a security issue — credential leak, privilege escalation,
