@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- Note: the untracked-apiKey warning added in this release is
+<!-- Note note: the untracked-apiKey warning added in this release is
      transitional and will be removed in the next minor release. -->
 
 ## Unreleased
