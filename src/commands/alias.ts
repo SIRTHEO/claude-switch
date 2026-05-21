@@ -4,6 +4,7 @@
 import { ExitError, errMessage } from '../errors.js';
 import { setAlias, listAliases, removeAlias } from '../aliases.js';
 import type { CommandContext } from './context.js';
+import type { AliasEntry } from '../contract.js';
 
 export function handleAliasSet(
   ctx: CommandContext,
@@ -34,7 +35,7 @@ export function handleAliasList(
   const entries = Object.entries(aliases);
 
   if (opts.json) {
-    const payload = entries.map(([alias, email]) => ({ alias, email }));
+    const payload: AliasEntry[] = entries.map(([alias, email]) => ({ alias, email }));
     process.stdout.write(`${JSON.stringify(payload)}\n`);
     return;
   }

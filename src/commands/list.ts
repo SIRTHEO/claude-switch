@@ -13,16 +13,10 @@ import { getCurrent, list as listAccounts } from '../accounts.js';
 import { getAliasesForEmail } from '../aliases.js';
 import type { CommandContext } from './context.js';
 import { errMessage } from '../errors.js';
+import type { AccountSummary } from '../contract.js';
 
 export interface ListOptions {
   json: boolean;
-}
-
-interface AccountSummary {
-  email: string;
-  alias: string | null;
-  aliases: string[];
-  active: boolean;
 }
 
 export function handleList(ctx: CommandContext, opts: ListOptions = { json: false }): void {

@@ -26,6 +26,7 @@ import { profilesDir } from '../profiles.js';
 import { readProxyMode } from '../proxy-mode.js';
 import { loadActiveSessionHealth } from '../cache-health.js';
 import type { CommandContext } from './context.js';
+import type { StatuslineSnapshot } from '../contract.js';
 
 // --------------------------------------------------------------------------
 // Render — read-only, hot-path
@@ -250,7 +251,7 @@ function renderStatusline(
           },
         }
       : {};
-    const json = {
+    const json: StatuslineSnapshot = {
       email,
       shortName,
       // `mode` stays binary for back-compat with any consumer that

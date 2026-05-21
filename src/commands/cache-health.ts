@@ -22,6 +22,7 @@ import {
   findActiveSessionJsonl,
 } from '../cache-health.js';
 import type { CacheHealthSummary, FlushEvent } from '../cache-health.js';
+import type { CacheHealthReport } from '../contract.js';
 
 export interface CacheHealthOptions {
   /** Absolute path to a specific JSONL file to parse (bypasses active-session lookup). */
@@ -117,7 +118,7 @@ function outputJson(
   sessionPath: string,
   flushes: FlushEvent[],
 ): void {
-  const out = {
+  const out: CacheHealthReport = {
     summary,
     sessionPath,
     flushes,

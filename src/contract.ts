@@ -56,11 +56,15 @@ export interface StatuslineSnapshot {
 
 /** `claude switch usage-snapshot <email> --json`. */
 export interface UsageSnapshot {
-  email: string;
+  /** Canonical account email (field is named `account`, not `email`). */
+  account: string;
+  fetchedAt: number | null;
+  ageSec: number | null;
   fiveHourPct: number | null;
   sevenDayPct: number | null;
-  ageSec?: number | null;
-  fetchedAt?: number | null;
+  sevenDayOpusPct: number | null;
+  sevenDaySonnetPct: number | null;
+  rateLimitedUntil: number | null;
 }
 
 /** `claude switch alias --list --json` — one entry per alias. */
@@ -74,6 +78,8 @@ export interface FallbackStatus {
   enabled: boolean;
   autoRevert: { enabled: boolean; threshold: number };
   autoEngage: { enabled: boolean; threshold: number };
+  activeAccount: string | null;
+  hasApiKey: boolean;
 }
 
 /** `claude switch profile list --json` — one entry per profile. */
@@ -91,16 +97,34 @@ export interface RouteRule {
   kind: 'email' | 'alias';
 }
 
-/** `claude switch cache-health --json` — standalone cache-health report. */
-export interface CacheHealthSnapshot {
-  sessionPath: string | null;
-  summary: {
-    turns: number;
-    hitRatio: number;
-    flushCount: number;
-    effectiveInputTokens: number;
-  } | null;
+/**
+ * Full cache-health summary. Mirrors the domain `CacheHealthSummary` in
+ * src/cache-health.ts — kept structurally identical so the handler's emit
+ * type-checks against this contract (the enforcement seam).
+ */
+export interface CacheHealthSummary {
+  turns: number;
+  totalCacheRead: number;
+  totalCacheCreation: number;
+  totalInput: number;
+  hitRatio: number;
   flushCount: number;
+  effectiveInputTokens: number;
+  lastFlushAt: number | null;
+}
+
+/** One detected cache-flush turn in the cache-health report. */
+export interface FlushEvent {
+  turn: number;
+  line: number;
+  timestamp: string | null;
+}
+
+/** `claude switch cache-health --json` — standalone cache-health report. */
+export interface CacheHealthReport {
+  summary: CacheHealthSummary;
+  sessionPath: string;
+  flushes: FlushEvent[];
 }
 
 /**
