@@ -18,6 +18,8 @@
     "gif": "bash scripts/render-demo.sh",
     "install-hooks": "bash scripts/install-git-hooks.sh",
     "verify-release": "bash scripts/verify-release-readiness.sh",
+    "gen:gui-contract": "node scripts/gen-gui-contract.mjs",
+    "check:gui-contract": "node scripts/gen-gui-contract.mjs --check",
     "prepublishOnly": "npm test"
   },
   "keywords": [
