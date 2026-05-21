@@ -10,6 +10,37 @@
 * **statusline:** cache-health badge for Claude Code billing-bug visibility ([baa415c](https://github.com/SIRTHEO/claude-switch/commit/baa415c))
 * **cli:** claude switch cache-health subcommand for billing-bug diagnostics ([c65b171](https://github.com/SIRTHEO/claude-switch/commit/c65b171))
 
+## [3.8.0](https://github.com/SIRTHEO/claude-switch/compare/v3.7.0...v3.8.0) (2026-05-21)
+
+
+### Features
+
+* **cli:** --json contract for list and profile list ([3bc0564](https://github.com/SIRTHEO/claude-switch/commit/3bc0564615348d09d20415b52c7c7711dd954c56))
+* **cli:** --json on `route test` ([508fb9e](https://github.com/SIRTHEO/claude-switch/commit/508fb9e6b02d9a84af12fec814fcc92b9e2fdee0))
+* **cli:** --json on alias-list, fallback status, route-list ([35005dc](https://github.com/SIRTHEO/claude-switch/commit/35005dca8a3718ee80d8989239a0b12a6d64c818))
+* **cli:** per-account usage refresh — works for any saved account ([df2ce7e](https://github.com/SIRTHEO/claude-switch/commit/df2ce7e1f06f6fc9d71076392dc37bb26a34ab5a))
+* **cli:** per-profile launch in any detected terminal emulator ([793d90b](https://github.com/SIRTHEO/claude-switch/commit/793d90b2a0e7fd4029d4ec9c42e0df2dcdda751d))
+* **statusline:** embedded format supersedes ccstatusline chain ([eb68d4e](https://github.com/SIRTHEO/claude-switch/commit/eb68d4e36aa62479fc576478fb4be4b642bbb8d8))
+* **usage:** per-account snapshot command ([952c204](https://github.com/SIRTHEO/claude-switch/commit/952c2044b8794e50a2628244d5a9739a677fa489))
+
+
+### Bug Fixes
+
+* **profiles:** unblock isolated profile launch on Claude Code 2.x ([61a96f4](https://github.com/SIRTHEO/claude-switch/commit/61a96f4cf8755fa3ef1ec064ec1989d3a42b0d77))
+* **security:** warn once when Keychain disable flag leaks into prod ([a1cd275](https://github.com/SIRTHEO/claude-switch/commit/a1cd275b6bf20434541d9c163adec3109439b6a3))
+
+
+### Security
+
+* atomic-write symlink safety ([022e0ba](https://github.com/SIRTHEO/claude-switch/commit/022e0bab9111f8d4c368be6629a6aae91193cbf3))
+
+
+### Documentation
+
+* **readme:** promote profile flow + crisper top, add Discord contact ([c853172](https://github.com/SIRTHEO/claude-switch/commit/c85317267aea75c6aa12375ebca6daf95d573505))
+* **readme:** rewrite with honest competitor comparison and security trade-offs ([1a3d557](https://github.com/SIRTHEO/claude-switch/commit/1a3d557221736d476afdcef9f0569fabb111e28c))
+* restore README images + drop dev-process phrasing in keychain.ts ([b303c13](https://github.com/SIRTHEO/claude-switch/commit/b303c13ec7c785b340c3116dd0314f790b269935))
+
 ## [3.7.0](https://github.com/SIRTHEO/claude-switch/compare/v3.5.1...v3.7.0) (2026-05-15)
 
 
