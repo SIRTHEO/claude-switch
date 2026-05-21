@@ -22,11 +22,11 @@ import {
   readKeychain,
   readKeychainForConfigDir,
   writeKeychainForConfigDir,
-  type KeychainData,
 } from './keychain.js';
 import { getCurrent, isSafeEmail, resolvedAccountFile, save, syncActiveSnapshotIfStale } from './accounts.js';
 import { claudeJsonPath } from './paths.js';
 import { errMessage, debugProfiles } from './errors.js';
+import type { AccountSnapshot } from './account-snapshot.js';
 import { findClaudeBinary } from './find-claude.js';
 
 /**
@@ -217,14 +217,7 @@ function freshUserID(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-interface LegacyAccountFile {
-  emailAddress?: string;
-  _keychain?: KeychainData;
-  // …other oauthAccount fields (accountUuid, organization, etc.)
-  [k: string]: unknown;
-}
-
-function readLegacyAccount(email: string, accountsDirPath: string): LegacyAccountFile {
+function readLegacyAccount(email: string, accountsDirPath: string): AccountSnapshot {
   // Reject anything that isn't a safe email up front so we never feed a
   // raw `../../etc/passwd` into `path.join`. Mirrors the guard that
   // `accounts.ts` applies on its read/write paths.
@@ -254,7 +247,7 @@ function readLegacyAccount(email: string, accountsDirPath: string): LegacyAccoun
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(`${file} does not contain an object.`);
   }
-  return parsed as LegacyAccountFile;
+  return parsed as AccountSnapshot;
 }
 
 /**
@@ -288,7 +281,7 @@ export async function refreshLegacySnapshotIfStale(
   // claude already rotated.
   syncActiveSnapshotIfStale(claudeJsonPath(), accountsDirPath);
 
-  let legacy: LegacyAccountFile;
+  let legacy: AccountSnapshot;
   try {
     legacy = readLegacyAccount(email, accountsDirPath);
   } catch {
@@ -308,7 +301,7 @@ export async function refreshLegacySnapshotIfStale(
   // preserve every other field — only `_keychain.claudeAiOauth` is
   // replaced. Other claudeCode-specific block (`mcpOAuth` etc.) stays
   // untouched.
-  const next: LegacyAccountFile = {
+  const next: AccountSnapshot = {
     ...legacy,
     _keychain: {
       ...legacy._keychain,

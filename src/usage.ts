@@ -21,6 +21,7 @@ import { readKeychain } from './keychain.js';
 import { writeJsonAtomic } from './atomic-write.js';
 import { errMessage } from './errors.js';
 import { isSafeEmail } from './accounts.js';
+import type { AccountSnapshot } from './account-snapshot.js';
 
 const ENDPOINT_HOST = 'api.anthropic.com';
 const ENDPOINT_PATH = '/api/oauth/usage';
@@ -338,9 +339,9 @@ function readAccountOauth(
   } catch {
     return null;
   }
-  let parsed: Record<string, unknown>;
+  let parsed: AccountSnapshot;
   try {
-    parsed = JSON.parse(raw) as Record<string, unknown>;
+    parsed = JSON.parse(raw) as AccountSnapshot;
   } catch {
     return null;
   }
@@ -357,8 +358,8 @@ function readAccountOauth(
   // Probe all three. The first one with a usable accessToken wins.
   const top = parsed;
   const nested = parsed.oauthAccount as Record<string, unknown> | undefined;
-  const keychainBlock = parsed._keychain as Record<string, unknown> | undefined;
-  const keychainOauth = keychainBlock?.claudeAiOauth as Record<string, unknown> | undefined;
+  const keychainBlock = parsed._keychain;
+  const keychainOauth = keychainBlock?.claudeAiOauth;
 
   const accessToken =
     typeof keychainOauth?.accessToken === 'string'

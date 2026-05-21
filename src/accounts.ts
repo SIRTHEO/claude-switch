@@ -5,6 +5,7 @@ import { keychainAvailable, readApiKeyFromKeychain } from './apikey-keychain.js'
 import { writeJsonAtomic } from './atomic-write.js';
 import { withLock } from './lock.js';
 import { errnoCode } from './errors.js';
+import type { AccountSnapshot } from './account-snapshot.js';
 
 // Whitelist of characters allowed in account names. RFC 5321 email local-part
 // can contain more than this, but accepting only [A-Za-z0-9._+@-] covers ~all
@@ -72,7 +73,7 @@ export function save(email: string, claudeJsonPath: string, accountsDirPath: str
   // contract on subsequent loads stays correct.
   const keychainDisabled = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1';
   const keychainData = keychainDisabled ? null : readKeychain();
-  const accountPayload: Record<string, unknown> = { ...(data.oauthAccount || {}) };
+  const accountPayload: AccountSnapshot = { ...(data.oauthAccount || {}) };
   if (keychainData) {
     accountPayload._keychain = keychainData;
   } else if (keychainDisabled) {
@@ -275,7 +276,7 @@ export function load(email: string, claudeJsonPath: string, accountsDirPath: str
     throw new Error(`Account file for ${email} is a symbolic link and cannot be trusted`);
   }
 
-  let accountData: Record<string, unknown>;
+  let accountData: AccountSnapshot;
   try {
     accountData = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
   } catch (e) {
