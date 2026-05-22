@@ -134,11 +134,13 @@ describe('handleProfileList', () => {
       name: string;
       account: string | null;
       hasLogin: boolean;
+      path: string;
     }>;
     assert.equal(parsed.length, 1);
     assert.equal(parsed[0]?.name, 'work');
     assert.equal(parsed[0]?.hasLogin, false);
     assert.equal(parsed[0]?.account, null);
+    assert.equal(parsed[0]?.path, profileDir);
   });
 
   it('emits "[]" on --json when no profiles exist', async () => {

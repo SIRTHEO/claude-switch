@@ -33,6 +33,7 @@ export async function handleProfileList(
         name,
         account: info.hasLogin ? info.emailAddress ?? null : null,
         hasLogin: info.hasLogin,
+        path: info.path,
       };
     });
     process.stdout.write(`${JSON.stringify(payload)}\n`);

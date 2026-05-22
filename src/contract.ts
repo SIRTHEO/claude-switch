@@ -88,6 +88,10 @@ export interface ProfileEntry {
   /** Email the profile is logged into, or null when it needs login. */
   account: string | null;
   hasLogin: boolean;
+  /** Absolute config directory for the profile (`~/.claude/profiles/<name>`).
+   *  Consumers spawn an isolated `claude` by setting `CLAUDE_CONFIG_DIR` to
+   *  this path. */
+  path: string;
 }
 
 /** `claude switch route list --json` — one entry per routing rule. */
