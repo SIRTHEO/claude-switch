@@ -10,6 +10,7 @@ touching code in this repo. Treat them as load-bearing.
 | [`commits-and-privacy.md`](./commits-and-privacy.md) | Conventional Commits, privacy-gate scripts (pre-commit + pre-push), the maintainer-identity policy, fixture conventions, the two historical leak incidents kept as concrete warnings. |
 | [`testing.md`](./testing.md) | `CLAUDE_SWITCH_DISABLE_KEYCHAIN=1` global flag, test-against-`dist/` discipline, characterization-test pattern, worker test verification protocol, the "Case A" precedent. |
 | [`housekeeping.md`](./housekeeping.md) | File size targets, dead-code workflow (knip + jscpd), lint discipline, silent-catch annotation rule. |
+| [`docs-sync.md`](./docs-sync.md) | Keep the README in sync with the code: the citation surface (file tags, symbols, numeric defaults, commands, controls, license), drift events that force a README edit, npm-rendering compatibility (no GitHub `[!ALERT]` blocks), link/badge integrity, the pre-PR doc-sync gate. |
 
 When a session reads `CLAUDE.md` at the repo root, it also implicitly carries
 these rules (CLAUDE.md links them by name where relevant).
