@@ -20,9 +20,9 @@
 npm install -g @sirtheo/claude-switch && claude switch setup
 ```
 
-[**🚀 Install**](#-install) · [**✨ Features**](#-features) · [**⚖️ Compared**](#️-how-it-compares) · [**🔐 Security**](#-security-model) · [**❓ FAQ**](#-faq) · [**⭐ Star it**](https://github.com/SIRTHEO/claude-switch)
+[**🚀 Install**](#-install) · [**✨ Features**](#-features) · [**🔐 Security**](#-security-model) · [**❓ FAQ**](#-faq) · [**⭐ Star it**](https://github.com/SIRTHEO/claude-switch)
 
-<img src="docs/images/dashboard.gif" alt="claude-switch dashboard — multi-account TUI with usage glyphs" width="900" />
+<img src="docs/images/dashboard.gif" alt="claude-switch dashboard — multi-account TUI with usage glyphs" width="800" />
 
 </div>
 
@@ -210,11 +210,7 @@ claude switch cache-health           # CLI report: turns, hit ratio, flush count
 
 A high flush count (>2-3 in a short session) is the signal that the word-substitution cache-flush bug is active. File the JSONL as evidence on the upstream Anthropic thread.
 
----
-
-### 📊 Live usage in the Claude Code statusline
-
-A discreet badge that turns **yellow at 75%** and **red at 90%**. You'll never be ambushed by a rate limit again. Combined with cache-health, you see *why* your plan is draining, not just *that* it is.
+The same badge doubles as a **live usage gauge** — discreet, turns **yellow at 75%** and **red at 90%**, so a rate limit never ambushes you. You see *why* your plan is draining, not just *that* it is.
 
 ---
 
@@ -223,33 +219,6 @@ A discreet badge that turns **yellow at 75%** and **red at 90%**. You'll never b
 Full **React-for-the-terminal** UI: focus rings, live updates, hotkeys, in-place re-renders. `Tab` cycles sections, `↑↓` navigates, single-letter keys (`a` `k` `f` `c` `g` `p`…) are accelerators, `?` for inline help.
 
 Plus: tab completion (`bash` · `zsh` · `fish` · `powershell`), one-shot `claude --as <alias> "task"`, cross-platform CI on Linux + macOS + Windows × Node 20/22/24.
-
----
-
-## ⚖️ How it compares
-
-Honest table. Stars and approach checked against each repo, not the marketing.
-
-| Project | Stars | Approach | Drop-in `claude`? | API-key fallback | Project-aware routing | Live usage / cache-health |
-|---|---|---|:---:|:---:|:---:|:---:|
-| **@sirtheo/claude-switch** *(this)* | — | atomic `~/.claude.json` swap + macOS Keychain + `CLAUDE_CONFIG_DIR` for profiles | ✅ | ✅ **in-process** | ✅ `.claude-switch` + globs | ✅ |
-| [kaitranntt/ccs](https://github.com/kaitranntt/ccs) | ~2.3k | `CLAUDE_CONFIG_DIR` + external CLIProxyAPI | ❌ `ccs` cmd | ✅ via external proxy + multi-provider | ✅ (claimed) | ✅ |
-| [realiti4/claude-swap](https://github.com/realiti4/claude-swap) | ~370 | Keychain/Credential-Manager swap with backups | ❌ `cswap` | ❌ | ❌ | ❌ |
-| [hoangvu12/claude-switch](https://github.com/hoangvu12/claude-switch) | ~7 | Symlink/junction `~/.claude` → profile dir | ❌ `claude-switch use` | ❌ | ❌ | ❌ |
-| [farion1231/cc-switch](https://github.com/farion1231/cc-switch) | popular | GUI for Claude/Codex/Gemini | ❌ desktop app | ❌ | ❌ | ❌ (GUI status) |
-| `claude /logout` + browser | — | full re-auth | n/a | ❌ | ❌ | ❌ |
-| Shell alias + `CLAUDE_CONFIG_DIR` | — | env-var isolation, hand-maintained | partial | ❌ | manual | ❌ |
-
-### What only this tool does
-
-- **It wraps `claude` itself.** Every other tool above asks you to type a new command (`ccs`, `cswap`, `csw`). Only here does shell history, IDE plugin, and CI keep running on the literal `claude` invocation.
-- **API-key fallback runs in-process.** `ccs` requires an external proxy you have to run separately. claude-switch starts the proxy in the same Node process, on a loopback port, and tears it down when the session ends.
-- **`.claude-switch` is a constraint, not an identity.** *"This repo needs an @acme.com account"* (not *"this repo uses my-specific-alias"*). Teammates with different local aliases auto-route correctly.
-
-### Where others do it better
-
-- **GUI.** `farion1231/cc-switch` (cross-platform desktop app), `XueshiQiao/CCSwitcher` (macOS menu-bar).
-- **Multi-provider.** OpenRouter, Gemini, Codex routing is `kaitranntt/ccs` territory. claude-switch is Anthropic-only by design.
 
 ---
 
@@ -362,6 +331,7 @@ If/when [#24963](https://github.com/anthropics/claude-code/issues/24963) ships, 
 
 ## 📦 What's new
 
+- **v3.8.x** — 🔌 **`--json` contract** on `list`, `profile list`, `route test`, `alias-list`, fallback status (stable machine-readable output). 🪟 Per-profile launch in any detected terminal emulator. 📊 Per-account usage refresh for any saved account + embedded statusline format. 🔐 atomic-write symlink-safety hardening.
 - **v3.7.x** — 🪟 **Profile fresh-install fix**: `claude switch profile use <name>` now enters the REPL directly with stored credentials on Claude Code 2.x. Auto-propagated Keychain ACL + `hasCompletedOnboarding` + statusline config on import.
 - **v3.5.x** — 💾 **Cache-health monitor** (live `💾 N% 🚨X` statusline + CLI report) for Anthropic billing bugs. 🎯 **Project-aware routing** (`.claude-switch` + global rules). Silent-API-key billing leak fix. Per-account usage cache.
 - **v3.4.x** — 🔐 API keys in macOS Keychain. On-read state migration.
