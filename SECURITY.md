@@ -185,10 +185,19 @@ so it doesn't persist across the next prompt.
 
 ### Fix (one-time, requires the macOS user password once)
 
-For each Claude Keychain item, expand the partition list to include
-Apple-signed CLI tools. Replace `<acct>` with `Claude Code-credentials`
-for the global item, and with your macOS username for any per-config-dir
-items (`Claude Code-credentials-<hash>`):
+Run the built-in command:
+
+```bash
+claude switch setup-keychain
+```
+
+It discovers every `Claude Code-credentials*` item (the global entry plus any
+per-config-dir `-<hash>` variants) and expands each item's partition list to
+include Apple-signed CLI tools (`apple-tool:`). You'll be asked for your macOS
+login password (possibly once per item). After that, swaps no longer prompt.
+
+If you prefer to do it by hand — or to inspect what the command runs — the
+equivalent manual steps are:
 
 ```bash
 # 1. global entry
@@ -205,9 +214,6 @@ security dump-keychain 2>/dev/null | \
 #     -S "apple-tool:" -s "<service>" -a "<your-username>"
 ```
 
-You'll be asked for your macOS login password once per item. After that,
-swaps no longer prompt.
-
 ### What's the security trade-off
 
 The partition list previously locked the item to a single team-ID. After
@@ -222,16 +228,19 @@ malware would no longer be prompted before reading the entry.
 The blast radius is narrow: only the three (or so) `Claude Code-credentials*`
 entries are touched, not the rest of your Keychain.
 
-### Why claude-switch doesn't do this automatically
+### Why it's opt-in (not run during a swap)
 
 `security set-generic-password-partition-list` needs `-k <keychain-password>`
-to run non-interactively; without it macOS prompts for the password
-itself. Automating the fix would mean either prompting the user for their
-macOS password during a swap (worse UX than the current "one annoying
-dialog" cycle) or shipping a one-off setup helper. The maintainer's
-current call is to document the procedure rather than automate it; a
-contribution that wires it into an opt-in `claude switch setup-keychain`
-command would be welcome.
+to run non-interactively; without it macOS prompts for the password. Doing this
+silently on every swap would mean prompting for the macOS password during a
+swap — worse UX than the dialog it removes. So `claude switch setup-keychain` is
+an explicit one-time command you run yourself: it inherits your terminal so the
+password prompt reaches you, and it never embeds or stores the password.
+
+> **Note** — whether the fix is truly permanent depends on whether the `claude`
+> binary re-pins the partition list when it rotates the OAuth token on refresh.
+> If the per-swap dialog returns after some time, re-run `claude switch
+> setup-keychain`.
 
 ## Reporting a vulnerability
 
