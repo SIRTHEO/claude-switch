@@ -117,6 +117,29 @@ export interface ProfileSkillEntry {
   path: string;
 }
 
+/** Transport an MCP server speaks. */
+export type McpTransport = 'stdio' | 'sse' | 'http';
+
+/** `claude switch profile mcp list <p> --json` — one entry per MCP server
+ *  known to the profile: configured in it, available in the global config to
+ *  compose, or both. */
+export interface ProfileMcpEntry {
+  name: string;
+  /** Present in this profile's `.claude.json` `mcpServers`. */
+  configured: boolean;
+  /** Present in the global `~/.claude.json` `mcpServers` (composable). */
+  inGlobal: boolean;
+  /** Configured AND in global, but the composed copy differs from the current
+   *  global definition — it has gone stale. False otherwise. */
+  globalDrift: boolean;
+  /** Transport of the effective definition (the profile's when configured,
+   *  else the global one), or null when neither resolves. */
+  transport: McpTransport | null;
+  /** One-line summary of the effective definition: the command (stdio) or the
+   *  url (sse/http). Null when neither resolves. */
+  detail: string | null;
+}
+
 /** `claude switch route list --json` — one entry per routing rule. */
 export interface RouteRule {
   pattern: string;
