@@ -94,6 +94,17 @@ export interface ProfileEntry {
   path: string;
 }
 
+/** `claude switch skills list --json` — one entry per globally installed skill. */
+export interface SkillEntry {
+  name: string;
+  /** First line of the SKILL.md description, or null when absent. */
+  description: string | null;
+  /** Origin of the skill. Currently only the user skills dir is inventoried. */
+  source: 'user';
+  /** Absolute path to the skill directory. */
+  path: string;
+}
+
 /** `claude switch route list --json` — one entry per routing rule. */
 export interface RouteRule {
   pattern: string;

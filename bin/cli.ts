@@ -13,6 +13,7 @@ import { handleHelp } from '../src/commands/help.js';
 import { handleVersion } from '../src/commands/version.js';
 import { handleCompletions } from '../src/commands/completions.js';
 import { handleList } from '../src/commands/list.js';
+import { handleSkillsList } from '../src/commands/skills.js';
 import { handleStatus } from '../src/commands/status.js';
 import { handleAliasSet, handleAliasList, handleAliasRemove } from '../src/commands/alias.js';
 import { handleApikeySet, handleApikeyShow, handleApikeyRemove } from '../src/commands/apikey.js';
@@ -83,6 +84,7 @@ export type Command =
   | { action: 'statusline-install'; variant: 'plain' | 'embedded' | 'ccstatusline' }
   | { action: 'statusline-uninstall' }
   | { action: 'statusline-status' }
+  | { action: 'skills-list'; json: boolean }
   | { action: 'profile-list'; json: boolean }
   | { action: 'profile-create'; name: string }
   | { action: 'profile-use'; name: string; args: string[] }
@@ -233,6 +235,13 @@ export function parseCommand(args: string[]): Command {
       if (!args[3]) throw new ExitError('Usage: claude switch alias <name> <email>');
       return { action: 'alias-set', name: sub2, email: args[3] };
     }
+    case 'skills': {
+      const sub2 = args[2];
+      if (!sub2 || sub2 === 'list' || sub2 === 'ls') {
+        return { action: 'skills-list', json: args.includes('--json') };
+      }
+      throw new ExitError('Usage: claude switch skills list [--json]');
+    }
     case 'profile': {
       const sub2 = args[2];
       if (!sub2 || sub2 === 'list' || sub2 === 'ls') {
@@ -346,6 +355,7 @@ async function main(): Promise<void> {
   // Profile subcommands — isolated per-terminal claude sessions via
   // CLAUDE_CONFIG_DIR. Early-return so they skip the update-check / pending
   // -restore preludes; profile flows manage their own spawn lifecycle.
+  if (cmd.action === 'skills-list')    { await handleSkillsList({ json: cmd.json }); return; }
   if (cmd.action === 'profile-list')   { await handleProfileList({ json: cmd.json }); return; }
   if (cmd.action === 'profile-create') { await handleProfileCreate(cmd.name); return; }
   if (cmd.action === 'profile-status') { await handleProfileStatus(cmd.name); return; }
