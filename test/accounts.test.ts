@@ -397,7 +397,9 @@ describe('save / load — _capturedFrom provenance (23.6)', () => {
     }));
     fs.writeFileSync(claudeJson, JSON.stringify({}));
 
-    const result = load('b@example.com', claudeJson, accDir);
+    const result = load('b@example.com', claudeJson, accDir, {
+      credentials: fakeCredsWithOAuth({ accessToken: 'tok-B', refreshToken: 'r-B', expiresAt: 1 }),
+    });
     assert.equal(result.keychainRestored, true);
     assert.doesNotMatch(stderrBuf, /captured under accountUuid/);
   });
@@ -410,7 +412,9 @@ describe('save / load — _capturedFrom provenance (23.6)', () => {
     }));
     fs.writeFileSync(claudeJson, JSON.stringify({}));
 
-    const result = load('b@example.com', claudeJson, accDir);
+    const result = load('b@example.com', claudeJson, accDir, {
+      credentials: fakeCredsWithOAuth({ accessToken: 'tok-B', refreshToken: 'r-B', expiresAt: 1 }),
+    });
     assert.equal(result.keychainRestored, true);
     assert.doesNotMatch(stderrBuf, /captured under accountUuid/);
   });

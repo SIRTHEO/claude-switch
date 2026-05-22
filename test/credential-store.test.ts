@@ -118,37 +118,79 @@ describe('KeychainAdapter — OAuth read', () => {
     restoreEnv();
   });
 
-  it('reads + parses the blob from the first candidate account', () => {
+  it('probes metadata then reads the blob from the existing candidate account', () => {
+    // The new probe-first read pattern (no-dialog regression fix): the
+    // adapter first calls `security find-generic-password -s SERVICE -a ACCT`
+    // WITHOUT `-w` for each candidate to see which item exists, then issues
+    // the read (with `-w`) only against the existing one. The probe never
+    // raises a macOS authorization dialog because it doesn't touch the
+    // encrypted blob, so probing both candidates is free.
     const { fn, calls } = makeExec(() => Buffer.from(JSON.stringify(SAMPLE)));
     const out = new KeychainAdapter(fn).readOAuth();
     assert.deepEqual(out, SAMPLE);
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0]!.file, 'security');
-    assert.equal(calls[0]!.args[0], 'find-generic-password');
-    assert.equal(argVal(calls[0]!.args, '-s'), OAUTH_SERVICE);
-    assert.equal(argVal(calls[0]!.args, '-a'), os.userInfo().username);
-    assert.ok(calls[0]!.args.includes('-w'));
+    // 2 probes (one per candidate, both reported as existing by the fake)
+    // + 1 read of the first existing candidate (the OS username).
+    assert.equal(calls.length, 3);
+    // Probes are calls 0 and 1 (no `-w`); the read is call 2 (has `-w`).
+    assert.ok(!calls[0]!.args.includes('-w'), 'probe 1 must not pass -w');
+    assert.ok(!calls[1]!.args.includes('-w'), 'probe 2 must not pass -w');
+    assert.ok(calls[2]!.args.includes('-w'), 'read must pass -w');
+    assert.equal(calls[2]!.file, 'security');
+    assert.equal(calls[2]!.args[0], 'find-generic-password');
+    assert.equal(argVal(calls[2]!.args, '-s'), OAUTH_SERVICE);
+    assert.equal(argVal(calls[2]!.args, '-a'), os.userInfo().username);
   });
 
-  it('falls through to the second candidate account when the first throws', () => {
-    let n = 0;
-    const { fn, calls } = makeExec(() => {
-      if (n++ === 0) throw new Error('not found');
+  it('skips the read entirely for a candidate whose probe says "not present"', () => {
+    // The first probe (username) says "not present" → that candidate is
+    // dropped, no read is attempted against it (which would have prompted
+    // for a password under macOS), so the dialog cascade is broken. The
+    // second probe (legacy service name) says "present" → only that one is
+    // read, with `-w`.
+    let probeIdx = 0;
+    const { fn, calls } = makeExec((call) => {
+      const isProbe = !call.args.includes('-w');
+      if (isProbe) {
+        const presentForLegacy = probeIdx++ === 1; // probe 0 = username (absent), probe 1 = legacy (present)
+        if (!presentForLegacy) throw new Error('item not found (44)');
+        return Buffer.from('');
+      }
       return Buffer.from(JSON.stringify(SAMPLE));
     });
     const out = new KeychainAdapter(fn).readOAuth();
     assert.deepEqual(out, SAMPLE);
-    assert.equal(calls.length, 2);
-    assert.equal(argVal(calls[1]!.args, '-a'), OAUTH_SERVICE);
+    // 2 probes + 1 read against the legacy account only.
+    assert.equal(calls.length, 3);
+    assert.equal(argVal(calls[2]!.args, '-a'), OAUTH_SERVICE);
+    assert.ok(calls[2]!.args.includes('-w'));
   });
 
-  it('returns null when every candidate throws', () => {
-    assert.equal(new KeychainAdapter(execThatThrows()).readOAuth(), null);
+  it('returns null when no candidate exists (no read attempt, no dialog)', () => {
+    // Both probes throw → no candidate exists → readOAuth returns null
+    // without ever attempting a `-w` read. This is the critical guarantee
+    // that prevents the spurious-dialog regression on a fresh machine.
+    const { fn, calls } = makeExec(() => { throw new Error('item not found (44)'); });
+    assert.equal(new KeychainAdapter(fn).readOAuth(), null);
+    // Only 2 probes — never any read.
+    assert.equal(calls.length, 2);
+    for (const call of calls) {
+      assert.ok(!call.args.includes('-w'), 'no read with -w was attempted');
+    }
   });
 
   it('returns null when the stored value is valid JSON but not an object', () => {
-    const { fn } = makeExec(() => Buffer.from('42'));
+    // probe says present, read returns "42" — must reject (not an OAuth blob).
+    let probed = false;
+    const { fn } = makeExec((call) => {
+      const isProbe = !call.args.includes('-w');
+      if (isProbe) {
+        probed = true;
+        return Buffer.from('');
+      }
+      return Buffer.from('42');
+    });
     assert.equal(new KeychainAdapter(fn).readOAuth(), null);
+    assert.ok(probed, 'probe must have happened');
   });
 
   it('returns null and never spawns exec off darwin', () => {
