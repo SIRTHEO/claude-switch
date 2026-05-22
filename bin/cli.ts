@@ -13,7 +13,12 @@ import { handleHelp } from '../src/commands/help.js';
 import { handleVersion } from '../src/commands/version.js';
 import { handleCompletions } from '../src/commands/completions.js';
 import { handleList } from '../src/commands/list.js';
-import { handleSkillsList } from '../src/commands/skills.js';
+import {
+  handleProfileSkillsLink,
+  handleProfileSkillsList,
+  handleProfileSkillsUnlink,
+  handleSkillsList,
+} from '../src/commands/skills.js';
 import { handleStatus } from '../src/commands/status.js';
 import { handleAliasSet, handleAliasList, handleAliasRemove } from '../src/commands/alias.js';
 import { handleApikeySet, handleApikeyShow, handleApikeyRemove } from '../src/commands/apikey.js';
@@ -85,6 +90,9 @@ export type Command =
   | { action: 'statusline-uninstall' }
   | { action: 'statusline-status' }
   | { action: 'skills-list'; json: boolean }
+  | { action: 'profile-skills-list'; name: string; json: boolean }
+  | { action: 'profile-skills-link'; name: string; skill: string }
+  | { action: 'profile-skills-unlink'; name: string; skill: string }
   | { action: 'profile-list'; json: boolean }
   | { action: 'profile-create'; name: string }
   | { action: 'profile-use'; name: string; args: string[] }
@@ -244,6 +252,29 @@ export function parseCommand(args: string[]): Command {
     }
     case 'profile': {
       const sub2 = args[2];
+      if (sub2 === 'skills') {
+        const action3 = args[3];
+        const profileName = args[4];
+        if (!action3 || action3 === 'list' || action3 === 'ls') {
+          if (!profileName) {
+            throw new ExitError('Usage: claude switch profile skills list <profile> [--json]');
+          }
+          return { action: 'profile-skills-list', name: profileName, json: args.includes('--json') };
+        }
+        if (action3 === 'link') {
+          if (!profileName || !args[5]) {
+            throw new ExitError('Usage: claude switch profile skills link <profile> <skill>');
+          }
+          return { action: 'profile-skills-link', name: profileName, skill: args[5] };
+        }
+        if (action3 === 'unlink') {
+          if (!profileName || !args[5]) {
+            throw new ExitError('Usage: claude switch profile skills unlink <profile> <skill>');
+          }
+          return { action: 'profile-skills-unlink', name: profileName, skill: args[5] };
+        }
+        throw new ExitError('Usage: claude switch profile skills <list|link|unlink> <profile> [skill]');
+      }
       if (!sub2 || sub2 === 'list' || sub2 === 'ls') {
         return { action: 'profile-list', json: args.includes('--json') };
       }
@@ -356,6 +387,9 @@ async function main(): Promise<void> {
   // CLAUDE_CONFIG_DIR. Early-return so they skip the update-check / pending
   // -restore preludes; profile flows manage their own spawn lifecycle.
   if (cmd.action === 'skills-list')    { await handleSkillsList({ json: cmd.json }); return; }
+  if (cmd.action === 'profile-skills-list')   { await handleProfileSkillsList(cmd.name, { json: cmd.json }); return; }
+  if (cmd.action === 'profile-skills-link')   { await handleProfileSkillsLink(cmd.name, cmd.skill); return; }
+  if (cmd.action === 'profile-skills-unlink') { await handleProfileSkillsUnlink(cmd.name, cmd.skill); return; }
   if (cmd.action === 'profile-list')   { await handleProfileList({ json: cmd.json }); return; }
   if (cmd.action === 'profile-create') { await handleProfileCreate(cmd.name); return; }
   if (cmd.action === 'profile-status') { await handleProfileStatus(cmd.name); return; }

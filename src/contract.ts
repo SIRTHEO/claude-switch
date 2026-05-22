@@ -105,6 +105,18 @@ export interface SkillEntry {
   path: string;
 }
 
+/** `claude switch profile skills list <p> --json` — one entry per skill known
+ *  to the profile (global skills, linked or available, plus broken links). */
+export interface ProfileSkillEntry {
+  name: string;
+  /** A symlink for this skill exists in the profile's skills dir. */
+  linked: boolean;
+  /** The link exists but its global target is gone. */
+  broken: boolean;
+  /** Absolute path of the global skill dir (the link target). */
+  path: string;
+}
+
 /** `claude switch route list --json` — one entry per routing rule. */
 export interface RouteRule {
   pattern: string;

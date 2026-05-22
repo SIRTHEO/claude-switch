@@ -10,7 +10,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { handleSkillsList } from '../src/commands/skills.js';
+import { handleProfileSkillsList, handleSkillsList } from '../src/commands/skills.js';
+import {
+  linkSkillToProfile,
+  listProfileSkills,
+  unlinkSkillFromProfile,
+} from '../src/skills.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 interface Harness {
@@ -143,5 +148,99 @@ describe('handleSkillsList', () => {
     await handleSkillsList({ json: false });
     restore();
     assert.match(h.stdout.join('\n'), /No skills/);
+  });
+});
+
+function makeProfile(h: Harness, name: string): string {
+  const dir = path.join(h.fakeHome, '.claude', 'profiles', name);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+describe('profile skills link/unlink/list', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = setup();
+  });
+  afterEach(() => teardown(h));
+
+  it('links a global skill into a profile as a symlink to the global dir', () => {
+    makeSkill(h, 'airtable', 'desc');
+    makeProfile(h, 'work');
+    linkSkillToProfile('work', 'airtable');
+    const link = path.join(h.fakeHome, '.claude', 'profiles', 'work', 'skills', 'airtable');
+    assert.ok(fs.lstatSync(link).isSymbolicLink());
+    assert.equal(fs.readlinkSync(link), path.join(h.skillsDir, 'airtable'));
+  });
+
+  it('is idempotent when the same link already exists', () => {
+    makeSkill(h, 'airtable', 'd');
+    makeProfile(h, 'work');
+    linkSkillToProfile('work', 'airtable');
+    assert.doesNotThrow(() => linkSkillToProfile('work', 'airtable'));
+  });
+
+  it('refuses to link an unknown skill', () => {
+    makeProfile(h, 'work');
+    assert.throws(() => linkSkillToProfile('work', 'nope'), /not found/);
+  });
+
+  it('rejects an invalid skill name (path escape)', () => {
+    makeProfile(h, 'work');
+    assert.throws(() => linkSkillToProfile('work', '../../etc'), /Invalid skill name/);
+  });
+
+  it('lists linked vs available and detects broken links', () => {
+    makeSkill(h, 'a', 'da');
+    makeSkill(h, 'b', 'db');
+    makeProfile(h, 'work');
+    linkSkillToProfile('work', 'a');
+    let entries = listProfileSkills('work');
+    assert.equal(entries.find((e) => e.name === 'a')?.linked, true);
+    assert.equal(entries.find((e) => e.name === 'a')?.broken, false);
+    assert.equal(entries.find((e) => e.name === 'b')?.linked, false);
+
+    // Remove the global skill 'a' → its link is now broken.
+    fs.rmSync(path.join(h.skillsDir, 'a'), { recursive: true, force: true });
+    entries = listProfileSkills('work');
+    const a = entries.find((e) => e.name === 'a');
+    assert.equal(a?.linked, true);
+    assert.equal(a?.broken, true);
+  });
+
+  it('unlinks a skill, removing the symlink but not the global dir', () => {
+    makeSkill(h, 'a', 'd');
+    makeProfile(h, 'work');
+    linkSkillToProfile('work', 'a');
+    unlinkSkillFromProfile('work', 'a');
+    const link = path.join(h.fakeHome, '.claude', 'profiles', 'work', 'skills', 'a');
+    assert.equal(fs.existsSync(link), false);
+    assert.ok(fs.existsSync(path.join(h.skillsDir, 'a')));
+  });
+
+  it('refuses to unlink a real directory', () => {
+    makeProfile(h, 'work');
+    const skillsInProfile = path.join(h.fakeHome, '.claude', 'profiles', 'work', 'skills');
+    fs.mkdirSync(path.join(skillsInProfile, 'real'), { recursive: true });
+    assert.throws(() => unlinkSkillFromProfile('work', 'real'), /real directory/);
+  });
+
+  it('emits ProfileSkillEntry[] on --json', async () => {
+    makeSkill(h, 'a', 'd');
+    makeProfile(h, 'work');
+    linkSkillToProfile('work', 'a');
+    const restore = capture(h);
+    await handleProfileSkillsList('work', { json: true });
+    restore();
+    const parsed = JSON.parse(h.stdout.join('').trim()) as Array<{
+      name: string;
+      linked: boolean;
+      broken: boolean;
+      path: string;
+    }>;
+    const a = parsed.find((p) => p.name === 'a');
+    assert.equal(a?.linked, true);
+    assert.equal(a?.broken, false);
+    assert.equal(h.stderr.join(''), '');
   });
 });
