@@ -25,6 +25,26 @@ export interface AccountSnapshot {
   _customApiKeyResponses?: unknown;
   /** API key the binary wrote top-level into `~/.claude.json` (billing-leak guard). */
   _claudeJsonApiKey?: string;
+  /**
+   * Provenance of the captured `_keychain` block (23.6). Populated by `save()`
+   * when the live Keychain read returned a payload, with the `accountUuid` and
+   * `emailAddress` taken from claude.json's `oauthAccount` at capture time —
+   * i.e. the account the Keychain tokens actually belong to.
+   *
+   * `load()` cross-checks `_capturedFrom.accountUuid` against the snapshot's
+   * own `accountUuid`; a mismatch means the snapshot was poisoned by a
+   * pre-23.5 save() that captured tokens under the wrong account. Such
+   * snapshots have their Keychain restore skipped (see load()).
+   *
+   * Absent on snapshots written by older claude-switch versions — that case
+   * is the legacy path, treated as "unknown provenance, trust the file".
+   */
+  _capturedFrom?: {
+    emailAddress?: string;
+    accountUuid?: string;
+    /** Epoch milliseconds — set via `Date.now()` at save() time. */
+    capturedAt?: number;
+  };
   // …other oauthAccount fields (accountUuid, organization, etc.) flow through.
   [k: string]: unknown;
 }

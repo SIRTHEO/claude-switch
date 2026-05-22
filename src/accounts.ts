@@ -100,13 +100,38 @@ export function save(
   const accountPayload: AccountSnapshot = { ...(data.oauthAccount || {}) };
   if (keychainData) {
     accountPayload._keychain = keychainData;
+    // Record provenance (23.6): the Keychain payload was captured WHILE
+    // claude.json said the active account was `data.oauthAccount`. Stamping
+    // it lets load() detect snapshots whose _keychain belongs to a different
+    // accountUuid than the snapshot itself claims — the late-stage signature
+    // of the collision class that the save() guard above closes for new
+    // writes. Snapshots written before this stamp simply lack the field;
+    // load() treats absent _capturedFrom as "legacy, trust the file".
+    const provenanceSource = data.oauthAccount as {
+      emailAddress?: unknown;
+      accountUuid?: unknown;
+    } | undefined;
+    accountPayload._capturedFrom = {
+      emailAddress: typeof provenanceSource?.emailAddress === 'string'
+        ? provenanceSource.emailAddress
+        : undefined,
+      accountUuid: typeof provenanceSource?.accountUuid === 'string'
+        ? provenanceSource.accountUuid
+        : undefined,
+      capturedAt: Date.now(),
+    };
   } else if (keychainDisabled) {
     // Preserve an existing snapshot's _keychain block when running under
-    // the disable flag — better than overwriting it with "absent".
+    // the disable flag — better than overwriting it with "absent". Carry
+    // _capturedFrom along too: it documents the provenance of the _keychain
+    // we just preserved, not of this synthetic re-save.
     try {
       const existing = repo.read(email, accountsDirPath);
       if (existing && typeof existing === 'object' && existing._keychain) {
         accountPayload._keychain = existing._keychain;
+        if (existing._capturedFrom && typeof existing._capturedFrom === 'object') {
+          accountPayload._capturedFrom = existing._capturedFrom as AccountSnapshot['_capturedFrom'];
+        }
       }
     } catch { /* unreadable / unparseable — leave _keychain absent */ }
   }
@@ -339,8 +364,35 @@ export function load(
     _prefs: _ignoredPrefs,
     _customApiKeyResponses,
     _claudeJsonApiKey,
+    _capturedFrom,
     ...oauthAccount
   } = accountData;
+
+  // Provenance check (23.6). When save() captured _keychain it stamped the
+  // UUID of the account that the tokens actually belong to (read from
+  // claude.json.oauthAccount.accountUuid at capture time). If that stamp
+  // disagrees with the snapshot's own accountUuid, the snapshot is poisoned:
+  // a pre-23.5 save() wrote account X's tokens into account Y's snapshot.
+  // Skip the Keychain restore — the symptom otherwise is a fresh browser
+  // OAuth login when the user expected a seamless swap.
+  //
+  // Snapshots written before 23.6 have no _capturedFrom; they fall back to
+  // the older collision detector below (siblings-share-same-accessToken).
+  const snapshotUuid = (oauthAccount as { accountUuid?: unknown }).accountUuid;
+  const capturedFromRecord = _capturedFrom as { accountUuid?: unknown } | undefined;
+  const provenancePoisoned = typeof snapshotUuid === 'string'
+    && typeof capturedFromRecord?.accountUuid === 'string'
+    && snapshotUuid !== capturedFromRecord.accountUuid;
+  if (provenancePoisoned) {
+    process.stderr.write(
+      `claude-switch: snapshot for ${email} carries a _keychain captured under ` +
+      `accountUuid ${capturedFromRecord!.accountUuid as string} but the ` +
+      `snapshot itself is for accountUuid ${snapshotUuid as string} — corrupted ` +
+      `(see docs/reports/2026-05-22-snapshot-token-collision.md). Skipping ` +
+      `Keychain restore; you will be asked to log in once and the corruption ` +
+      `will clear on the next save.\n`,
+    );
+  }
 
   // Snapshot-token-collision detection (23.5). When a previous version of
   // claude-switch corrupted a snapshot by capturing the wrong account's live
@@ -372,7 +424,9 @@ export function load(
       `corruption will clear on the next swap.\n`,
     );
   }
-  const keychainRestored = !!(_keychain && typeof _keychain === 'object') && collisionEmails.length === 0;
+  const keychainRestored = !!(_keychain && typeof _keychain === 'object')
+    && collisionEmails.length === 0
+    && !provenancePoisoned;
 
   // Silent-billing leak prevention.
   //

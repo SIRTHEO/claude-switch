@@ -307,6 +307,115 @@ describe('load — snapshot-token-collision detection (23.5)', () => {
   });
 });
 
+describe('save / load — _capturedFrom provenance (23.6)', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+  let originalDisableKeychain: string | undefined;
+  let originalStderrWrite: typeof process.stderr.write;
+  let stderrBuf: string;
+
+  const fakeCredsWithOAuth = (tokens: { accessToken: string; refreshToken: string; expiresAt: number }): CredentialStore => ({
+    readOAuth: () => ({ claudeAiOauth: tokens }),
+    writeOAuth: () => {},
+    readOAuthForConfigDir: () => null,
+    writeOAuthForConfigDir: () => {},
+    deleteOAuthForConfigDir: () => false,
+    available: () => true,
+    readApiKey: () => null,
+    writeApiKey: () => false,
+    deleteApiKey: () => false,
+    listOAuthKeychainItems: () => [],
+    setPartitionList: () => false,
+  });
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+    originalDisableKeychain = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    delete process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    stderrBuf = '';
+    originalStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      stderrBuf += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
+      return true;
+    }) as typeof process.stderr.write;
+  });
+
+  afterEach(() => {
+    process.stderr.write = originalStderrWrite;
+    if (originalDisableKeychain === undefined) {
+      delete process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    } else {
+      process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = originalDisableKeychain;
+    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('save() stamps _capturedFrom.{emailAddress,accountUuid,capturedAt} when capturing _keychain', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'a@example.com', accountUuid: 'uuid-A' },
+    }));
+    const before = Date.now();
+    save('a@example.com', claudeJson, accDir, {
+      credentials: fakeCredsWithOAuth({ accessToken: 'tok-A', refreshToken: 'r-A', expiresAt: 1 }),
+    });
+    const after = Date.now();
+    const saved = JSON.parse(fs.readFileSync(path.join(accDir, 'a@example.com.json'), 'utf-8'));
+    assert.equal(saved._capturedFrom.emailAddress, 'a@example.com');
+    assert.equal(saved._capturedFrom.accountUuid, 'uuid-A');
+    assert.ok(saved._capturedFrom.capturedAt >= before && saved._capturedFrom.capturedAt <= after);
+  });
+
+  it('load() refuses Keychain restore when _capturedFrom.accountUuid disagrees with snapshot.accountUuid', () => {
+    // Hand-craft a poisoned snapshot: snapshot says it is account B but the
+    // _keychain was captured while the active account was A. This is the
+    // late-stage signature of the pre-23.5 collision bug after one of the
+    // two siblings was re-saved cleanly (so the sibling-token check no
+    // longer fires).
+    fs.writeFileSync(path.join(accDir, 'b@example.com.json'), JSON.stringify({
+      emailAddress: 'b@example.com',
+      accountUuid: 'uuid-B',
+      _keychain: { claudeAiOauth: { accessToken: 'tok-X', refreshToken: 'r-X', expiresAt: 1 } },
+      _capturedFrom: { accountUuid: 'uuid-A', emailAddress: 'a@example.com', capturedAt: 1 },
+    }));
+    fs.writeFileSync(claudeJson, JSON.stringify({}));
+
+    const result = load('b@example.com', claudeJson, accDir);
+    assert.equal(result.keychainRestored, false);
+    assert.match(stderrBuf, /captured under accountUuid uuid-A.*snapshot itself is for accountUuid uuid-B/);
+  });
+
+  it('load() allows restore when _capturedFrom matches snapshot.accountUuid', () => {
+    fs.writeFileSync(path.join(accDir, 'b@example.com.json'), JSON.stringify({
+      emailAddress: 'b@example.com',
+      accountUuid: 'uuid-B',
+      _keychain: { claudeAiOauth: { accessToken: 'tok-B', refreshToken: 'r-B', expiresAt: 1 } },
+      _capturedFrom: { accountUuid: 'uuid-B', emailAddress: 'b@example.com', capturedAt: 1 },
+    }));
+    fs.writeFileSync(claudeJson, JSON.stringify({}));
+
+    const result = load('b@example.com', claudeJson, accDir);
+    assert.equal(result.keychainRestored, true);
+    assert.doesNotMatch(stderrBuf, /captured under accountUuid/);
+  });
+
+  it('load() trusts legacy snapshots that lack _capturedFrom', () => {
+    fs.writeFileSync(path.join(accDir, 'b@example.com.json'), JSON.stringify({
+      emailAddress: 'b@example.com',
+      accountUuid: 'uuid-B',
+      _keychain: { claudeAiOauth: { accessToken: 'tok-B', refreshToken: 'r-B', expiresAt: 1 } },
+    }));
+    fs.writeFileSync(claudeJson, JSON.stringify({}));
+
+    const result = load('b@example.com', claudeJson, accDir);
+    assert.equal(result.keychainRestored, true);
+    assert.doesNotMatch(stderrBuf, /captured under accountUuid/);
+  });
+});
+
 describe('save — snapshot-token-collision guard (23.5)', () => {
   let tmpDir: string;
   let claudeJson: string;
