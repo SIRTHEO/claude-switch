@@ -49,6 +49,7 @@ Usage:
   claude switch update                   Check for updates and install if available
   claude switch help                     Show this help
   claude switch setup                    Re-run first-time setup
+  claude switch setup-keychain           Stop repeated macOS Keychain password prompts
   claude --as <alias|email> ...          Use account temporarily
   claude switch --completions <shell>    Generate shell completions
 
