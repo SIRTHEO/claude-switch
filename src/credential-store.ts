@@ -23,12 +23,23 @@
 // and the credential types live here and are re-exported there so existing
 // importers are unaffected.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 
 const OAUTH_SERVICE = 'Claude Code-credentials';
 const APIKEY_SERVICE = 'claude-switch-apikey';
+
+/**
+ * The slice of `execFileSync` the Keychain adapter needs. A narrow type so a
+ * test can inject a fake `security` runner without casts. Production passes
+ * the real `execFileSync` (the constructor default).
+ */
+export type SecurityExec = (
+  file: string,
+  args: readonly string[],
+  options: ExecFileSyncOptions,
+) => Buffer | string;
 
 export interface ClaudeAiOauth {
   accessToken: string;
@@ -102,12 +113,16 @@ export interface CredentialStore {
 }
 
 /** Production adapter over the macOS `security` CLI. */
-class KeychainAdapter implements CredentialStore {
+export class KeychainAdapter implements CredentialStore {
   // Once-per-process warning latches. Kept separate (and with distinct
   // messages) because OAuth and API-key bypass are reported independently;
   // see the file header.
   private oauthWarned = false;
   private apiKeyWarned = false;
+
+  // The `security` shell-out is injectable so tests can drive the adapter
+  // without touching the real Keychain. Production uses node's execFileSync.
+  constructor(private readonly exec: SecurityExec = execFileSync) {}
 
   // --- OAuth ---------------------------------------------------------------
 
@@ -135,7 +150,7 @@ class KeychainAdapter implements CredentialStore {
 
     for (const account of candidateAccounts()) {
       try {
-        const raw = execFileSync(
+        const raw = this.exec(
           'security',
           ['find-generic-password', '-s', OAUTH_SERVICE, '-a', account, '-w'],
           { stdio: ['ignore', 'pipe', 'ignore'] },
@@ -185,7 +200,7 @@ class KeychainAdapter implements CredentialStore {
       if (bin) aclArgs.push('-T', bin);
     }
     try {
-      execFileSync(
+      this.exec(
         'security',
         [
           'add-generic-password',
@@ -213,7 +228,7 @@ class KeychainAdapter implements CredentialStore {
     if (process.platform !== 'darwin') return null;
     if (!account) return null;
     try {
-      const raw = execFileSync(
+      const raw = this.exec(
         'security',
         ['find-generic-password', '-s', service, '-a', account, '-w'],
         { stdio: ['ignore', 'pipe', 'ignore'] },
@@ -232,7 +247,7 @@ class KeychainAdapter implements CredentialStore {
     if (process.platform !== 'darwin') return false;
     if (!account) return false;
     try {
-      execFileSync('security', ['delete-generic-password', '-s', service, '-a', account], {
+      this.exec('security', ['delete-generic-password', '-s', service, '-a', account], {
         stdio: ['ignore', 'ignore', 'ignore'],
       });
       return true;
@@ -266,7 +281,7 @@ class KeychainAdapter implements CredentialStore {
     if (!this.available()) return null;
     if (!email) return null;
     try {
-      const raw = execFileSync(
+      const raw = this.exec(
         'security',
         ['find-generic-password', '-s', APIKEY_SERVICE, '-a', email, '-w'],
         { stdio: ['ignore', 'pipe', 'ignore'] },
@@ -286,7 +301,7 @@ class KeychainAdapter implements CredentialStore {
     try {
       // -U upserts (create or update). Pipe stderr so we can surface a
       // useful diagnostic without including the key value in `e.message`.
-      execFileSync(
+      this.exec(
         'security',
         ['add-generic-password', '-s', APIKEY_SERVICE, '-a', email, '-w', key, '-U'],
         { stdio: ['ignore', 'ignore', 'pipe'] },
@@ -305,7 +320,7 @@ class KeychainAdapter implements CredentialStore {
     if (!this.available()) return false;
     if (!email) return false;
     try {
-      execFileSync(
+      this.exec(
         'security',
         ['delete-generic-password', '-s', APIKEY_SERVICE, '-a', email],
         { stdio: ['ignore', 'ignore', 'ignore'] },
@@ -323,7 +338,7 @@ class KeychainAdapter implements CredentialStore {
  * warning under the disable flag to match the previous keychainAvailable()
  * ordering (flag checked before platform).
  */
-class NoopCredentialStore implements CredentialStore {
+export class NoopCredentialStore implements CredentialStore {
   private apiKeyWarned = false;
 
   readOAuth(): KeychainData | null { return null; }
