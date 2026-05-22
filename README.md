@@ -12,7 +12,7 @@
   <a href="https://www.npmjs.com/package/@sirtheo/claude-switch"><img alt="npm" src="https://img.shields.io/npm/v/@sirtheo/claude-switch?color=f0b429&label=npm&style=for-the-badge"></a>
   <a href="https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="https://www.npmjs.com/package/@sirtheo/claude-switch"><img alt="downloads" src="https://img.shields.io/npm/dm/@sirtheo/claude-switch?color=3fb950&style=for-the-badge"></a>
-  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-79c0ff?style=for-the-badge"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-79c0ff?style=for-the-badge"></a>
   <a href="https://github.com/SIRTHEO/claude-switch"><img alt="stars" src="https://img.shields.io/github/stars/sirtheo/claude-switch?style=for-the-badge&color=f0b429"></a>
 </p>
 
@@ -322,7 +322,7 @@ Not a claude-switch bug. Known issues in the Claude Code client / Anthropic bill
 <details>
 <summary><b>Is it safe with my real Claude account?</b></summary>
 
-It writes the same files Claude Code itself writes. It does not modify the `claude` binary. Writes are atomic, lock-protected. ~40 KB of compiled JS, MIT-licensed, no `postinstall`. Worst case if something breaks: re-login.
+It writes the same files Claude Code itself writes. It does not modify the `claude` binary. Writes are atomic, lock-protected. ~40 KB of compiled JS, Apache-2.0-licensed, no `postinstall`. Worst case if something breaks: re-login.
 </details>
 
 <details>
@@ -378,7 +378,7 @@ Full changelog: [`CHANGELOG.md`](CHANGELOG.md)
 
 ## 🤝 Contributing & license
 
-PRs welcome, see [`CONTRIBUTING.md`](.github/CONTRIBUTING.md). Feedback and ideas: [open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose), start a [discussion](https://github.com/SIRTHEO/claude-switch/discussions), or ping **`sirtheo`** on Discord. Licensed under [**MIT**](LICENSE).
+PRs welcome, see [`CONTRIBUTING.md`](.github/CONTRIBUTING.md). Feedback and ideas: [open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose), start a [discussion](https://github.com/SIRTHEO/claude-switch/discussions), or ping **`sirtheo`** on Discord. Licensed under [**Apache-2.0**](LICENSE); see [`NOTICE`](NOTICE) for attribution and trademark terms.
 
 ---
 
