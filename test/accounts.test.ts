@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getCurrent, save, load, list, remove, removeSafely, syncActiveSnapshotIfStale } from '../src/accounts.js';
+import type { CredentialStore } from '../src/credential-store.js';
 
 describe('getCurrent', () => {
   let tmpDir: string;
@@ -230,6 +231,170 @@ describe('save - validation', () => {
   it('throws clear error on corrupted claude.json', () => {
     fs.writeFileSync(claudeJson, '{invalid json!!!');
     assert.throws(() => save('a@b.com', claudeJson, accDir), /invalid JSON/i);
+  });
+});
+
+describe('load — snapshot-token-collision detection (23.5)', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+  let originalStderrWrite: typeof process.stderr.write;
+  let stderrBuf: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+    fs.writeFileSync(claudeJson, JSON.stringify({}));
+    stderrBuf = '';
+    originalStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      stderrBuf += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
+      return true;
+    }) as typeof process.stderr.write;
+  });
+
+  afterEach(() => {
+    process.stderr.write = originalStderrWrite;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns keychainRestored=false and warns when two snapshots share an accessToken', () => {
+    // Both A and B snapshots carry the same OAuth accessToken — the symptom
+    // of the 2026-05-22 snapshot-token-collision bug.
+    const sharedKeychain = {
+      claudeAiOauth: {
+        accessToken: 'sk-ant-oat01-COLLIDING',
+        refreshToken: 'sk-ant-ort01-COLLIDING',
+        expiresAt: Date.now() + 3600_000,
+      },
+    };
+    fs.writeFileSync(path.join(accDir, 'a@example.com.json'), JSON.stringify({
+      emailAddress: 'a@example.com',
+      accountUuid: 'uuid-A',
+      _keychain: sharedKeychain,
+    }));
+    fs.writeFileSync(path.join(accDir, 'b@example.com.json'), JSON.stringify({
+      emailAddress: 'b@example.com',
+      accountUuid: 'uuid-B',
+      _keychain: sharedKeychain,
+    }));
+
+    const result = load('b@example.com', claudeJson, accDir);
+    assert.equal(result.keychainRestored, false);
+    assert.match(stderrBuf, /shares its OAuth access token with a@example\.com/);
+    assert.match(stderrBuf, /Skipping Keychain restore/);
+  });
+
+  it('returns keychainRestored=true when the snapshot token is unique', () => {
+    fs.writeFileSync(path.join(accDir, 'a@example.com.json'), JSON.stringify({
+      emailAddress: 'a@example.com',
+      _keychain: {
+        claudeAiOauth: { accessToken: 'tok-A', refreshToken: 'r-A', expiresAt: 1 },
+      },
+    }));
+    fs.writeFileSync(path.join(accDir, 'b@example.com.json'), JSON.stringify({
+      emailAddress: 'b@example.com',
+      _keychain: {
+        claudeAiOauth: { accessToken: 'tok-B', refreshToken: 'r-B', expiresAt: 1 },
+      },
+    }));
+
+    const result = load('b@example.com', claudeJson, accDir);
+    assert.equal(result.keychainRestored, true);
+    assert.doesNotMatch(stderrBuf, /shares its OAuth access token/);
+  });
+});
+
+describe('save — snapshot-token-collision guard (23.5)', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+  let originalDisableKeychain: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    // The guard is only enforced when the real Keychain is in play. The
+    // global npm-test flag disables the Keychain — flip it back here so the
+    // production code path runs. afterEach restores it for the rest of the
+    // suite. Restoring even on throw matters: a leak would leave subsequent
+    // tests in the wrong mode and produce confusing failures elsewhere.
+    originalDisableKeychain = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    delete process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (originalDisableKeychain === undefined) {
+      delete process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    } else {
+      process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = originalDisableKeychain;
+    }
+  });
+
+  it('refuses save when active oauthAccount is a different email', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'a@example.com' },
+    }));
+    assert.throws(
+      () => save('b@example.com', claudeJson, accDir),
+      /Refusing to save snapshot for b@example.com.*active account.*is a@example.com/,
+    );
+    // No file written.
+    assert.equal(fs.existsSync(path.join(accDir, 'b@example.com.json')), false);
+  });
+
+  it('allows save when active oauthAccount matches the email', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'a@example.com', accountUuid: 'uuid-A' },
+    }));
+    // Inject a fake credentials port so we don't poke the real Keychain.
+    const fakeCreds: CredentialStore = {
+      readOAuth: () => null,
+      writeOAuth: () => {},
+      readOAuthForConfigDir: () => null,
+      writeOAuthForConfigDir: () => {},
+      deleteOAuthForConfigDir: () => false,
+      available: () => true,
+      readApiKey: () => null,
+      writeApiKey: () => false,
+      deleteApiKey: () => false,
+      listOAuthKeychainItems: () => [],
+      setPartitionList: () => false,
+    };
+    save('a@example.com', claudeJson, accDir, { credentials: fakeCreds });
+    assert.ok(fs.existsSync(path.join(accDir, 'a@example.com.json')));
+  });
+
+  it('allows save when oauthAccount is absent (first-run path)', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({}));
+    const fakeCreds: CredentialStore = {
+      readOAuth: () => null,
+      writeOAuth: () => {},
+      readOAuthForConfigDir: () => null,
+      writeOAuthForConfigDir: () => {},
+      deleteOAuthForConfigDir: () => false,
+      available: () => true,
+      readApiKey: () => null,
+      writeApiKey: () => false,
+      deleteApiKey: () => false,
+      listOAuthKeychainItems: () => [],
+      setPartitionList: () => false,
+    };
+    save('a@example.com', claudeJson, accDir, { credentials: fakeCreds });
+    assert.ok(fs.existsSync(path.join(accDir, 'a@example.com.json')));
+  });
+
+  it('allows save with email mismatch when CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 (test mode)', () => {
+    process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = '1';
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'a@example.com' },
+    }));
+    save('b@example.com', claudeJson, accDir);
+    assert.ok(fs.existsSync(path.join(accDir, 'b@example.com.json')));
   });
 });
 

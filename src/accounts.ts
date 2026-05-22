@@ -50,7 +50,6 @@ export function save(
     throw e;
   }
 
-  // Include Keychain credentials so they can be restored when switching back.
   // CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 forces the JSON-only path (used by the
   // test suite + the marketing GIF renderer to keep `npm test` /
   // `npm run gif` non-interactive). In that mode we preserve any
@@ -58,6 +57,45 @@ export function save(
   // a save() round-trip doesn't accidentally erase it; the keychainRestored
   // contract on subsequent loads stays correct.
   const keychainDisabled = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1';
+
+  // Defensive guard against the snapshot-token-collision class (23.5).
+  // save() reads the LIVE Keychain via credentials.readOAuth() and writes the
+  // result into the named snapshot. If the named snapshot is NOT the currently
+  // active account (per ~/.claude.json.oauthAccount.emailAddress) the result
+  // is a snapshot for account X that carries account Y's OAuth tokens.
+  // The next `load(X)` then replays Y's tokens into the Keychain, the server
+  // rejects them (token UUID ≠ requested account UUID), and Claude Code falls
+  // through to a fresh browser OAuth login — exactly the regression reported
+  // 2026-05-22 (see .claude/docs/reports/2026-05-22-snapshot-token-collision.md).
+  //
+  // The current call sites (switcher, syncActiveSnapshotIfStale, passthrough,
+  // addAccount, reAuthenticate, status) all save the email returned by
+  // getCurrent() or freshly-set as the active account — so this guard is a
+  // non-event for them. It exists to catch a future regression: any new caller
+  // that hands save() an email that isn't the active oauthAccount fails loudly
+  // here instead of silently corrupting the snapshot.
+  //
+  // Skip when:
+  //  - oauthAccount is absent / has no emailAddress (first save, or
+  //    newer-Claude-Code-doesn't-write-oauthAccount — separate bug);
+  //  - CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 (no live Keychain read, no possible
+  //    collision; test fixtures intentionally save under email ≠ oauthAccount).
+  if (!keychainDisabled) {
+    const oauthAccountRecord = data.oauthAccount as { emailAddress?: unknown } | undefined;
+    const activeEmail = typeof oauthAccountRecord?.emailAddress === 'string'
+      ? oauthAccountRecord.emailAddress
+      : '';
+    if (activeEmail && activeEmail !== email) {
+      throw new Error(
+        `Refusing to save snapshot for ${email}: the active account in ` +
+        `${claudeJsonPath} is ${activeEmail}. Saving now would capture ` +
+        `${activeEmail}'s Keychain tokens into ${email}'s snapshot ` +
+        `(snapshot-token-collision; see docs/reports/2026-05-22-snapshot-token-collision.md).`,
+      );
+    }
+  }
+
+  // Include Keychain credentials so they can be restored when switching back.
   const keychainData = keychainDisabled ? null : credentials.readOAuth();
   const accountPayload: AccountSnapshot = { ...(data.oauthAccount || {}) };
   if (keychainData) {
@@ -233,6 +271,52 @@ export function syncActiveSnapshotIfStale(
   }
 }
 
+/**
+ * Scan every other snapshot in `accountsDirPath` for one whose
+ * `_keychain.claudeAiOauth.accessToken` matches `accessToken`. Returns the
+ * list of colliding emails (empty when healthy). OAuth access tokens are
+ * server-issued and account-bound, so a non-empty result is always a sign
+ * of snapshot corruption — see the 2026-05-22 report.
+ *
+ * Reads via `repo.list` + `repo.read` to keep the dependency surface narrow
+ * (no fs touch beyond the repository) and to bypass `list()`'s
+ * legacy-email stderr warning. Read failures on a single sibling are
+ * tolerated: we treat the file as "no recognisable token" rather than
+ * abort the whole collision check.
+ */
+function findSnapshotsSharingAccessToken(
+  email: string,
+  accountsDirPath: string,
+  accessToken: string,
+  repo: AccountRepository,
+): string[] {
+  let files: string[];
+  try {
+    files = repo.list(accountsDirPath);
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const file of files) {
+    if (!file.endsWith('.json') || file.startsWith('.') || file === 'aliases.json') continue;
+    const otherEmail = file.replace(/\.json$/, '');
+    if (otherEmail === email) continue;
+    let other: unknown;
+    try {
+      other = repo.read(otherEmail, accountsDirPath);
+    } catch {
+      continue;
+    }
+    const otherToken = (
+      other as { _keychain?: { claudeAiOauth?: { accessToken?: unknown } } } | null
+    )?._keychain?.claudeAiOauth?.accessToken;
+    if (typeof otherToken === 'string' && otherToken === accessToken) {
+      out.push(otherEmail);
+    }
+  }
+  return out;
+}
+
 export function load(
   email: string,
   claudeJsonPath: string,
@@ -257,7 +341,38 @@ export function load(
     _claudeJsonApiKey,
     ...oauthAccount
   } = accountData;
-  const keychainRestored = !!(_keychain && typeof _keychain === 'object');
+
+  // Snapshot-token-collision detection (23.5). When a previous version of
+  // claude-switch corrupted a snapshot by capturing the wrong account's live
+  // Keychain (see save()'s guard above + the 2026-05-22 report), two
+  // snapshots end up sharing the same OAuth accessToken. Restoring that
+  // shared token into the Keychain replays account A's session under
+  // account B's identity — the server rejects, and Claude Code falls
+  // through to a fresh browser OAuth login.
+  //
+  // OAuth access tokens are server-issued and account-bound, so two
+  // snapshots sharing one is impossible in healthy state. Treat it as
+  // poisoned: skip the Keychain restore (degrades to the "no saved
+  // credentials" warning that the switcher already emits when
+  // keychainRestored=false). The user then logs in once, save() captures
+  // the fresh tokens under the correct email, and the corruption is
+  // cleared on the next swap.
+  const sharedAccessToken = (
+    _keychain as { claudeAiOauth?: { accessToken?: unknown } } | null | undefined
+  )?.claudeAiOauth?.accessToken;
+  const collisionEmails = typeof sharedAccessToken === 'string' && sharedAccessToken
+    ? findSnapshotsSharingAccessToken(email, accountsDirPath, sharedAccessToken, repo)
+    : [];
+  if (collisionEmails.length > 0) {
+    process.stderr.write(
+      `claude-switch: snapshot for ${email} shares its OAuth access token with ` +
+      `${collisionEmails.join(', ')} — impossible in healthy state, indicates a ` +
+      `corrupted snapshot (see docs/reports/2026-05-22-snapshot-token-collision.md). ` +
+      `Skipping Keychain restore; you will be asked to log in once and the ` +
+      `corruption will clear on the next swap.\n`,
+    );
+  }
+  const keychainRestored = !!(_keychain && typeof _keychain === 'object') && collisionEmails.length === 0;
 
   // Silent-billing leak prevention.
   //
