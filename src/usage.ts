@@ -671,10 +671,17 @@ export function triggerBackgroundUsageRefresh(deps: { process?: ProcessPort } = 
   const cliPath = path.resolve(path.dirname(selfPath), '..', 'bin', 'cli.js');
   const proc = deps.process ?? nodeProcessAdapter;
   try {
+    // Detached background process MUST NOT raise a Keychain password
+    // dialog. There is no user attached to consent. A stalled prompt
+    // here holds an accountsDir lock indefinitely and cascades into the
+    // spawning-zombie regression observed 2026-05-22 (every subsequent
+    // swap spawns another refresh process that piles up on the same
+    // blocked Keychain read). The no-prompt env var makes readOAuth
+    // return null instead of blocking the process.
     const child = proc.spawn(process.execPath, [cliPath, 'switch', 'usage', '--refresh-only'], {
       detached: true,
       stdio: 'ignore',
-      env: process.env,
+      env: { ...process.env, CLAUDE_SWITCH_NO_KEYCHAIN_PROMPT: '1' },
     });
     child.unref();
   } catch {
