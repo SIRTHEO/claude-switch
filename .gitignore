@@ -13,6 +13,10 @@ dist/
 build/
 *.tsbuildinfo
 
+# Mutation testing (Stryker) — sandbox + regenerable reports
+.stryker-tmp/
+reports/mutation/
+
 # OS and editor cruft
 .DS_Store
 Thumbs.db

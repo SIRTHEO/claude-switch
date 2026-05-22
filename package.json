@@ -15,6 +15,8 @@
     "lint": "biome lint src bin test",
     "lint:fix": "biome lint --write --unsafe src bin test",
     "test": "npm run build && CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 node --test dist/test/**/*.test.js dist/test/*.test.js",
+    "build:mutation": "tsc --incremental --tsBuildInfoFile .stryker.tsbuildinfo",
+    "mutation": "stryker run",
     "gif": "bash scripts/render-demo.sh",
     "install-hooks": "bash scripts/install-git-hooks.sh",
     "verify-release": "bash scripts/verify-release-readiness.sh",
@@ -92,6 +94,7 @@
   ],
   "devDependencies": {
     "@biomejs/biome": "^2.4.14",
+    "@stryker-mutator/core": "^9.6.1",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "ink-testing-library": "^4.0.0",

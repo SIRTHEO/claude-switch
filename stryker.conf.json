@@ -1,0 +1,17 @@
+{
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 node --test dist/test/credential-store.test.js dist/test/accounts-rollback.test.js dist/test/keychain-service.test.js dist/test/apikey-keychain.test.js dist/test/apikey.test.js dist/test/accounts.test.js dist/test/profiles-keychain.test.js"
+  },
+  "buildCommand": "npm run build:mutation",
+  "mutate": ["src/credential-store.ts"],
+  "concurrency": 1,
+  "reporters": ["clear-text", "json"],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "timeoutMS": 120000,
+  "timeoutFactor": 2,
+  "coverageAnalysis": "off",
+  "ignorePatterns": []
+}
