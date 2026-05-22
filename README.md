@@ -10,7 +10,7 @@
 
 <p>
   <a href="https://www.npmjs.com/package/@sirtheo/claude-switch"><img alt="npm" src="https://img.shields.io/npm/v/@sirtheo/claude-switch?color=f0b429&label=npm&style=for-the-badge"></a>
-  <a href="https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/SIRTHEO/claude-switch/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/SIRTHEO/claude-switch/ci.yml?branch=main&label=CI&style=for-the-badge&color=3fb950"></a>
   <a href="https://www.npmjs.com/package/@sirtheo/claude-switch"><img alt="downloads" src="https://img.shields.io/npm/dm/@sirtheo/claude-switch?color=3fb950&style=for-the-badge"></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-79c0ff?style=for-the-badge"></a>
   <a href="https://github.com/SIRTHEO/claude-switch"><img alt="stars" src="https://img.shields.io/github/stars/sirtheo/claude-switch?style=for-the-badge&color=f0b429"></a>
@@ -33,8 +33,7 @@ npm install -g @sirtheo/claude-switch && claude switch setup
 - 🪟 **Two accounts at the same time?** One terminal as `@work`, another as `@personal`. Isolated profiles, zero interference. [Jump to the 3-command setup ↓](#-two-terminals-two-accounts)
 - 🎯 **`cd` into your work repo, type `claude`** and it auto-routes to your work account. Drop a `.claude-switch` file in the repo, your team does the same.
 
-> [!NOTE]
-> 🟢 **Anthropic [issue #24963](https://github.com/anthropics/claude-code/issues/24963)** ([FEATURE] Support for multiple accounts / profiles) is open and unshipped. **claude-switch already solves it**, today, without modifying the official `claude` binary.
+> 🟢 **Note** — **Anthropic [issue #24963](https://github.com/anthropics/claude-code/issues/24963)** ([FEATURE] Support for multiple accounts / profiles) is open and unshipped. **claude-switch already solves it**, today, without modifying the official `claude` binary.
 
 > 💬 **Feedback, bugs, ideas, requests?** [Open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose), start a [discussion](https://github.com/SIRTHEO/claude-switch/discussions), or ping **`sirtheo`** on Discord. I read everything.
 
@@ -105,8 +104,7 @@ Or pick from the menu: `claude switch` → `p` → `Profiles → Open account is
 
 ## 🚀 Install
 
-> [!IMPORTANT]
-> Requires **Node.js 20.12+** and Claude Code already installed.
+> ❗ **Important** — Requires **Node.js 20.12+** and Claude Code already installed.
 
 ```bash
 npm install -g @sirtheo/claude-switch
@@ -119,8 +117,7 @@ Then **open a new terminal** (the old one has a stale `PATH`) and verify:
 claude switch --version
 ```
 
-> [!TIP]
-> **Already installed?** claude-switch checks for new versions in the background once a day and offers a one-keypress install on your next `claude switch`. Or run `claude switch update`. Nothing is ever installed without your `y`.
+> 💡 **Tip** — **Already installed?** claude-switch checks for new versions in the background once a day and offers a one-keypress install on your next `claude switch`. Or run `claude switch update`. Nothing is ever installed without your `y`.
 
 ---
 
