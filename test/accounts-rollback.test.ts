@@ -48,6 +48,8 @@ function failingCreds(): CredentialStore {
     readApiKey: () => null,
     writeApiKey: () => false,
     deleteApiKey: () => false,
+    listOAuthKeychainItems: () => [],
+    setPartitionList: () => false,
   };
 }
 

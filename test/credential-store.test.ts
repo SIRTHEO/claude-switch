@@ -20,6 +20,7 @@ import {
   defaultCredentialStore,
   claudeKeychainServiceFor,
   claudeKeychainAccount,
+  parseClaudeOAuthItems,
   type SecurityExec,
   type KeychainData,
 } from '../src/credential-store.js';
@@ -396,6 +397,94 @@ describe('NoopCredentialStore', () => {
     assert.equal(noop.available(), false);
     const banners = written.filter((w) => w.includes('API-key Keychain is bypassed'));
     assert.equal(banners.length, 1);
+  });
+});
+
+describe('parseClaudeOAuthItems', () => {
+  const dump = [
+    'keychain: "/Users/x/Library/Keychains/login.keychain-db"',
+    'class: "genp"',
+    'attributes:',
+    '    "acct"<blob>="Claude Code-credentials"',
+    '    "svce"<blob>="Claude Code-credentials"',
+    'keychain: "/Users/x/Library/Keychains/login.keychain-db"',
+    'class: "genp"',
+    'attributes:',
+    '    "acct"<blob>="localuser"',
+    '    "svce"<blob>="Claude Code-credentials-2937da2b"',
+    'keychain: "/Users/x/Library/Keychains/login.keychain-db"',
+    'class: "genp"',
+    'attributes:',
+    '    "acct"<blob>="localuser"',
+    '    "svce"<blob>="some-other-service"',
+  ].join('\n');
+
+  it('extracts only Claude Code-credentials items, with their accounts', () => {
+    const items = parseClaudeOAuthItems(dump);
+    assert.deepEqual(items, [
+      { service: 'Claude Code-credentials', account: 'Claude Code-credentials' },
+      { service: 'Claude Code-credentials-2937da2b', account: 'localuser' },
+    ]);
+  });
+
+  it('returns empty for a dump with no Claude items', () => {
+    assert.deepEqual(parseClaudeOAuthItems('keychain: "x"\n"svce"<blob>="Login"\n"acct"<blob>="me"'), []);
+  });
+
+  it('de-dupes repeated service+account pairs', () => {
+    const twice = `${dump}\n${dump}`;
+    assert.equal(parseClaudeOAuthItems(twice).length, 2);
+  });
+});
+
+describe('KeychainAdapter — partition list', () => {
+  beforeEach(() => {
+    saveEnv();
+    enableKeychain();
+  });
+  afterEach(() => {
+    restorePlatform();
+    restoreEnv();
+  });
+
+  it('listOAuthKeychainItems dumps the keychain and parses Claude items', () => {
+    const dump = 'keychain: "k"\nclass: "genp"\n"acct"<blob>="Claude Code-credentials"\n"svce"<blob>="Claude Code-credentials"';
+    const { fn, calls } = makeExec(() => Buffer.from(dump));
+    const items = new KeychainAdapter(fn).listOAuthKeychainItems();
+    assert.deepEqual(items, [{ service: 'Claude Code-credentials', account: 'Claude Code-credentials' }]);
+    assert.equal(calls[0]!.args[0], 'dump-keychain');
+  });
+
+  it('listOAuthKeychainItems returns [] off darwin / under the disable flag / on throw', () => {
+    setPlatform('linux');
+    assert.deepEqual(new KeychainAdapter(makeExec(() => Buffer.from('x')).fn).listOAuthKeychainItems(), []);
+    setPlatform('darwin');
+    process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = '1';
+    process.env.NODE_ENV = 'test';
+    assert.deepEqual(new KeychainAdapter(makeExec(() => Buffer.from('x')).fn).listOAuthKeychainItems(), []);
+    delete process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    delete process.env.NODE_ENV;
+    assert.deepEqual(new KeychainAdapter(execThatThrows()).listOAuthKeychainItems(), []);
+  });
+
+  it('setPartitionList passes the right argv and reports success', () => {
+    const { fn, calls } = makeExec(() => Buffer.alloc(0));
+    const ok = new KeychainAdapter(fn).setPartitionList('Claude Code-credentials', 'localuser', 'apple-tool:');
+    assert.equal(ok, true);
+    const args = calls[0]!.args;
+    assert.equal(args[0], 'set-generic-password-partition-list');
+    assert.equal(argVal(args, '-S'), 'apple-tool:');
+    assert.equal(argVal(args, '-s'), 'Claude Code-credentials');
+    assert.equal(argVal(args, '-a'), 'localuser');
+  });
+
+  it('setPartitionList returns false on exec failure, empty args, off darwin', () => {
+    assert.equal(new KeychainAdapter(execThatThrows()).setPartitionList('s', 'a', 'apple-tool:'), false);
+    assert.equal(new KeychainAdapter(makeExec(() => Buffer.alloc(0)).fn).setPartitionList('', 'a', 'apple-tool:'), false);
+    setPlatform('linux');
+    const { fn, calls } = makeExec(() => Buffer.alloc(0));
+    assert.equal(new KeychainAdapter(fn).setPartitionList('s', 'a', 'apple-tool:'), false);
+    assert.equal(calls.length, 0);
   });
 });
 
