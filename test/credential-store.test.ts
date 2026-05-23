@@ -193,6 +193,72 @@ describe('KeychainAdapter — OAuth read', () => {
     assert.ok(probed, 'probe must have happened');
   });
 
+  it('auto-applies partition-list when the silent read fails, then succeeds (23.8)', () => {
+    // Scenario: item exists (probe OK), but the silent read returns ""
+    // because the ACL would prompt. The adapter should call
+    // set-generic-password-partition-list to widen the partition, then
+    // re-attempt the silent read and succeed. The user pays a single
+    // password prompt (for the partition-list write) instead of one per
+    // read forever — durable fix.
+    //
+    // The fake `security` exec produces:
+    //   - probe (no -w): "" (exists)
+    //   - first silent read with -w: throws (silent read failed)
+    //   - set-generic-password-partition-list: "" (success)
+    //   - second silent read with -w: SAMPLE blob
+    let readWithWAttempts = 0;
+    let setPartitionListCalled = false;
+    const { fn, calls } = makeExec((call) => {
+      if (call.args[0] === 'set-generic-password-partition-list') {
+        setPartitionListCalled = true;
+        return Buffer.from('');
+      }
+      const hasW = call.args.includes('-w');
+      if (!hasW) return Buffer.from(''); // probe success
+      readWithWAttempts++;
+      if (readWithWAttempts === 1) throw new Error('would prompt');
+      return Buffer.from(JSON.stringify(SAMPLE));
+    });
+    const out = new KeychainAdapter(fn).readOAuth();
+    assert.deepEqual(out, SAMPLE);
+    assert.ok(setPartitionListCalled, 'set-generic-password-partition-list was attempted');
+    // 1 probe (username) + 1 probe (legacy) + 1 failed -w + 1 setPartitionList + 1 retry -w
+    // Order matters: probes come first for the first candidate found.
+    const partitionListIdx = calls.findIndex(c => c.args[0] === 'set-generic-password-partition-list');
+    assert.ok(partitionListIdx >= 0, 'setPartitionList in call sequence');
+    // The probes (cmd `find-generic-password` without -w) precede the
+    // partition-list mutation.
+    assert.ok(calls.slice(0, partitionListIdx).some(c => c.args[0] === 'find-generic-password' && !c.args.includes('-w')),
+      'a metadata probe ran before the partition-list mutation');
+  });
+
+  it('skips auto-partition when CLAUDE_SWITCH_NO_AUTO_PARTITION=1', () => {
+    process.env.CLAUDE_SWITCH_NO_AUTO_PARTITION = '1';
+    try {
+      let setCalled = false;
+      let wAttempts = 0;
+      const { fn } = makeExec((call) => {
+        if (call.args[0] === 'set-generic-password-partition-list') {
+          setCalled = true;
+          return Buffer.from('');
+        }
+        const hasW = call.args.includes('-w');
+        if (!hasW) return Buffer.from(''); // probe ok
+        wAttempts++;
+        // First -w invocation is the silent read (1s timeout). Throw so it
+        // resolves to "ACL would prompt". The classic fallback then issues
+        // ANOTHER -w invocation (no timeout) which we satisfy.
+        if (wAttempts === 1) throw new Error('would prompt (silent)');
+        return Buffer.from(JSON.stringify(SAMPLE));
+      });
+      const out = new KeychainAdapter(fn).readOAuth();
+      assert.deepEqual(out, SAMPLE);
+      assert.equal(setCalled, false, 'partition-list NOT auto-applied when opted out');
+    } finally {
+      delete process.env.CLAUDE_SWITCH_NO_AUTO_PARTITION;
+    }
+  });
+
   it('returns null and never spawns exec off darwin', () => {
     setPlatform('linux');
     const { fn, calls } = makeExec(() => Buffer.from(JSON.stringify(SAMPLE)));
