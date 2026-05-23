@@ -296,8 +296,12 @@ describe('KeychainAdapter — OAuth write', () => {
   it('writes with mode, the security ACL, and the upsert flag', () => {
     const { fn, calls } = makeExec(() => Buffer.alloc(0));
     new KeychainAdapter(fn).writeOAuth(SAMPLE);
-    const args = calls[0]!.args;
-    assert.equal(args[0], 'add-generic-password');
+    // The write path now probes for partition-list state first (23.9); the
+    // actual add-generic-password call is the last `add-generic-password`
+    // invocation in the call list.
+    const writeCall = calls.find(c => c.args[0] === 'add-generic-password');
+    assert.ok(writeCall, 'add-generic-password was issued');
+    const args = writeCall.args;
     assert.equal(argVal(args, '-s'), OAUTH_SERVICE);
     assert.equal(argVal(args, '-a'), os.userInfo().username);
     assert.equal(argVal(args, '-w'), JSON.stringify(SAMPLE));
@@ -311,7 +315,9 @@ describe('KeychainAdapter — OAuth write', () => {
       '/path/to/claude',
       '/other/bin',
     ]);
-    const args = calls[0]!.args;
+    const writeCall = calls.find(c => c.args[0] === 'add-generic-password');
+    assert.ok(writeCall, 'add-generic-password was issued');
+    const args = writeCall.args;
     assert.equal(count(args, '-T'), 3); // /usr/bin/security + the two bins
     assert.ok(args.includes('/path/to/claude'));
     assert.ok(args.includes('/other/bin'));
@@ -329,6 +335,68 @@ describe('KeychainAdapter — OAuth write', () => {
         return true;
       },
     );
+  });
+
+  it('auto-applies partition-list before write when existing item would prompt (23.9)', () => {
+    // Scenario: an item already exists (Claude Code wrote it with its own
+    // restrictive partition-list); a silent read confirms the OS would
+    // prompt; the adapter applies set-generic-password-partition-list FIRST
+    // so the subsequent add-generic-password -U is silent.
+    let setPartitionCalled = false;
+    let wAttempts = 0;
+    const { fn } = makeExec((call) => {
+      if (call.args[0] === 'set-generic-password-partition-list') {
+        setPartitionCalled = true;
+        return Buffer.from('');
+      }
+      const hasW = call.args.includes('-w');
+      if (!hasW) return Buffer.from(''); // probe says item exists
+      if (call.args[0] === 'find-generic-password') {
+        // silent read first → throw to signal "ACL would prompt"
+        wAttempts++;
+        if (wAttempts === 1) throw new Error('would prompt');
+        return Buffer.from('');
+      }
+      // add-generic-password (the actual write) — succeeds silently after
+      // the partition-list was widened
+      return Buffer.from('');
+    });
+    new KeychainAdapter(fn).writeOAuth(SAMPLE);
+    assert.ok(setPartitionCalled, 'partition-list applied before write');
+  });
+
+  it('skips auto-partition on write when item does NOT exist yet (no probe match)', () => {
+    // Fresh item path: nothing to widen because the item is being created.
+    let setPartitionCalled = false;
+    const { fn } = makeExec((call) => {
+      if (call.args[0] === 'set-generic-password-partition-list') {
+        setPartitionCalled = true;
+        return Buffer.from('');
+      }
+      const hasW = call.args.includes('-w');
+      if (!hasW) throw new Error('item not found (44)'); // probe miss
+      return Buffer.from('');
+    });
+    new KeychainAdapter(fn).writeOAuth(SAMPLE);
+    assert.equal(setPartitionCalled, false, 'no partition-list on fresh item');
+  });
+
+  it('skips auto-partition on write under NO_KEYCHAIN_PROMPT (background)', () => {
+    process.env.CLAUDE_SWITCH_NO_KEYCHAIN_PROMPT = '1';
+    try {
+      let setPartitionCalled = false;
+      const { fn } = makeExec((call) => {
+        if (call.args[0] === 'set-generic-password-partition-list') {
+          setPartitionCalled = true;
+          return Buffer.from('');
+        }
+        return Buffer.from('');
+      });
+      new KeychainAdapter(fn).writeOAuth(SAMPLE);
+      assert.equal(setPartitionCalled, false, 'background writes never auto-widen');
+    } finally {
+      delete process.env.CLAUDE_SWITCH_NO_KEYCHAIN_PROMPT;
+    }
   });
 
   it('is a no-op off darwin', () => {
