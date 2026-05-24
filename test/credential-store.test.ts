@@ -665,11 +665,11 @@ describe('KeychainAdapter — partition list', () => {
 });
 
 describe('defaultCredentialStore selection', () => {
-  it('matches the host platform', () => {
-    if (realPlatform === 'darwin') {
-      assert.ok(defaultCredentialStore instanceof KeychainAdapter);
-    } else {
-      assert.ok(defaultCredentialStore instanceof NoopCredentialStore);
-    }
+  it('is FileCredentialStore on every platform (Phase 24)', async () => {
+    // Phase 24 made the file vault the default everywhere. The legacy
+    // KeychainAdapter is reachable only via CLAUDE_SWITCH_USE_KEYCHAIN=1
+    // for one back-compat release before removal.
+    const { FileCredentialStore } = await import('../src/file-credential-store.js');
+    assert.ok(defaultCredentialStore instanceof FileCredentialStore);
   });
 });
