@@ -477,6 +477,14 @@ async function main(): Promise<void> {
     handleStatusline(statuslineCtx, { format: cmd.format, color: cmd.color, noCacheHealth: cmd.noCacheHealth });
     return;
   }
+
+  // Phase 24 one-shot migration: copy Keychain → file vault if not yet done.
+  // Idempotent (marker file gates re-runs); skipped on the statusline hot
+  // path above so we never pay the migration cost on a high-frequency call.
+  // Best-effort: on any failure the marker is written as 'none' and the
+  // next `claude /login` repopulates the file vault.
+  const { runFileVaultMigration } = await import('../src/credential-migration.js');
+  runFileVaultMigration();
   if (cmd.action === 'statusline-install') {
     await handleStatuslineInstall(cmd.variant);
     return;
