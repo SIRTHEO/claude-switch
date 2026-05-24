@@ -34,7 +34,6 @@ import { handleUsage } from '../src/commands/usage.js';
 import { handleUsageSnapshot } from '../src/commands/usage-snapshot.js';
 import { handleAdd, handleRemove } from '../src/commands/account.js';
 import { handleSetup } from '../src/commands/setup.js';
-import { handleSetupKeychain } from '../src/commands/setup-keychain.js';
 import { handleUpdate } from '../src/commands/update.js';
 import { handleTemporarySwitch } from '../src/commands/temporary-switch.js';
 import { handleSwitchInteractive, handleSwitchTo } from '../src/commands/switch.js';
@@ -81,7 +80,6 @@ export type Command =
   | { action: 'alias-remove'; name: string | undefined }
   | { action: 'temporary-switch'; target: string | undefined; args: string[] }
   | { action: 'setup' }
-  | { action: 'setup-keychain'; json: boolean }
   | { action: 'update' }
   | { action: 'apikey-set'; target: string | undefined }
   | { action: 'apikey-remove'; target: string | undefined }
@@ -222,7 +220,6 @@ export function parseCommand(args: string[]): Command {
     case '-v': return { action: 'version' };
     case '--completions': return { action: 'completions', shell: args[2] };
     case 'setup': return { action: 'setup' };
-    case 'setup-keychain': return { action: 'setup-keychain', json: args.includes('--json') };
     case 'update': return { action: 'update' };
     case 'apikey': {
       const sub2 = args[2];
@@ -684,10 +681,6 @@ async function main(): Promise<void> {
 
     case 'setup':
       await handleSetup(ctx);
-      break;
-
-    case 'setup-keychain':
-      handleSetupKeychain({ json: cmd.json });
       break;
 
     case 'update':

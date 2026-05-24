@@ -118,142 +118,46 @@ describe('KeychainAdapter — OAuth read', () => {
     restoreEnv();
   });
 
-  it('probes metadata then reads the blob from the existing candidate account', () => {
-    // The new probe-first read pattern (no-dialog regression fix): the
-    // adapter first calls `security find-generic-password -s SERVICE -a ACCT`
-    // WITHOUT `-w` for each candidate to see which item exists, then issues
-    // the read (with `-w`) only against the existing one. The probe never
-    // raises a macOS authorization dialog because it doesn't touch the
-    // encrypted blob, so probing both candidates is free.
+  it('reads + parses the blob from the first candidate account', () => {
+    // Phase 24: the KeychainAdapter is migration-only. Simple read with
+    // candidate fallthrough — the elaborate probe/auto-partition logic
+    // from 23.7/23.8 is gone with the production default.
     const { fn, calls } = makeExec(() => Buffer.from(JSON.stringify(SAMPLE)));
     const out = new KeychainAdapter(fn).readOAuth();
     assert.deepEqual(out, SAMPLE);
-    // 2 probes (one per candidate, both reported as existing by the fake)
-    // + 1 read of the first existing candidate (the OS username).
-    assert.equal(calls.length, 3);
-    // Probes are calls 0 and 1 (no `-w`); the read is call 2 (has `-w`).
-    assert.ok(!calls[0]!.args.includes('-w'), 'probe 1 must not pass -w');
-    assert.ok(!calls[1]!.args.includes('-w'), 'probe 2 must not pass -w');
-    assert.ok(calls[2]!.args.includes('-w'), 'read must pass -w');
-    assert.equal(calls[2]!.file, 'security');
-    assert.equal(calls[2]!.args[0], 'find-generic-password');
-    assert.equal(argVal(calls[2]!.args, '-s'), OAUTH_SERVICE);
-    assert.equal(argVal(calls[2]!.args, '-a'), os.userInfo().username);
+    assert.equal(calls.length, 1);
+    assert.equal(argVal(calls[0]!.args, '-a'), os.userInfo().username);
+    assert.ok(calls[0]!.args.includes('-w'));
   });
 
-  it('skips the read entirely for a candidate whose probe says "not present"', () => {
-    // The first probe (username) says "not present" → that candidate is
-    // dropped, no read is attempted against it (which would have prompted
-    // for a password under macOS), so the dialog cascade is broken. The
-    // second probe (legacy service name) says "present" → only that one is
-    // read, with `-w`.
-    let probeIdx = 0;
-    const { fn, calls } = makeExec((call) => {
-      const isProbe = !call.args.includes('-w');
-      if (isProbe) {
-        const presentForLegacy = probeIdx++ === 1; // probe 0 = username (absent), probe 1 = legacy (present)
-        if (!presentForLegacy) throw new Error('item not found (44)');
-        return Buffer.from('');
-      }
+  it('falls through to the second candidate when the first throws', () => {
+    let n = 0;
+    const { fn, calls } = makeExec(() => {
+      if (n++ === 0) throw new Error('not found');
       return Buffer.from(JSON.stringify(SAMPLE));
     });
     const out = new KeychainAdapter(fn).readOAuth();
     assert.deepEqual(out, SAMPLE);
-    // 2 probes + 1 read against the legacy account only.
-    assert.equal(calls.length, 3);
-    assert.equal(argVal(calls[2]!.args, '-a'), OAUTH_SERVICE);
-    assert.ok(calls[2]!.args.includes('-w'));
+    assert.equal(calls.length, 2);
+    assert.equal(argVal(calls[1]!.args, '-a'), OAUTH_SERVICE);
   });
 
-  it('returns null when no candidate exists (no read attempt, no dialog)', () => {
-    // Both probes throw → no candidate exists → readOAuth returns null
-    // without ever attempting a `-w` read. This is the critical guarantee
-    // that prevents the spurious-dialog regression on a fresh machine.
-    const { fn, calls } = makeExec(() => { throw new Error('item not found (44)'); });
-    assert.equal(new KeychainAdapter(fn).readOAuth(), null);
-    // Only 2 probes — never any read.
-    assert.equal(calls.length, 2);
-    for (const call of calls) {
-      assert.ok(!call.args.includes('-w'), 'no read with -w was attempted');
-    }
+  it('returns null when every candidate throws', () => {
+    assert.equal(new KeychainAdapter(execThatThrows()).readOAuth(), null);
   });
 
   it('returns null when the stored value is valid JSON but not an object', () => {
-    // probe says present, read returns "42" — must reject (not an OAuth blob).
-    let probed = false;
-    const { fn } = makeExec((call) => {
-      const isProbe = !call.args.includes('-w');
-      if (isProbe) {
-        probed = true;
-        return Buffer.from('');
-      }
-      return Buffer.from('42');
-    });
+    const { fn } = makeExec(() => Buffer.from('42'));
     assert.equal(new KeychainAdapter(fn).readOAuth(), null);
-    assert.ok(probed, 'probe must have happened');
   });
 
-  it('auto-applies partition-list when the silent read fails, then succeeds (23.8)', () => {
-    // Scenario: item exists (probe OK), but the silent read returns ""
-    // because the ACL would prompt. The adapter should call
-    // set-generic-password-partition-list to widen the partition, then
-    // re-attempt the silent read and succeed. The user pays a single
-    // password prompt (for the partition-list write) instead of one per
-    // read forever — durable fix.
-    //
-    // The fake `security` exec produces:
-    //   - probe (no -w): "" (exists)
-    //   - first silent read with -w: throws (silent read failed)
-    //   - set-generic-password-partition-list: "" (success)
-    //   - second silent read with -w: SAMPLE blob
-    let readWithWAttempts = 0;
-    let setPartitionListCalled = false;
-    const { fn, calls } = makeExec((call) => {
-      if (call.args[0] === 'set-generic-password-partition-list') {
-        setPartitionListCalled = true;
-        return Buffer.from('');
-      }
-      const hasW = call.args.includes('-w');
-      if (!hasW) return Buffer.from(''); // probe success
-      readWithWAttempts++;
-      if (readWithWAttempts === 1) throw new Error('would prompt');
-      return Buffer.from(JSON.stringify(SAMPLE));
-    });
-    const out = new KeychainAdapter(fn).readOAuth();
-    assert.deepEqual(out, SAMPLE);
-    assert.ok(setPartitionListCalled, 'set-generic-password-partition-list was attempted');
-    // 1 probe (username) + 1 probe (legacy) + 1 failed -w + 1 setPartitionList + 1 retry -w
-    // Order matters: probes come first for the first candidate found.
-    const partitionListIdx = calls.findIndex(c => c.args[0] === 'set-generic-password-partition-list');
-    assert.ok(partitionListIdx >= 0, 'setPartitionList in call sequence');
-    // The probes (cmd `find-generic-password` without -w) precede the
-    // partition-list mutation.
-    assert.ok(calls.slice(0, partitionListIdx).some(c => c.args[0] === 'find-generic-password' && !c.args.includes('-w')),
-      'a metadata probe ran before the partition-list mutation');
-  });
-
-  it('skips auto-partition when CLAUDE_SWITCH_NO_AUTO_PARTITION=1', () => {
+  it('placeholder — opt-out env var (kept for back-compat shape)', () => {
     process.env.CLAUDE_SWITCH_NO_AUTO_PARTITION = '1';
     try {
-      let setCalled = false;
-      let wAttempts = 0;
-      const { fn } = makeExec((call) => {
-        if (call.args[0] === 'set-generic-password-partition-list') {
-          setCalled = true;
-          return Buffer.from('');
-        }
-        const hasW = call.args.includes('-w');
-        if (!hasW) return Buffer.from(''); // probe ok
-        wAttempts++;
-        // First -w invocation is the silent read (1s timeout). Throw so it
-        // resolves to "ACL would prompt". The classic fallback then issues
-        // ANOTHER -w invocation (no timeout) which we satisfy.
-        if (wAttempts === 1) throw new Error('would prompt (silent)');
-        return Buffer.from(JSON.stringify(SAMPLE));
-      });
-      const out = new KeychainAdapter(fn).readOAuth();
-      assert.deepEqual(out, SAMPLE);
-      assert.equal(setCalled, false, 'partition-list NOT auto-applied when opted out');
+      // 23.8 auto-partition is gone. The env var is no longer consulted; we
+      // just check the legacy reader still behaves the same with it set.
+      const { fn } = makeExec(() => Buffer.from(JSON.stringify(SAMPLE)));
+      assert.deepEqual(new KeychainAdapter(fn).readOAuth(), SAMPLE);
     } finally {
       delete process.env.CLAUDE_SWITCH_NO_AUTO_PARTITION;
     }
@@ -337,66 +241,16 @@ describe('KeychainAdapter — OAuth write', () => {
     );
   });
 
-  it('auto-applies partition-list before write when existing item would prompt (23.9)', () => {
-    // Scenario: an item already exists (Claude Code wrote it with its own
-    // restrictive partition-list); a silent read confirms the OS would
-    // prompt; the adapter applies set-generic-password-partition-list FIRST
-    // so the subsequent add-generic-password -U is silent.
-    let setPartitionCalled = false;
-    let wAttempts = 0;
-    const { fn } = makeExec((call) => {
-      if (call.args[0] === 'set-generic-password-partition-list') {
-        setPartitionCalled = true;
-        return Buffer.from('');
-      }
-      const hasW = call.args.includes('-w');
-      if (!hasW) return Buffer.from(''); // probe says item exists
-      if (call.args[0] === 'find-generic-password') {
-        // silent read first → throw to signal "ACL would prompt"
-        wAttempts++;
-        if (wAttempts === 1) throw new Error('would prompt');
-        return Buffer.from('');
-      }
-      // add-generic-password (the actual write) — succeeds silently after
-      // the partition-list was widened
-      return Buffer.from('');
-    });
-    new KeychainAdapter(fn).writeOAuth(SAMPLE);
-    assert.ok(setPartitionCalled, 'partition-list applied before write');
-  });
-
-  it('skips auto-partition on write when item does NOT exist yet (no probe match)', () => {
-    // Fresh item path: nothing to widen because the item is being created.
+  it('write never invokes set-generic-password-partition-list (Phase 24 removed the auto-widen)', () => {
     let setPartitionCalled = false;
     const { fn } = makeExec((call) => {
       if (call.args[0] === 'set-generic-password-partition-list') {
         setPartitionCalled = true;
-        return Buffer.from('');
       }
-      const hasW = call.args.includes('-w');
-      if (!hasW) throw new Error('item not found (44)'); // probe miss
       return Buffer.from('');
     });
     new KeychainAdapter(fn).writeOAuth(SAMPLE);
-    assert.equal(setPartitionCalled, false, 'no partition-list on fresh item');
-  });
-
-  it('skips auto-partition on write under NO_KEYCHAIN_PROMPT (background)', () => {
-    process.env.CLAUDE_SWITCH_NO_KEYCHAIN_PROMPT = '1';
-    try {
-      let setPartitionCalled = false;
-      const { fn } = makeExec((call) => {
-        if (call.args[0] === 'set-generic-password-partition-list') {
-          setPartitionCalled = true;
-          return Buffer.from('');
-        }
-        return Buffer.from('');
-      });
-      new KeychainAdapter(fn).writeOAuth(SAMPLE);
-      assert.equal(setPartitionCalled, false, 'background writes never auto-widen');
-    } finally {
-      delete process.env.CLAUDE_SWITCH_NO_KEYCHAIN_PROMPT;
-    }
+    assert.equal(setPartitionCalled, false, 'legacy adapter does not mutate ACLs');
   });
 
   it('is a no-op off darwin', () => {
@@ -643,24 +497,11 @@ describe('KeychainAdapter — partition list', () => {
     assert.deepEqual(new KeychainAdapter(execThatThrows()).listOAuthKeychainItems(), []);
   });
 
-  it('setPartitionList passes the right argv and reports success', () => {
+  it('setPartitionList is a no-op (Phase 24 removed the auto-widen)', () => {
     const { fn, calls } = makeExec(() => Buffer.alloc(0));
     const ok = new KeychainAdapter(fn).setPartitionList('Claude Code-credentials', 'localuser', 'apple-tool:');
-    assert.equal(ok, true);
-    const args = calls[0]!.args;
-    assert.equal(args[0], 'set-generic-password-partition-list');
-    assert.equal(argVal(args, '-S'), 'apple-tool:');
-    assert.equal(argVal(args, '-s'), 'Claude Code-credentials');
-    assert.equal(argVal(args, '-a'), 'localuser');
-  });
-
-  it('setPartitionList returns false on exec failure, empty args, off darwin', () => {
-    assert.equal(new KeychainAdapter(execThatThrows()).setPartitionList('s', 'a', 'apple-tool:'), false);
-    assert.equal(new KeychainAdapter(makeExec(() => Buffer.alloc(0)).fn).setPartitionList('', 'a', 'apple-tool:'), false);
-    setPlatform('linux');
-    const { fn, calls } = makeExec(() => Buffer.alloc(0));
-    assert.equal(new KeychainAdapter(fn).setPartitionList('s', 'a', 'apple-tool:'), false);
-    assert.equal(calls.length, 0);
+    assert.equal(ok, false, 'no longer mutates ACLs');
+    assert.equal(calls.length, 0, 'no security invocation');
   });
 });
 
