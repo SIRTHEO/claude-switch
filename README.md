@@ -67,6 +67,7 @@ That's the whole API. Nothing else to memorize.
 | 🪟 | **Two accounts, two terminals, same machine.** Isolated profiles, zero interference. |
 | 🎯 | **Project-aware routing.** Drop a `.claude-switch` in the repo, `claude` picks the right account based on `cwd`. |
 | 💾 | **Cache-health monitor.** Detect Anthropic billing bugs (cache flushes, `--resume` cost amplification) in real time. |
+| 🩺 | **`doctor` health check.** One command surfaces credential-store problems (token collisions, stale usage cache) and `--fix` repairs them. |
 | 🔐 | **Zero telemetry.** Credentials in a `0600` file vault (no password dialogs), atomic symlink-safe writes, no `postinstall`. |
 
 ---
@@ -231,7 +232,7 @@ Narrow and worth stating clearly so you can decide whether claude-switch fits yo
 - **Atomic, symlink-safe writes.** Every credential file is written to `<file>.tmp` with mode `0600` *before* `rename`. On POSIX the temp file is opened with `O_CREAT|O_EXCL`, so a symlink pre-planted at the `.tmp` path **cannot** redirect the write to an attacker-controlled location. A crash mid-write cannot corrupt the existing snapshot or leave a world-readable temp file. (`src/atomic-write.ts`)
 - **Single-writer lock.** Every account swap and fallback flip is wrapped in `withLock(accountsDirPath)`. Two terminals running `claude switch` simultaneously serialize on a `.lock` file with PID + 30s stale reclaim. (`src/lock.ts`)
 - **File-based credential vault (`0600`, every platform).** OAuth tokens land in `~/.claude/.credentials.json` — the file Claude Code itself reads when no Keychain item is present. Per-profile tokens live in `<CLAUDE_CONFIG_DIR>/.credentials.json`; per-account archives in `~/.claude/accounts/<email>.json` (`_keychain` block); registered API keys in `~/.claude-switch/apikeys.json`. All written via the atomic, symlink-safe path above, mode `0600`, parent dir `0700`. Token values are never embedded in error messages. (`src/file-credential-store.ts`)
-- **No password dialogs.** claude-switch never invokes the macOS `security` binary in the swap/read path, so macOS never prompts. This replaced the Keychain integration (and its partition-list prompts) in v4.0.0. The legacy Keychain reader survives only for a one-shot migration on first run after upgrade. (`src/credential-migration.ts`)
+- **No password dialogs.** claude-switch never invokes the macOS `security` binary in the swap/read path, so macOS never prompts. This replaced the Keychain integration (and its partition-list prompts) in v4.0.0. On macOS a reconcile step drains Claude Code's own Keychain item into the file vault and removes it, so the binary reads our file from then on. (`src/keychain-reconcile.ts`)
 - **Credential-write rollback.** If the vault write fails *after* `~/.claude.json` was already rewritten, the JSON is rolled back to its pre-switch state so the snapshot and the vault can't drift out of sync. (`src/accounts.ts`)
 - **Silent-billing defense.** If `~/.claude.json` carries an `apiKey` field claude-switch doesn't track, a one-time stderr banner warns you on the next `claude` run, *then* the key is purged on the next switch. (See [SECURITY.md](SECURITY.md#silent-api-key-risk-claudejson-snapshot-leak).)
 - **No telemetry, no `postinstall`, no external relay.** Outbound traffic: Anthropic API, Anthropic OAuth refresh, npm registry update check. Source is open: `grep -r 'https' src/` and verify.
@@ -269,10 +270,11 @@ Not a claude-switch bug. Known issues in the Claude Code client / Anthropic bill
 |---|---|
 | `claude` not found after install | Open a new terminal. Still broken: `claude switch setup` |
 | `Token: ✗ expired` in the dashboard | Highlight the row, press `c` (re-authenticate) |
+| Swap says "no saved credentials" / statusline numbers look frozen | Run `claude switch doctor` to diagnose (token collision, rate-limited cache), then `claude switch doctor --fix` and re-login the affected account |
 | Fallback on but Claude still uses OAuth | First time Claude Code sees a new key it asks `Use this API key? [y/N]`, press **y** |
 | Usage stats show nothing | Available for Max/Pro subscribers only |
 | Unsure whether claude is billed via OAuth or API key | [SECURITY.md, Silent API-key risk](SECURITY.md#silent-api-key-risk-claudejson-snapshot-leak): 3 `jq` commands to verify |
-| macOS used to ask for the keychain password on every `claude switch` | Fixed in v4.0.0 — credentials moved to a `0600` file vault, `security` is no longer invoked, no prompts. If you upgraded from v3.x, the first run migrates your existing Keychain item once (may prompt once), then never again. |
+| macOS used to ask for the keychain password on every `claude switch` | Fixed in v4.0.0 — credentials moved to a `0600` file vault. On macOS claude-switch drains Claude Code's Keychain item into the vault and deletes it, silently while the login keychain is unlocked (a locked keychain prompts once). No more `setup-keychain` command. |
 | Max/Pro window exhausting faster than expected | Run `claude switch cache-health` and see [above](#-why-is-my-maxpro-plan-exhausting-faster-than-expected) |
 | Anything else | [Open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) or ping **`sirtheo`** on Discord |
 
@@ -331,6 +333,7 @@ If/when [#24963](https://github.com/anthropics/claude-code/issues/24963) ships, 
 
 ## 📦 What's new
 
+- **v4.0.0** — 🔐 **File-vault credential storage** replaces the macOS Keychain integration: `0600` JSON on every platform, **no more password dialogs** on swap. On macOS a reconcile step drains Claude Code's own Keychain item into the vault. 🩺 New **`claude switch doctor`** health check (`--fix`) for credential-store problems. Honest threat model in SECURITY.md. **Breaking**: `setup-keychain` command removed; first run after upgrade migrates your existing Keychain credentials automatically.
 - **v3.8.x** — 🔌 **`--json` contract** on `list`, `profile list`, `route test`, `alias-list`, fallback status (stable machine-readable output). 🪟 Per-profile launch in any detected terminal emulator. 📊 Per-account usage refresh for any saved account + embedded statusline format. 🔐 atomic-write symlink-safety hardening.
 - **v3.7.x** — 🪟 **Profile fresh-install fix**: `claude switch profile use <name>` now enters the REPL directly with stored credentials on Claude Code 2.x. Auto-propagated Keychain ACL + `hasCompletedOnboarding` + statusline config on import.
 - **v3.5.x** — 💾 **Cache-health monitor** (live `💾 N% 🚨X` statusline + CLI report) for Anthropic billing bugs. 🎯 **Project-aware routing** (`.claude-switch` + global rules). Silent-API-key billing leak fix. Per-account usage cache.

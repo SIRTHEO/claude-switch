@@ -72,9 +72,10 @@ Full root-cause analysis: `.claude/docs/reports/2026-05-13-silent-apikey-after-s
 > ❗ **Largely resolved in v4.0.0** — the file vault writes credentials via
 > `node:fs` (`writeJsonAtomic`), never as a command-line argument, so the
 > argv-exposure window below no longer exists in the normal swap/read/write
-> path. It survives **only** in the one-shot legacy Keychain migration
-> (`credential-migration.ts`), which shells out to `security` once on the
-> first run after upgrade and then never again.
+> path. On macOS the reconcile step (`keychain-reconcile.ts`) still shells
+> out to `security` to read+delete Claude Code's own Keychain item, but it
+> never passes a secret as an argument (reads with `-w`, the token comes
+> back on stdout, not in argv).
 
 ### The window (legacy migration only)
 
@@ -194,10 +195,13 @@ v4.0.0 removed the Keychain integration entirely. Credentials now live in a
 `0600` file vault (see Threat model above); claude-switch never invokes
 `security`, so macOS never prompts. The `setup-keychain` command was removed.
 
-**Upgrading from v3.x:** the first run after upgrade migrates your existing
-`Claude Code-credentials` Keychain item into the file vault once (this single
-read may prompt once if its partition list still excludes `/usr/bin/security`),
-then never touches the Keychain again.
+**Upgrading from v3.x:** on macOS, claude-switch reconciles on each command —
+it drains Claude Code's `Claude Code-credentials` Keychain item into the file
+vault and deletes it, so the binary reads the file from then on. Claude Code
+recreates the item on each `/login`; the next claude-switch command drains it
+again. Read+delete is silent while the login keychain is unlocked for the
+session; a locked keychain prompts once. There is no longer a `setup-keychain`
+command — nothing to run.
 
 ## Reporting a vulnerability
 
