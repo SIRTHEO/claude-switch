@@ -2,7 +2,6 @@
   "bin/cli.ts": 746,
   "src/accounts.ts": 550,
   "src/api-proxy.ts": 625,
-  "src/commands/passthrough.ts": 479,
   "src/commands/profile.ts": 316,
   "src/commands/statusline.ts": 357,
   "src/credential-store.ts": 464,

@@ -11,12 +11,15 @@
 //      claude through it, or
 //    - spawn claude directly with `extraEnv` (legacy ANTHROPIC_API_KEY
 //      injection for accounts without saved keys).
+//
+// The untracked-key warning, project-aware routing swap, and usage pre-warm
+// live in sibling modules (passthrough-warn / passthrough-routing /
+// passthrough-prewarm); the public surface is re-exported here.
 
-import fs from 'node:fs';
 import { withLock } from '../lock.js';
 import { ExitError } from '../errors.js';
 import { VERSION } from '../version.js';
-import { getCurrent, save, load, list as listAccounts } from '../accounts.js';
+import { getCurrent, save, list as listAccounts } from '../accounts.js';
 import { checkPendingRestore } from '../switcher.js';
 import { run as proxyRun } from '../proxy.js';
 import { getApiKey } from '../apikey.js';
@@ -27,82 +30,18 @@ import {
   maybeAutoEngageFallback,
   maybeInitSmartFallback,
 } from '../auto-fallback.js';
-import {
-  readUsageCacheForAccount,
-  isUsageCacheStale,
-  fetchUsageCached,
-  getAccessTokenFromKeychain,
-} from '../usage.js';
-import { isFallbackEnabled } from '../fallback.js';
+import { readUsageCacheForAccount } from '../usage.js';
 import { startFallbackProxy } from '../api-proxy.js';
 import { resolveAccountPrefs, resolveEffectiveAuthMode } from '../preferences.js';
-import { resolveRouting, type RoutingDecision } from '../routing.js';
-import { readState, updateStateInLock } from '../state-store.js';
-import { getAlias } from '../aliases.js';
 import { findClaude } from './_helpers.js';
+import { warnUntrackedApiKeyIfNeeded } from './passthrough-warn.js';
+import { resolveRoutingForPassthrough } from './passthrough-routing.js';
+import { preWarmUsageForAutoEngage } from './passthrough-prewarm.js';
 import type { CommandContext } from './context.js';
 
-// Transitional warning for API keys in ~/.claude.json that are NOT tracked
-// by claude-switch. One banner per process; suppressed in tests.
-//
-// When claude-switch has no record of an API key, accounts.load() removes
-// data.apiKey from ~/.claude.json. Before purging, this banner informs the
-// user so they are not surprised by the key disappearing on the next account
-// switch.
-//
-// This warning will be removed in the next minor release once users have had
-// time to acknowledge the transition.
-let _warnedUntrackedApiKey = false;
-
-/** Reset internal one-shot guard — exported for tests only. */
-export function __resetWarnedOnceForTests(): void {
-  _warnedUntrackedApiKey = false;
-}
-
-/**
- * Emit a one-time stderr banner when ~/.claude.json carries an apiKey that
- * claude-switch does not track. The banner fires BEFORE the key is purged
- * by accounts.load() on the next switch.
- *
- * Suppressed when NODE_ENV=test or CLAUDE_SWITCH_TESTING=1.
- */
-export function warnUntrackedApiKeyIfNeeded(
-  claudeJsonPath: string,
-  accountsDirPath: string,
-): void {
-  if (_warnedUntrackedApiKey) return;
-  if (process.env.NODE_ENV === 'test' || process.env.CLAUDE_SWITCH_TESTING === '1') return;
-
-  let data: Record<string, unknown>;
-  try {
-    const raw = fs.readFileSync(claudeJsonPath, 'utf-8');
-    data = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return; // unreadable / missing file — no-op
-  }
-
-  if (typeof data.apiKey !== 'string' || !data.apiKey) return;
-
-  // Identify the active account so we can check whether claude-switch
-  // tracks a key for it.
-  const email = (data.oauthAccount as Record<string, unknown> | undefined)?.emailAddress;
-  if (typeof email !== 'string' || !email) return;
-
-  let tracked: string | null;
-  try {
-    tracked = getApiKey(email, accountsDirPath);
-  } catch {
-    return; // best-effort: don't crash passthrough on warning failure (e.g. unsafe email)
-  }
-  if (tracked !== null) return; // tracked — no warning
-
-  _warnedUntrackedApiKey = true;
-  process.stderr.write(
-    '⚠ claude-switch: ~/.claude.json carries an API key NOT tracked by claude-switch.\n' +
-    '  This will be removed on next account switch to prevent silent API billing.\n' +
-    '  See: https://github.com/sirtheo/claude-switch (Security Advisory).\n\n',
-  );
-}
+export { __resetWarnedOnceForTests, warnUntrackedApiKeyIfNeeded } from './passthrough-warn.js';
+export { resolveRoutingForPassthrough } from './passthrough-routing.js';
+export type { RoutingForPassthroughInput } from './passthrough-routing.js';
 
 export async function handlePassthrough(
   ctx: CommandContext,
@@ -319,161 +258,4 @@ export async function handlePassthrough(
     }
   }
   proxyRun(claudeBin, passthroughArgs, extraEnv);
-}
-
-/** Routing snapshot returned to the passthrough caller for banner emission.
- *  Exported for tests; `routing.ts` is the pure resolver, this module is
- *  where the swap-and-update lifecycle lives. */
-interface RoutingSnapshot {
-  decision: RoutingDecision | null;
-  /** True when we actually flipped the active account inside the snapshot
-   *  lock. False for: same-as-active, 0-match warnings, isolated-target
-   *  (which gets its own hint instead). */
-  flipped: boolean;
-  /** Set when routing wanted to flip but the target is `defaultIsolated`
-   *  — we emit a hint suggesting the user run the profile flow rather
-   *  than silently overriding their isolation intent. */
-  isolatedHint?: string;
-}
-
-export interface RoutingForPassthroughInput {
-  accountsDirPath: string;
-  claudeJsonPath: string;
-  cwd: string;
-  initialEmail: string | null;
-  savedEmails: string[];
-}
-
-/**
- * Resolve routing INSIDE the passthrough snapshot lock and, if the resolver
- * decides on a different account, perform the in-lock swap by directly
- * calling `save` + `load` (the primitives `switchTo` wraps). We can't call
- * `switchTo` itself because it acquires its own `withLock`, and we already
- * hold the accounts-dir lock here.
- *
- * Skip rules:
- *   - CLAUDE_CONFIG_DIR set externally → user is in a profile, don't override
- *   - resolver returns null → no opinion, caller proceeds with active
- *   - target email == active → resolver matched the active, silent
- *   - target email not saved → defensive guard (resolver should already
- *     have filtered, but listing can race with this read in pathological
- *     cases)
- *   - target has `defaultIsolated: true` → emit hint, do NOT flip
- */
-export function resolveRoutingForPassthrough(input: RoutingForPassthroughInput): RoutingSnapshot {
-  const { accountsDirPath, claudeJsonPath, cwd, initialEmail, savedEmails } = input;
-
-  // Hard skip: user already chose a profile via CLAUDE_CONFIG_DIR. Profile
-  // is an explicit choice; routing must not override it.
-  if (process.env.CLAUDE_CONFIG_DIR) {
-    return { decision: null, flipped: false };
-  }
-
-  const lastUsedByDomain = readState(accountsDirPath).lastUsedByDomain ?? {};
-  const decision = resolveRouting({
-    cwd,
-    accountsDirPath,
-    env: process.env,
-    activeEmail: initialEmail,
-    savedEmails,
-    lastUsedByDomain,
-    resolveAlias: (a) => getAlias(a, accountsDirPath),
-  });
-
-  if (!decision) {
-    return { decision: null, flipped: false };
-  }
-
-  // Resolver matched the active account — nothing to do, but pass through
-  // any warning (e.g. 0-match fallback) so the caller can surface it.
-  if (decision.email === initialEmail) {
-    return { decision, flipped: false };
-  }
-
-  // Defensive: only swap to accounts we actually have on disk.
-  if (!savedEmails.includes(decision.email)) {
-    return { decision, flipped: false };
-  }
-
-  // Respect `defaultIsolated`: the user marked this account as
-  // "always launch isolated" — we must not flip the global active. Tell
-  // them how to launch via profile instead.
-  const targetPrefs = resolveAccountPrefs(decision.email, accountsDirPath);
-  if (targetPrefs.defaultIsolated) {
-    return {
-      decision,
-      flipped: false,
-      isolatedHint:
-        `🎯 .claude-switch wants ${decision.email}, which is set to "isolated" — ` +
-        `run: claude switch profile use <profile-for-${decision.email}>`,
-    };
-  }
-
-  // Perform the in-lock swap (mirrors switchTo's body without re-locking).
-  if (initialEmail) {
-    save(initialEmail, claudeJsonPath, accountsDirPath);
-  }
-  load(decision.email, claudeJsonPath, accountsDirPath);
-
-  // Update lastUsedByDomain so future N-match decisions stabilise on the
-  // account the user actually uses for this domain.
-  const domain = decision.email.includes('@')
-    ? decision.email.slice(decision.email.lastIndexOf('@') + 1).toLowerCase()
-    : null;
-  if (domain) {
-    updateStateInLock(accountsDirPath, (state) => ({
-      ...state,
-      lastUsedByDomain: {
-        ...(state.lastUsedByDomain ?? {}),
-        [domain]: decision.email,
-      },
-    }));
-  }
-
-  return { decision, flipped: true };
-}
-
-/**
- * Synchronously refresh the usage cache when the active account is on
- * the verge of needing auto-engage. Returns silently on every failure
- * mode (no token, network down, rate-limited): the existing
- * cache-based path takes over and behaviour is identical to before.
- *
- * Gated behind a precise predicate so we don't pay the round-trip on
- * the 99% of invocations where the cache is fresh OR fallback is
- * already on OR there's no key to engage anyway.
- */
-async function preWarmUsageForAutoEngage(
-  claudeJsonPath: string,
-  accountsDirPath: string,
-): Promise<void> {
-  // Already on fallback — auto-engage would no-op even with fresh data.
-  if (isFallbackEnabled(accountsDirPath)) return;
-
-  // No active account or active account has no key — engage can't trigger.
-  let email: string;
-  try {
-    email = getCurrent(claudeJsonPath);
-  } catch { return; } // no resolvable active account → nothing to auto-engage
-  if (!email) return;
-  if (!getApiKey(email, accountsDirPath)) return;
-
-  // Cache fresh enough — let the existing path read it as-is. We
-  // intentionally use the same `isUsageCacheStale` predicate the
-  // statusline uses, so behaviour is consistent across surfaces.
-  const cache = readUsageCacheForAccount(accountsDirPath, email);
-  if (!isUsageCacheStale(cache, email)) return;
-
-  // We need to force-fetch. Requires an OAuth access token —
-  // getAccessTokenFromKeychain reads from `~/.claude.json` on
-  // non-darwin or queries the Keychain on darwin. If we can't get one,
-  // we silently fall through (the existing flow uses a stale cache).
-  const token = getAccessTokenFromKeychain(claudeJsonPath);
-  if (!token) return;
-
-  try {
-    await fetchUsageCached(accountsDirPath, token, { force: true, account: email });
-  } catch {
-    /* network down / 5xx / 429 — leave the existing cache untouched */
-  }
 }
