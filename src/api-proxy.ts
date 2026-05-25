@@ -40,178 +40,30 @@ import type { AddressInfo } from 'node:net';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
 import { parseUsageHeadersIfPresent, updateUsageCacheFromHeaders } from './usage.js';
 import { writeProxyMode, clearProxyMode } from './proxy-mode.js';
+import {
+  buildApiKeyHeaders,
+  buildPassthroughHeaders,
+  isRetryableStatus,
+  looksLikeErrorBody,
+} from './api-proxy-headers.js';
+import type {
+  BurstConfig,
+  ProxyHandle,
+  StartFallbackProxyOptions,
+} from './api-proxy-types.js';
+
+export {
+  buildApiKeyHeaders,
+  buildPassthroughHeaders,
+  isRetryableStatus,
+  looksLikeErrorBody,
+  stripOauthBeta,
+} from './api-proxy-headers.js';
 
 const DEFAULT_UPSTREAM = 'https://api.anthropic.com';
 const DEFAULT_MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 const DEFAULT_BURST_FAILURE_THRESHOLD = 3;
 const DEFAULT_BURST_PROBE_INTERVAL_MS = 5 * 60 * 1000;
-
-/** Modes externally chosen by the caller (per-account `authMode`).
- *  `oauth-only` is not a proxy mode — when there's no API key the caller
- *  doesn't start the proxy at all. */
-type ProxyMode = 'oauth-first' | 'api-first';
-
-/** Snapshot of the proxy's runtime state, exposed to callers for diagnostics
- *  and statusline display. */
-interface ProxyRuntimeState {
-  mode: ProxyMode;
-  /** True when oauth-first has temporarily downgraded to API key only after
-   *  N consecutive OAuth failures. False in `api-first` mode (always). */
-  burstActive: boolean;
-  /** How many OAuth attempts in a row have failed without an intervening
-   *  successful response. */
-  consecutiveOauthFailures: number;
-  /** Cumulative request counters since proxy start. Surfaced in
-   *  `claude switch status` so the user can confirm whether the proxy
-   *  has actually been routing (and how the OAuth ↔ API-key split is
-   *  going) instead of having to trust a banner that shows up once. */
-  counters: {
-    totalRequests: number;
-    oauthAttempts: number;
-    oauthSuccesses: number;
-    oauthFailures: number;
-    apiKeyDirectRequests: number;
-    apiKeyRetries: number;
-    upstreamErrors: number;
-    bodySniffsTriggered: number;
-    /** Requests dropped by the auth gate (DNS rebinding or browser Origin). */
-    rejectedAuth: number;
-  };
-  /** Reason of the most recent OAuth → API-key retry (e.g. "subscription
-   *  returned 429" or "subscription error in response body"). Null when
-   *  no retry has happened. */
-  lastRetryReason: string | null;
-}
-
-interface ProxyHandle {
-  port: number;
-  close: (cb?: () => void) => void;
-  /** Read the current runtime state (mode + burst flag + counter). */
-  state(): ProxyRuntimeState;
-}
-
-interface BurstConfig {
-  failureThreshold: number;
-  probeIntervalMs: number;
-}
-
-/**
- * HTTP status codes that warrant retrying with the API key.
- *
- * 402 — Payment Required ("out of extra usage", subscription credits gone).
- * 403 — Forbidden (sometimes used for quota exhaustion).
- * 429 — Rate Limited (5h window cap).
- *
- * Intentionally excludes 5xx/529. Retrying a POST after an ambiguous server
- * failure can duplicate work/cost if the upstream already started processing.
- */
-export function isRetryableStatus(code: number | undefined): boolean {
-  if (code === undefined) return false;
-  return code === 402 || code === 403 || code === 429;
-}
-
-/**
- * Peek the first chunk of an SSE/JSON body to detect an Anthropic error
- * envelope (`{"type":"error", ...}` or `event: error\ndata: ...`).
- *
- * Anthropic sometimes returns HTTP 200 with an SSE stream whose first event
- * is an error (notably for `out of extra usage`). The proxy must look at
- * the body to know it's an error, not the status code.
- */
-export function looksLikeErrorBody(head: string): boolean {
-  // SSE error event
-  if (/^event:\s*error/m.test(head)) return true;
-  // Top-level JSON error envelope
-  if (/"type"\s*:\s*"error"/.test(head)) return true;
-  // Anthropic-internal error type tags (extracted from the production
-  // claude binary v2.x — these appear inside the inner `error.type`
-  // field, not the top-level one we already match above).
-  if (/"rate_limit_error"|"overloaded_error"|"payment_required"|"usage_quota"/i.test(head)) {
-    return true;
-  }
-  // Specific quota-exhausted phrasings actually emitted by the API in
-  // the response body. Reverse-engineered from the production binary
-  // — there are several variants and the previous regex only caught
-  // the user-facing rendering, NOT the wire-level message.
-  if (/extra usage credits exhausted/i.test(head)) return true;
-  if (/extra usage disabled (by your organization|for your account)/i.test(head)) return true;
-  if (/extra usage not available/i.test(head)) return true;
-  // Legacy phrasing (kept for safety; matches the user-facing copy too).
-  if (/out of (extra )?usage/i.test(head)) return true;
-  // Generic rate-limit phrasing in any error envelope.
-  if (/rate[_ ]?limit/i.test(head) && /"error"/.test(head)) return true;
-  return false;
-}
-
-/** Strip `oauth-2025-04-20` from a comma-separated `anthropic-beta` value. */
-export function stripOauthBeta(value: string): string {
-  return value
-    .split(',')
-    .map(s => s.trim())
-    .filter(s => s !== 'oauth-2025-04-20')
-    .join(',');
-}
-
-/** Headers for a pass-through attempt: forwarded as-is, only `host` dropped. */
-export function buildPassthroughHeaders(incoming: IncomingHttpHeaders): IncomingHttpHeaders {
-  const out: IncomingHttpHeaders = {};
-  for (const [k, v] of Object.entries(incoming)) {
-    if (k.toLowerCase() === 'host') continue;
-    out[k] = v;
-  }
-  return out;
-}
-
-/**
- * Headers for an API-key request: replaces OAuth auth with `x-api-key` and
- * strips `oauth-2025-04-20` from `anthropic-beta` so Anthropic bills credits.
- */
-export function buildApiKeyHeaders(
-  incoming: IncomingHttpHeaders,
-  apiKey: string,
-): IncomingHttpHeaders {
-  const out = buildPassthroughHeaders(incoming);
-
-  delete out['authorization'];
-  out['x-api-key'] = apiKey;
-
-  const beta = out['anthropic-beta'];
-  if (typeof beta === 'string') {
-    const cleaned = stripOauthBeta(beta);
-    if (cleaned) {
-      out['anthropic-beta'] = cleaned;
-    } else {
-      delete out['anthropic-beta'];
-    }
-  }
-
-  return out;
-}
-
-interface StartFallbackProxyOptions {
-  apiKey: string;
-  mode: ProxyMode;
-  upstreamBase?: string;
-  maxRequestBodyBytes?: number;
-  burstConfig?: Partial<BurstConfig>;
-  /** Wall-clock provider for tests. Defaults to `Date.now`. */
-  now?: () => number;
-  /** When set, the final state snapshot is persisted to this path on
-   *  `close()` so the next `claude switch status` can render the
-   *  most recent session's counters. */
-  persistStatsTo?: string;
-  /** Enables realtime usage tracking from upstream response
-   *  headers. When BOTH fields are set, the proxy parses
-   *  `anthropic-ratelimit-{five-hour,seven-day}-percent-used` (and
-   *  documented aliases) from every 2xx upstream response and merges the
-   *  values into the per-account cache at `<accountsDirPath>/.usage-cache.<hash>.json`.
-   *  Either field unset → header parsing is a no-op (proxy still works
-   *  unchanged for callers that don't care about usage). */
-  accountsDirPath?: string;
-  /** Email of the account whose token authorises this proxy session.
-   *  Used as the cache key when `accountsDirPath` is also set. */
-  account?: string;
-}
 
 /**
  * Start the fallback proxy.
