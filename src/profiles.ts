@@ -82,7 +82,7 @@ export function profilePath(name: string): string {
 export function profileExists(name: string): boolean {
   try {
     return fs.statSync(profilePath(name)).isDirectory();
-  } catch {
+  } catch { // profile dir absent → does not exist
     return false;
   }
 }
@@ -284,7 +284,7 @@ export async function refreshLegacySnapshotIfStale(
   let legacy: AccountSnapshot;
   try {
     legacy = readLegacyAccount(email, accountsDirPath);
-  } catch {
+  } catch { // no readable legacy account → nothing to migrate
     return false;
   }
   const oauth = legacy._keychain?.claudeAiOauth;
@@ -614,7 +614,7 @@ export async function ensureProfileForAccount(
         debugProfiles(`keychainWrite=failed service=per-config-dir account=${profileDir} err=${errMessage(writeErr)}`);
         return false;
       }
-    } catch {
+    } catch { // legacy account read failed → recovery unavailable (logged above)
       debugProfiles(`recoveryAttempted=true legacyKeychain=false profileDir=${profileDir} (readLegacyAccount failed)`);
       return false;
     }

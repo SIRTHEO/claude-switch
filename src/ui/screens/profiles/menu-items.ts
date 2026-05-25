@@ -59,7 +59,7 @@ export function profileLabel(name: string): { label: string; hint: string } {
   try {
     const info = readProfile(name);
     return { label: name, hint: info.emailAddress ?? '(not logged in)' };
-  } catch {
+  } catch { // profile unreadable → show error hint
     return { label: name, hint: '(error reading)' };
   }
 }

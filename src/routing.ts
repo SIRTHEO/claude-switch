@@ -408,7 +408,7 @@ function resolveFromClaudeSwitch(
   let raw: string;
   try {
     raw = fs.readFileSync(filePath, 'utf-8');
-  } catch {
+  } catch { // routing file absent → no decision
     return null;
   }
   const parsed = parseClaudeSwitchFile(raw);
@@ -479,7 +479,7 @@ function resolveFromGlobalRules(input: ResolveRoutingInput): RoutingDecision | n
   let raw: string;
   try {
     raw = fs.readFileSync(file, 'utf-8');
-  } catch {
+  } catch { // no routing file → no rules
     return null;
   }
   const parsed = parseRoutingFile(raw);

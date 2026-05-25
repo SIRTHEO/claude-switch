@@ -39,7 +39,7 @@ function candidateAccounts(): string[] {
   let username: string;
   try {
     username = process.env.USER || os.userInfo().username;
-  } catch {
+  } catch { // no passwd entry → default account name
     username = 'claude-code-user';
   }
   if (!/^[a-zA-Z0-9._-]+$/.test(username)) username = 'claude-code-user';
@@ -67,7 +67,7 @@ function itemExists(exec: SecurityExec, account: string): boolean {
       stdio: ['ignore', 'ignore', 'ignore'],
     });
     return true;
-  } catch {
+  } catch { // keychain item absent → treat as not present
     return false;
   }
 }

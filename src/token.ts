@@ -67,7 +67,7 @@ export function getTokenHealth(
       account.accessToken as string | undefined,
       account.expiresAt
     );
-  } catch {
+  } catch { // unreadable/malformed token data → report missing
     return { status: 'missing' };
   }
 }

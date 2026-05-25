@@ -80,7 +80,7 @@ export function getAutoFallbackConfig(accountsDirPath: string): AutoFallbackConf
       engageEnabled: obj.engageEnabled === true,
       engageThreshold,
     };
-  } catch {
+  } catch { // missing/corrupt config → defaults
     return defaults;
   }
 }

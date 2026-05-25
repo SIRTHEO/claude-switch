@@ -109,7 +109,7 @@ function renderProxyStats(accountsDirPath: string): void {
   let stats: ProxyStatsFile;
   try {
     stats = JSON.parse(raw) as ProxyStatsFile;
-  } catch {
+  } catch { // corrupt proxy-stats file → show nothing
     return;
   }
   const c = stats.counters ?? {};

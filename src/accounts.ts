@@ -318,7 +318,7 @@ function findSnapshotsSharingAccessToken(
   let files: string[];
   try {
     files = repo.list(accountsDirPath);
-  } catch {
+  } catch { // accounts dir absent/unreadable → no other accounts
     return [];
   }
   const out: string[] = [];
@@ -329,7 +329,7 @@ function findSnapshotsSharingAccessToken(
     let other: unknown;
     try {
       other = repo.read(otherEmail, accountsDirPath);
-    } catch {
+    } catch { // unreadable/corrupt sibling account → skip it
       continue;
     }
     const otherToken = (

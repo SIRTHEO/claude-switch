@@ -155,7 +155,7 @@ export function SetupScreen({ selfPath, onDone, deps: depsOverride }: Props) {
     let existing: DetectedExisting;
     try {
       existing = d.detectExistingStatusLine();
-    } catch {
+    } catch { // detection failed → treat as absent
       existing = { kind: 'absent' };
     }
     if (
@@ -186,7 +186,7 @@ export function SetupScreen({ selfPath, onDone, deps: depsOverride }: Props) {
     try {
       d.installStatusLine(command);
       installed = true;
-    } catch {
+    } catch { // install failed → report not installed
       installed = false;
     }
     setStep({

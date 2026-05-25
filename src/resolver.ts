@@ -34,7 +34,7 @@ function isClaudeSwitchWrapper(filePath: string): boolean {
     const buf = Buffer.alloc(512);
     fs.readSync(fd, buf, 0, 512, 0);
     return buf.toString('utf-8').includes('claude-switch');
-  } catch {
+  } catch { // unreadable file → no claude-switch marker
     return false;
   } finally {
     if (fd !== undefined) try { fs.closeSync(fd); } catch { /* ignore */ }

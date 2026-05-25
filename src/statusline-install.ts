@@ -51,7 +51,7 @@ export function detectExistingStatusLine(settingsPath: string = claudeSettingsPa
   let raw: string;
   try {
     raw = fs.readFileSync(settingsPath, 'utf-8');
-  } catch {
+  } catch { // settings file absent/unreadable → no existing statusline
     return { kind: 'absent' };
   }
   let parsed: unknown;
@@ -120,7 +120,7 @@ export function uninstallStatusLine(settingsPath: string = claudeSettingsPath())
   let settings: Record<string, unknown>;
   try {
     settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as Record<string, unknown>;
-  } catch {
+  } catch { // corrupt settings JSON → cannot confirm install
     return false;
   }
   delete settings.statusLine;

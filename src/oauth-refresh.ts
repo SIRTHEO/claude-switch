@@ -99,7 +99,7 @@ export async function refreshAccessToken(
   let raw: { text: string; tooLarge: boolean };
   try {
     raw = await readBodyCapped(res, MAX_REFRESH_BODY_BYTES);
-  } catch {
+  } catch { // body read/cap failure → treat refresh as failed
     return null;
   }
   if (raw.tooLarge) return null;
@@ -107,7 +107,7 @@ export async function refreshAccessToken(
   let body: RefreshResponse;
   try {
     body = JSON.parse(raw.text) as RefreshResponse;
-  } catch {
+  } catch { // non-JSON refresh response → treat as failed
     return null;
   }
 

@@ -55,14 +55,14 @@ function readClaudeStatusStdin(): null | {
   try {
     // fd 0; CC closes stdin after writing the JSON so this returns quickly.
     raw = fs.readFileSync(0, 'utf-8');
-  } catch {
+  } catch { // stdin closed/unreadable → no input payload
     return null;
   }
   if (!raw || raw.length > 64 * 1024) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch {
+  } catch { // malformed statusline JSON → no input
     return null;
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
@@ -139,7 +139,7 @@ function renderStatusline(
   let email: string;
   try {
     email = getCurrent(identityPath);
-  } catch {
+  } catch { // no resolvable active account → '' (handled below)
     email = '';
   }
   if (!email) {

@@ -361,7 +361,7 @@ export function findActiveSessionJsonl(
   let entries: string[];
   try {
     entries = fs.readdirSync(projectDir).filter((f) => f.endsWith('.jsonl'));
-  } catch {
+  } catch { // project dir absent → no transcripts to assess
     return null;
   }
 
@@ -376,7 +376,7 @@ export function findActiveSessionJsonl(
     let mtime: number;
     try {
       mtime = fs.statSync(fullPath).mtimeMs;
-    } catch {
+    } catch { // entry vanished between list and stat → skip
       continue;
     }
     if (mtime > bestMtime) {

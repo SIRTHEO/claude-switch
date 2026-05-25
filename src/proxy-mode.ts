@@ -125,7 +125,7 @@ export function readProxyMode(accountsDirPath: string): ProxyModeMarker | null {
     if (typeof parsed.lastReason === 'string') out.lastReason = parsed.lastReason;
     if (typeof parsed.pid === 'number') out.pid = parsed.pid;
     return out;
-  } catch {
+  } catch { // missing/corrupt proxy-mode marker → no marker
     return null;
   }
 }

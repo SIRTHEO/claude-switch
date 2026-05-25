@@ -199,7 +199,7 @@ export class FileCredentialStore implements CredentialStore {
     try {
       writeJsonAtomic(file, current);
       return true;
-    } catch {
+    } catch { // vault write failed → report not stored
       return false;
     }
   }
@@ -214,7 +214,7 @@ export class FileCredentialStore implements CredentialStore {
     try {
       writeJsonAtomic(file, current);
       return true;
-    } catch {
+    } catch { // vault write failed → report not removed
       return false;
     }
   }

@@ -56,7 +56,7 @@ function reclaimIfStale(file: string): boolean {
   let stat: fs.Stats;
   try {
     stat = fs.statSync(file);
-  } catch {
+  } catch { // lock file vanished → nothing stale to reclaim
     return false;
   }
   const staleMtimeMs = stat.mtimeMs;

@@ -27,7 +27,7 @@ function readAliases(accountsDirPath: string): Record<string, string> {
       if (k && typeof v === 'string' && v) result[k] = v;
     }
     return result;
-  } catch {
+  } catch { // missing/corrupt aliases file → no aliases
     return {};
   }
 }

@@ -136,7 +136,7 @@ export function migrateApiKeysToKeychain(accountsDirPath: string): number {
   let entries: string[];
   try {
     entries = fs.readdirSync(accountsDirPath);
-  } catch {
+  } catch { // accounts dir absent → nothing to migrate
     return 0;
   }
   for (const f of entries) {

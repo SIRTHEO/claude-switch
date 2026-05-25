@@ -49,7 +49,7 @@ export function readGlobalPrefs(accountsDirPath: string): GlobalPrefs {
   try {
     const raw = JSON.parse(fs.readFileSync(globalPrefsPath(accountsDirPath), 'utf-8'));
     return { ...DEFAULT_GLOBAL_PREFS, ...(raw && typeof raw === 'object' ? raw : {}) };
-  } catch {
+  } catch { // missing/corrupt global prefs → defaults
     return { ...DEFAULT_GLOBAL_PREFS };
   }
 }
@@ -145,7 +145,7 @@ export function readStoredAccountPrefs(email: string, accountsDirPath: string): 
     const prefs = raw?._prefs;
     if (!isStoredAccountPrefs(prefs)) return {};
     return prefs;
-  } catch {
+  } catch { // missing/corrupt account file → no stored prefs
     return {};
   }
 }
@@ -197,7 +197,7 @@ export function writeStoredAccountPrefs(
     let data: Record<string, unknown>;
     try {
       data = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    } catch {
+    } catch { // no readable account file → report missing (original parse error not surfaced)
       throw new Error(`No saved account for ${email}`);
     }
     const existing: StoredAccountPrefs = isStoredAccountPrefs(data._prefs) ? data._prefs : {};

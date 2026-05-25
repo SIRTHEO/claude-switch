@@ -344,13 +344,13 @@ function readAccountOauth(
   let raw: string;
   try {
     raw = fs.readFileSync(accountFile, 'utf-8');
-  } catch {
+  } catch { // account file absent → no usage snapshot
     return null;
   }
   let parsed: AccountSnapshot;
   try {
     parsed = JSON.parse(raw) as AccountSnapshot;
-  } catch {
+  } catch { // corrupt account file → no usage
     return null;
   }
   // Tokens live in one of three places depending on platform + snapshot
@@ -414,7 +414,7 @@ function persistRefreshedOauth(
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(fs.readFileSync(accountFile, 'utf-8')) as Record<string, unknown>;
-  } catch {
+  } catch { // missing/corrupt account file → nothing to update
     return;
   }
   parsed.accessToken = oauth.accessToken;
@@ -664,7 +664,7 @@ export function triggerBackgroundUsageRefresh(deps: { process?: ProcessPort } = 
   let selfPath: string;
   try {
     selfPath = fileURLToPath(import.meta.url);
-  } catch {
+  } catch { // import.meta unavailable in some contexts → skip background refresh
     return;
   }
   // selfPath is .../dist/src/usage.js; the CLI entry sits at .../dist/bin/cli.js

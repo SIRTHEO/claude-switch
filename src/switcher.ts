@@ -225,7 +225,7 @@ export function checkPendingRestore(claudeJsonPath: string, accountsDirPath: str
       load(extracted!, claudeJsonPath, accountsDirPath);
     });
     return extracted;
-  } catch {
+  } catch { // capture+load failed → no snapshot produced
     return null;
   }
 }
