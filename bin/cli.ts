@@ -61,6 +61,7 @@ import {
 } from '../src/commands/route.js';
 import { handlePassthrough } from '../src/commands/passthrough.js';
 import { handleCacheHealth } from '../src/commands/cache-health.js';
+import { handleDoctor } from '../src/commands/doctor.js';
 import { askYN } from '../src/commands/_helpers.js';
 import type { CommandContext } from '../src/commands/context.js';
 
@@ -113,6 +114,7 @@ export type Command =
   | { action: 'route-test'; cwd: string | undefined; json: boolean }
   | { action: 'dashboard' }
   | { action: 'cache-health'; sessionPath: string | undefined; json: boolean }
+  | { action: 'doctor'; json: boolean; fix: boolean }
   | { action: 'terminals'; json: boolean }
   | { action: 'profile-launch'; name: string; terminal: string };
 
@@ -449,6 +451,8 @@ export function parseCommand(args: string[]): Command {
       const sessionPath = sessionIdx >= 0 ? rest[sessionIdx + 1] : undefined;
       return { action: 'cache-health', sessionPath, json };
     }
+    case 'doctor':
+      return { action: 'doctor', json: args.includes('--json'), fix: args.includes('--fix') };
     case 'terminals': return { action: 'terminals', json: args.includes('--json') };
     default: return { action: 'switch-to', target: sub };
   }
@@ -698,6 +702,10 @@ async function main(): Promise<void> {
 
     case 'cache-health':
       handleCacheHealth({ sessionPath: cmd.sessionPath, json: cmd.json });
+      break;
+
+    case 'doctor':
+      handleDoctor({ claudeJsonPath: cJson, accountsDirPath: aDir }, { json: cmd.json, fix: cmd.fix });
       break;
 
     case 'passthrough':

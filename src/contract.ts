@@ -194,3 +194,37 @@ export interface RouteTestResult {
     wouldSwitch: boolean;
   };
 }
+
+/** Severity of a single doctor finding. `ok` = healthy, `warn` = degraded but
+ *  usable, `error` = will break a swap or show stale data until fixed. */
+export type DoctorSeverity = 'ok' | 'warn' | 'error';
+
+/** One credential-health finding from `claude switch doctor --json`. */
+export interface DoctorFinding {
+  /** Stable machine id so the GUI can map a finding to a fix action /
+   *  localized string. e.g. 'snapshot-token-collision', 'usage-rate-limited'. */
+  code: string;
+  severity: DoctorSeverity;
+  /** Human-readable one-liner (English; the GUI may localize off `code`). */
+  message: string;
+  /** Whether `claude switch doctor --fix` can remediate this automatically. */
+  fixable: boolean;
+}
+
+/**
+ * `claude switch doctor --json` — credential-store health snapshot. Read-only;
+ * surfaces the conditions that silently break swaps or freeze the statusline
+ * (snapshot token collisions, provenance mismatches, a rate-limited usage
+ * cache, an undrained Keychain item on macOS). The GUI renders findings and
+ * offers `--fix` for the `fixable` ones.
+ */
+export interface DoctorReport {
+  /** Worst severity across all findings — drives the GUI's overall badge. */
+  status: DoctorSeverity;
+  /** Active account email per `~/.claude.json`, or null when none. */
+  activeAccount: string | null;
+  findings: DoctorFinding[];
+  /** True on macOS when a `Claude Code-credentials` Keychain item is still
+   *  present (reconcile will drain it on the next foreground command). */
+  keychainItemPresent: boolean;
+}
