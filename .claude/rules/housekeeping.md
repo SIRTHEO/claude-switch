@@ -2,31 +2,31 @@
 
 ## File size targets
 
-- **Target**: 200-400 lines per file.
-- **Soft warning**: 400-800 lines — schedule a split if the file mixes concerns.
-- **Hard limit**: 800 lines.
+- **Target**: 100–200 lines per file.
+- **Soft warning**: 200–280 — split when the file mixes concerns.
+- **Hard limit**: 280 lines.
 
-Current outliers tracked in Plans:
+**Enforced by gate, not by review.** `scripts/check-file-sizes.mjs`
+(`npm run check:file-sizes`, plus a CI step) fails any new file over 280 lines.
+Files already over it are grandfathered in `scripts/file-size-baseline.json` at
+their current count and may only **shrink** — never grow past that ceiling
+(the coverage-floor / jscpd ratchet pattern). When a grandfathered file drops to
+≤280, run `node scripts/check-file-sizes.mjs --update` to drop it from the
+baseline so it can never regrow.
 
-| File | LOC | Concerns to separate |
-|---|---|---|
-| `src/profiles.ts` | 737 | `ensureProfileForAccount` / import / create+remove lifecycle |
-| `src/usage.ts` | 683 | fetch upstream / cache I/O / statusline integration |
-| `src/api-proxy.ts` | 625 | server lifecycle / auth gate / forward / burst state |
-| `src/routing.ts` | 522 | resolver / `.claude-switch` discovery |
-| `src/commands/passthrough.ts` | 479 | sits just over; lowest priority |
-
-Splits go in their own branch, one file per branch. Don't bundle split with
-behaviour changes — code review can then verify behaviour is identical
-purely by re-reading the moved chunks.
+The current outliers and their split seams live in the baseline file and in
+Plans Phase 26.3 — not duplicated here (single source of truth). Splits go in
+their own branch, one file per branch; never bundle a split with a behaviour
+change, so review can confirm behaviour is identical by re-reading moved chunks.
 
 ## Function size
 
-- **Target**: < 50 lines.
-- **Hard limit**: 100 lines.
+- **Target**: ≤ 50 lines.
+- **Hard limit**: 80 lines.
 
-If a function crosses 50 lines, it almost certainly does several things —
-extract.
+If a function crosses 50 lines it almost certainly does several things —
+extract. Function size is review-guidance only — the ratchet gate counts file
+lines, not function lines.
 
 ## Dead-code workflow
 
