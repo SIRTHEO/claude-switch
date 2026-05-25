@@ -1,25 +1,26 @@
 // src/switcher.ts
-import readline from 'node:readline';
-import fs from 'node:fs';
-import { type ProcessPort, nodeProcessAdapter } from './process.js';
-import { getCurrent, save, load, list, syncActiveSnapshotIfStale } from './accounts.js';
-import { setAlias } from './aliases.js';
-import { buildSpawnArgs } from './proxy.js';
-import { ExitError } from './errors.js';
-import { withLock } from './lock.js';
-import { getApiKey } from './apikey.js';
-import { isFallbackEnabled, setFallbackEnabledInLock } from './fallback.js';
-import { updateState, updateStateInLock } from './state-store.js';
-import { shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh } from './usage.js';
+// Core account switching (lock-disciplined) plus the interactive switch/add
+// flows. Pending-restore markers, the temporary `--as` runner, and re-auth
+// live in sibling modules (switcher-pending / switcher-temporary /
+// switcher-reauth) and are re-exported here so importers keep using
+// `./switcher.js`.
 
-export interface SwitcherDeps {
-  process?: ProcessPort;
-  askFn?: (question: string) => Promise<string>;
-  exitFn?: (code: number) => never;
-  getTokenHealthFn?: (claudeJsonPath: string) => { status: string } | null;
-  saveFn?: (email: string, claudeJsonPath: string, accountsDirPath: string) => void;
-  loadFn?: (email: string, claudeJsonPath: string, accountsDirPath: string) => { keychainRestored: boolean };
-}
+import readline from 'node:readline';
+import { getApiKey } from './apikey.js';
+import { getCurrent, list, load, save, syncActiveSnapshotIfStale } from './accounts.js';
+import { setAlias } from './aliases.js';
+import { ExitError } from './errors.js';
+import { isFallbackEnabled, setFallbackEnabledInLock } from './fallback.js';
+import { withLock } from './lock.js';
+import { nodeProcessAdapter } from './process.js';
+import { buildSpawnArgs } from './proxy.js';
+import { shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh } from './usage.js';
+import type { SwitcherDeps } from './switcher-deps.js';
+
+export type { SwitcherDeps } from './switcher-deps.js';
+export { checkPendingRestore, clearPendingRestore, savePendingRestore } from './switcher-pending.js';
+export { reAuthOutcome, reAuthenticate } from './switcher-reauth.js';
+export { runTemporarySwitch } from './switcher-temporary.js';
 
 function defaultAsk(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -188,192 +189,6 @@ export async function switchInteractive(claudeJsonPath: string, accountsDirPath:
   }
 
   console.log(switchTo(accounts[index - 1]!, claudeJsonPath, accountsDirPath));
-}
-
-/** Save a pending-restore marker. Acquires the lock itself.
- *  Use from contexts with no surrounding `withLock`. */
-export function savePendingRestore(email: string, accountsDirPath: string): void {
-  fs.mkdirSync(accountsDirPath, { recursive: true });
-  updateState(accountsDirPath, (state) => ({ ...state, pendingRestore: email }));
-}
-
-/** Save a pending-restore marker INSIDE an existing `withLock`. */
-function savePendingRestoreInLock(email: string, accountsDirPath: string): void {
-  fs.mkdirSync(accountsDirPath, { recursive: true });
-  updateStateInLock(accountsDirPath, (state) => ({ ...state, pendingRestore: email }));
-}
-
-export function checkPendingRestore(claudeJsonPath: string, accountsDirPath: string): string | null {
-  // Atomically: read the pending email AND clear it in one locked pass.
-  // If we read first and clear later, two concurrent claude-switch
-  // processes could both consume the same restore. The lambda captures
-  // the prior value into a closure variable before returning the cleared
-  // state to the writer.
-  let extracted: string | undefined;
-  updateState(accountsDirPath, (state) => {
-    extracted = state.pendingRestore;
-    if (!extracted) return state;
-    const { pendingRestore: _drop, ...rest } = state;
-    return rest as typeof state;
-  });
-  if (!extracted) return null;
-
-  // The restore step takes its own lock — the marker has been cleared
-  // already so a failed restore won't loop on the next invocation.
-  try {
-    withLock(accountsDirPath, () => {
-      load(extracted!, claudeJsonPath, accountsDirPath);
-    });
-    return extracted;
-  } catch { // capture+load failed → no snapshot produced
-    return null;
-  }
-}
-
-export function clearPendingRestore(accountsDirPath: string): void {
-  // No-op when the state file doesn't exist yet — readState returns
-  // EMPTY_STATE, the patch removes a field that wasn't there.
-  if (!fs.existsSync(accountsDirPath)) return;
-  updateState(accountsDirPath, (state) => {
-    const { pendingRestore: _drop, ...rest } = state;
-    return rest as typeof state;
-  });
-}
-
-export async function runTemporarySwitch(
-  claudeBin: string,
-  targetEmail: string,
-  args: string[],
-  claudeJsonPath: string,
-  accountsDirPath: string,
-  extraEnv?: NodeJS.ProcessEnv | null,
-  deps?: SwitcherDeps,
-): Promise<never> {
-  const doSpawnSync = (deps?.process ?? nodeProcessAdapter).spawnSync;
-  const doExit: (code: number) => never = deps?.exitFn ?? ((code: number) => process.exit(code));
-  const doSave = deps?.saveFn ?? save;
-  const doLoad = deps?.loadFn ?? load;
-  const currentEmail = getCurrent(claudeJsonPath);
-
-  if (targetEmail === currentEmail) {
-    const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, args, process.platform, extraEnv);
-    const result = doSpawnSync(command, spawnArgs, options);
-    if (result.error) {
-      console.error(`Error: could not run claude: ${result.error.message}`);
-      doExit(1);
-    }
-    doExit(result.status ?? 1);
-  }
-
-  // Critical section: save current + load target must be atomic w.r.t. other
-  // claude-switch processes. We acquire the lock, perform the swap, and
-  // release before spawning (which can be long-running).
-  let keychainRestored = false;
-  withLock(accountsDirPath, () => {
-    if (currentEmail) {
-      savePendingRestoreInLock(currentEmail, accountsDirPath);
-      doSave(currentEmail, claudeJsonPath, accountsDirPath);
-    }
-    const result = doLoad(targetEmail, claudeJsonPath, accountsDirPath);
-    keychainRestored = result.keychainRestored;
-  });
-
-  if (!keychainRestored && process.platform === 'darwin') {
-    process.stderr.write(`Warning: no saved credentials for ${targetEmail} — API tokens may belong to a different account.\nRun: claude switch add (to re-authenticate and capture tokens)\n\n`);
-  }
-  // Banner on stderr to keep stdout clean for structured output.
-  process.stderr.write(`🔑 ${targetEmail} (temporary)\n\n`);
-
-  // Register SIGINT handler so we restore the original account even on Ctrl-C.
-  // spawnSync is a blocking call: when SIGINT arrives the OS delivers it to
-  // the whole process group (child exits first, then spawnSync returns), and
-  // Node.js then fires this handler synchronously before process.exit runs.
-  let restored = false;
-  const restoreOriginal = (): void => {
-    if (restored) return;
-    restored = true;
-    if (currentEmail) {
-      try {
-        withLock(accountsDirPath, () => {
-          doLoad(currentEmail, claudeJsonPath, accountsDirPath);
-        });
-      } catch { /* best-effort */ }
-      clearPendingRestore(accountsDirPath);
-    }
-  };
-
-  process.once('SIGINT', () => {
-    restoreOriginal();
-    doExit(130);
-  });
-
-  const { command, args: spawnArgs, options } = buildSpawnArgs(claudeBin, args, process.platform, extraEnv);
-  const result = doSpawnSync(command, spawnArgs, options);
-
-  restoreOriginal();
-
-  if (result.error) {
-    console.error(`Error: could not run claude: ${result.error.message}`);
-    doExit(1);
-  }
-  doExit(result.status ?? 1);
-}
-
-/**
- * Pure decision logic for whether a re-auth attempt actually refreshed
- * the tokens. Extracted so it can be unit-tested without spawning a
- * real `claude auth login`.
- *
- * Returns the email to save (success), or null when:
- *   - login left no active account (emailAfter empty),
- *   - login changed the active account (silent swap — don't trust),
- *   - token was broken before AND is still broken after (login cancelled).
- */
-export function reAuthOutcome(
-  emailBefore: string,
-  healthBefore: { status: string } | null | undefined,
-  emailAfter: string,
-  healthAfter: { status: string } | null | undefined,
-): string | null {
-  if (!emailAfter) return null;
-  if (emailBefore && emailAfter !== emailBefore) return null;
-  const wasBroken = !healthBefore || healthBefore.status === 'expired' || healthBefore.status === 'missing';
-  const stillBroken = !healthAfter || healthAfter.status === 'expired' || healthAfter.status === 'missing';
-  if (wasBroken && stillBroken) return null;
-  return emailAfter;
-}
-
-/**
- * Run `claude auth login` for the currently-active account to refresh its
- * Keychain tokens after expiry. Differs from addAccount in that we expect
- * the email to stay the same — we just want fresh tokens captured.
- *
- * Returns the email that's now active after the login, or null if login
- * failed entirely (no oauthAccount left in claude.json) or was cancelled.
- */
-export async function reAuthenticate(
-  claudeBin: string,
-  claudeJsonPath: string,
-  accountsDirPath: string,
-  deps?: SwitcherDeps,
-): Promise<string | null> {
-  const doSpawnSync = (deps?.process ?? nodeProcessAdapter).spawnSync;
-  const { getTokenHealth } = await import('./token.js');
-  const getHealth = deps?.getTokenHealthFn ?? getTokenHealth;
-  const emailBefore = getCurrent(claudeJsonPath);
-  const healthBefore = getHealth(claudeJsonPath);
-
-  const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform);
-  doSpawnSync(command, args, options);
-
-  const emailAfter = getCurrent(claudeJsonPath);
-  const healthAfter = getHealth(claudeJsonPath);
-
-  const outcome = reAuthOutcome(emailBefore, healthBefore, emailAfter, healthAfter);
-  if (!outcome) return null;
-
-  withLock(accountsDirPath, () => save(outcome, claudeJsonPath, accountsDirPath));
-  return outcome;
 }
 
 export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string, deps?: SwitcherDeps): Promise<void> {
