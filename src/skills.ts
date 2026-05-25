@@ -24,7 +24,7 @@ export interface SkillInfo {
 }
 
 /** Root directory under which global skill dirs live. */
-export function skillsDir(): string {
+function skillsDir(): string {
   return path.join(os.homedir(), '.claude', 'skills');
 }
 
@@ -83,14 +83,14 @@ function readDescription(skillMd: string): string | null {
 
 const SKILL_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
 
-export function isValidSkillName(name: string): boolean {
+function isValidSkillName(name: string): boolean {
   if (name === '.' || name === '..') return false;
   return SKILL_NAME_RE.test(name);
 }
 
 /** `<profile>/skills` — where a profile's linked skills live. Reuses
  *  profilePath, so it validates the profile name + refuses path traversal. */
-export function profileSkillsDir(profileName: string): string {
+function profileSkillsDir(profileName: string): string {
   return path.join(profilePath(profileName), 'skills');
 }
 
