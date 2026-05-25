@@ -318,7 +318,7 @@ describe('triggerBackgroundUsageRefresh', () => {
     });
     assert.strictEqual(captured.command, process.execPath);
     assert.deepStrictEqual(captured.args?.slice(1), ['switch', 'usage', '--refresh-only']);
-    assert.match(String(captured.args?.[0]), /bin\/cli\.js$/);
+    assert.match(String(captured.args?.[0]), /bin[\\/]cli\.js$/); // path sep differs on Windows
     assert.strictEqual((captured.options as { detached?: boolean }).detached, true);
     assert.strictEqual(unrefCalled, true);
   });
