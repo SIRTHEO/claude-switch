@@ -13,6 +13,7 @@ import { FileCredentialStore, defaultCredentialsFilePath } from '../src/credenti
 
 let tmpHome: string;
 let originalHome: string | undefined;
+let originalUserProfile: string | undefined;
 let savedEnv: Record<string, string | undefined>;
 let savedPlatform: PropertyDescriptor | undefined;
 
@@ -41,7 +42,11 @@ describe('reconcileClaudeCodeKeychain', () => {
   beforeEach(() => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-recon-'));
     originalHome = process.env.HOME;
+    originalUserProfile = process.env.USERPROFILE;
     process.env.HOME = tmpHome;
+    // os.homedir() reads USERPROFILE on Windows regardless of the faked
+    // process.platform below, so redirect both to keep the temp home isolated.
+    process.env.USERPROFILE = tmpHome;
     savedEnv = {
       disable: process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN,
       noPrompt: process.env.CLAUDE_SWITCH_NO_KEYCHAIN_PROMPT,
@@ -56,6 +61,8 @@ describe('reconcileClaudeCodeKeychain', () => {
     if (savedPlatform) Object.defineProperty(process, 'platform', savedPlatform);
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
+    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserProfile;
     for (const [k, key] of [['disable', 'CLAUDE_SWITCH_DISABLE_KEYCHAIN'], ['noPrompt', 'CLAUDE_SWITCH_NO_KEYCHAIN_PROMPT'], ['useKc', 'CLAUDE_SWITCH_USE_KEYCHAIN']] as const) {
       const v = savedEnv[k];
       if (v === undefined) delete process.env[key];

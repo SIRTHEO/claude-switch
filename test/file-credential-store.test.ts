@@ -11,17 +11,24 @@ import { FileCredentialStore, defaultCredentialsFilePath, credentialsFileForConf
 // test we restore HOME and clean up the temp dir.
 
 let originalHome: string | undefined;
+let originalUserProfile: string | undefined;
 let tmpHome: string;
 let savedDisableKeychain: string | undefined;
 
 function setHomeTo(p: string): void {
   originalHome = process.env.HOME;
+  originalUserProfile = process.env.USERPROFILE;
   process.env.HOME = p;
+  // os.homedir() reads USERPROFILE on Windows (HOME is ignored there), so the
+  // redirect must set both or tests leak into the real home dir on Windows.
+  process.env.USERPROFILE = p;
 }
 
 function restoreHome(): void {
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
+  if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = originalUserProfile;
 }
 
 describe('FileCredentialStore — OAuth read/write', () => {
