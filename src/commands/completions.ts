@@ -1,8 +1,8 @@
 // src/commands/completions.ts
 // `claude switch --completions <shell>` — emits shell-tab-completion script.
 
-import { ExitError } from '../errors.js';
-import { generateBash, generateZsh, generateFish, generatePowerShell } from '../completions.js';
+import { ExitError } from '../platform/errors.js';
+import { generateBash, generateZsh, generateFish, generatePowerShell } from '../setup/completions.js';
 
 export function handleCompletions(shell: string | undefined): void {
   if (shell === 'bash') {

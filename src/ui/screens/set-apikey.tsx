@@ -8,8 +8,8 @@ import { useState } from 'react';
 import { Box, Text, render, useApp } from 'ink';
 import { clearScreen } from '../screen-buffer.js';import { Badge, ConfirmInput, PasswordInput, StatusMessage } from '@inkjs/ui';
 
-import { getApiKey, maskApiKey } from '../../apikey.js';
-import { saveApiKeyAndMaybeInit } from '../../auto-fallback.js';
+import { getApiKey, maskApiKey } from '../../credentials/apikey.js';
+import { saveApiKeyAndMaybeInit } from '../../fallback/auto-fallback.js';
 import { ORANGE } from '../theme.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 

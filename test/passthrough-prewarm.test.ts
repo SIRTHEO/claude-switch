@@ -22,7 +22,7 @@ import {
   isUsageCacheStale,
   readUsageCache,
   type UsageCache,
-} from '../src/usage.js';
+} from '../src/usage/usage.js';
 
 let tmpDir: string;
 let accDir: string;

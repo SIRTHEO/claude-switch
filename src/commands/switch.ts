@@ -5,11 +5,11 @@
 // goes through the Ink dashboard; switch-to short-circuits straight to
 // the picked account.
 
-import { resolveAlias } from '../aliases.js';
-import { list as listAccounts } from '../accounts.js';
-import { fuzzyMatch, switchInteractive, switchToAndSyncFallback } from '../switcher.js';
-import { getSavedClaudeBin } from '../setup.js';
-import { readGlobalPrefs } from '../preferences.js';
+import { resolveAlias } from '../switching/aliases.js';
+import { list as listAccounts } from '../accounts/accounts.js';
+import { fuzzyMatch, switchInteractive, switchToAndSyncFallback } from '../switching/switcher.js';
+import { getSavedClaudeBin } from '../setup/setup.js';
+import { readGlobalPrefs } from '../switching/preferences.js';
 import { runApp } from '../ui/run-app.js';
 import type { CommandContext } from './context.js';
 
@@ -33,7 +33,7 @@ export async function handleSwitchTo(ctx: CommandContext, target: string): Promi
   if (matches.length === 1) {
     // Warn (don't block) if other claude sessions are running — they
     // won't see the switch until restarted. See FAQ in README.
-    const { countActiveClaudeSessions, buildActiveSessionsWarning } = await import('../active-sessions.js');
+    const { countActiveClaudeSessions, buildActiveSessionsWarning } = await import('../sessions/active-sessions.js');
     const sessions = countActiveClaudeSessions(getSavedClaudeBin());
     const warning = buildActiveSessionsWarning(sessions.count);
     if (warning) process.stderr.write(`${warning}\n\n`);

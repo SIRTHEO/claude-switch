@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getAlias, setAlias, listAliases, removeAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
+import { getAlias, setAlias, listAliases, removeAlias, resolveAlias, getAliasesForEmail } from '../src/switching/aliases.js';
 
 describe('aliases', () => {
   let tmpDir: string;

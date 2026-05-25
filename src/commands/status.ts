@@ -8,12 +8,12 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { getCurrent, save, list as listAccounts } from '../accounts.js';
-import { getAliasesForEmail } from '../aliases.js';
-import { withLock } from '../lock.js';
-import { getApiKey, maskApiKey } from '../apikey.js';
-import { isFallbackEnabled } from '../fallback.js';
-import { getTokenHealth } from '../token.js';
+import { getCurrent, save, list as listAccounts } from '../accounts/accounts.js';
+import { getAliasesForEmail } from '../switching/aliases.js';
+import { withLock } from '../platform/lock.js';
+import { getApiKey, maskApiKey } from '../credentials/apikey.js';
+import { isFallbackEnabled } from '../fallback/fallback.js';
+import { getTokenHealth } from '../credentials/token.js';
 import type { CommandContext } from './context.js';
 
 export function handleStatus(ctx: CommandContext): void {
@@ -109,7 +109,7 @@ function renderProxyStats(accountsDirPath: string): void {
   let stats: ProxyStatsFile;
   try {
     stats = JSON.parse(raw) as ProxyStatsFile;
-  } catch {
+  } catch { // corrupt proxy-stats file → show nothing
     return;
   }
   const c = stats.counters ?? {};

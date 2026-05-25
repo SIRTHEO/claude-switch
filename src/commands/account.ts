@@ -3,9 +3,9 @@
 // management. The interactive Ink screens own the TTY path; non-TTY pipes
 // (CI, scripts) fall through to the legacy CLI flows.
 
-import { ExitError, errMessage } from '../errors.js';
-import { getCurrent, remove as removeAccount } from '../accounts.js';
-import { addAccount } from '../switcher.js';
+import { ExitError, errMessage } from '../platform/errors.js';
+import { getCurrent, remove as removeAccount } from '../accounts/accounts.js';
+import { addAccount } from '../switching/switcher.js';
 import { runAddAccountScreen } from '../ui/screens/add-account.js';
 import { runRemoveAccountScreen } from '../ui/screens/remove-account.js';
 import { findClaude } from './_helpers.js';

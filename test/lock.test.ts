@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { acquireLock, withLock } from '../src/lock.js';
+import { acquireLock, withLock } from '../src/platform/lock.js';
 
 let dir: string;
 

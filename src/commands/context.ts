@@ -3,7 +3,7 @@
 // dispatcher thin: parse → look up handler → `handle(cmd, ctx)`. Handlers
 // own their own multi-step business logic (no more 1400-line god switch).
 
-import type { UpdateInfo } from '../update-check.js';
+import type { UpdateInfo } from '../setup/update-check.js';
 
 export interface CommandContext {
   /** Resolved path to `~/.claude.json` (Claude Code's per-user config). */

@@ -23,8 +23,8 @@ import {
   handleProfileStatus,
   handleProfileRemove,
 } from '../src/commands/profile.js';
-import { save as saveAccount } from '../src/accounts.js';
-import { ExitError } from '../src/errors.js';
+import { save as saveAccount } from '../src/accounts/accounts.js';
+import { ExitError } from '../src/platform/errors.js';
 import type { CommandContext } from '../src/commands/context.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
@@ -134,11 +134,13 @@ describe('handleProfileList', () => {
       name: string;
       account: string | null;
       hasLogin: boolean;
+      path: string;
     }>;
     assert.equal(parsed.length, 1);
     assert.equal(parsed[0]?.name, 'work');
     assert.equal(parsed[0]?.hasLogin, false);
     assert.equal(parsed[0]?.account, null);
+    assert.equal(parsed[0]?.path, profileDir);
   });
 
   it('emits "[]" on --json when no profiles exist', async () => {

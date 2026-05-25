@@ -24,7 +24,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { looksLikeErrorBody } from '../src/api-proxy.js';
+import { looksLikeErrorBody } from '../src/proxy/api-proxy.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.resolve(__dirname, '..', '..', 'test', 'fixtures', 'anthropic-errors');

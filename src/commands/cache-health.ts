@@ -13,17 +13,18 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ExitError } from '../errors.js';
+import { ExitError } from '../platform/errors.js';
 import {
   loadActiveSessionHealth,
   readSessionJsonl,
   summariseCacheHealth,
   extractFlushTurns,
   findActiveSessionJsonl,
-} from '../cache-health.js';
-import type { CacheHealthSummary, FlushEvent } from '../cache-health.js';
+} from '../sessions/cache-health.js';
+import type { CacheHealthSummary, FlushEvent } from '../sessions/cache-health.js';
+import type { CacheHealthReport } from '../contract.js';
 
-export interface CacheHealthOptions {
+interface CacheHealthOptions {
   /** Absolute path to a specific JSONL file to parse (bypasses active-session lookup). */
   sessionPath?: string;
   /** When true, output JSON instead of human-readable text. */
@@ -117,7 +118,7 @@ function outputJson(
   sessionPath: string,
   flushes: FlushEvent[],
 ): void {
-  const out = {
+  const out: CacheHealthReport = {
     summary,
     sessionPath,
     flushes,

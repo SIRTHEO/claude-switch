@@ -11,7 +11,7 @@ import {
   patchShellConfig,
   findRealClaude,
   runSetup,
-} from '../src/setup.js';
+} from '../src/setup/setup.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 describe('getSavedClaudeBin', () => {

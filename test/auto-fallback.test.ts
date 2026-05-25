@@ -10,10 +10,10 @@ import {
   maybeAutoEngageFallback,
   maybeInitSmartFallback,
   saveApiKeyAndMaybeInit,
-} from '../src/auto-fallback.js';
-import { setFallbackEnabled, isFallbackEnabled } from '../src/fallback.js';
-import { save as saveAccount } from '../src/accounts.js';
-import { getApiKey } from '../src/apikey.js';
+} from '../src/fallback/auto-fallback.js';
+import { setFallbackEnabled, isFallbackEnabled } from '../src/fallback/fallback.js';
+import { save as saveAccount } from '../src/accounts/accounts.js';
+import { getApiKey } from '../src/credentials/apikey.js';
 
 describe('auto-fallback config', () => {
   let dir: string;

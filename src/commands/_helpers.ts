@@ -3,11 +3,11 @@
 // part of any public API surface.
 
 import { fileURLToPath } from 'node:url';
-import { resolve } from '../resolver.js';
-import { getSavedClaudeBin } from '../setup.js';
-import { resolveAlias } from '../aliases.js';
-import { list as listAccounts } from '../accounts.js';
-import { ExitError } from '../errors.js';
+import { resolve } from '../routing/resolver.js';
+import { getSavedClaudeBin } from '../setup/setup.js';
+import { resolveAlias } from '../switching/aliases.js';
+import { list as listAccounts } from '../accounts/accounts.js';
+import { ExitError } from '../platform/errors.js';
 
 /** Locate the real `claude` binary path (not our wrapper). */
 export function findClaude(selfUrl: string): string {
@@ -34,10 +34,17 @@ export async function promptSecret(question: string): Promise<string> {
     // Non-interactive: read first line from pipe.
     const rl = readline.createInterface({ input: process.stdin });
     return new Promise((resolveFn) => {
-      rl.once('line', (line) => {
+      let resolved = false;
+      const done = (value: string): void => {
+        if (resolved) return;
+        resolved = true;
         rl.close();
-        resolveFn(line.trim());
-      });
+        resolveFn(value);
+      };
+      rl.once('line', (line) => done(line.trim()));
+      // EOF with no line (empty/closed stdin) must not hang the process —
+      // resolve empty so the caller hits its "no key on stdin" guard.
+      rl.once('close', () => done(''));
     });
   }
 

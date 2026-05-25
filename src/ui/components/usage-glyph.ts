@@ -5,7 +5,7 @@
 
 import { ORANGE } from '../theme.js';
 
-export interface UsageGlyph {
+interface UsageGlyph {
   glyph: string;
   color: string;
 }

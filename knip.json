@@ -8,5 +8,8 @@
     "src/**/*.{ts,tsx}",
     "bin/**/*.ts",
     "test/**/*.{ts,tsx}"
+  ],
+  "ignoreDependencies": [
+    "@stryker-mutator/command-runner"
   ]
 }

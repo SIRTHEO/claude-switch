@@ -15,9 +15,9 @@ import {
   handleRouteRemove,
   handleRouteTest,
 } from '../src/commands/route.js';
-import { save as saveAccount } from '../src/accounts.js';
-import { setAlias } from '../src/aliases.js';
-import { ExitError } from '../src/errors.js';
+import { save as saveAccount } from '../src/accounts/accounts.js';
+import { setAlias } from '../src/switching/aliases.js';
+import { ExitError } from '../src/platform/errors.js';
 import type { CommandContext } from '../src/commands/context.js';
 
 // ---------------------------------------------------------------------------

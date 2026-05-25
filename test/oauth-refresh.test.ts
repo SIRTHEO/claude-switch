@@ -10,7 +10,7 @@ import {
   isAccessTokenStale,
   refreshAccessToken,
   refreshIfStale,
-} from '../src/oauth-refresh.js';
+} from '../src/credentials/oauth-refresh.js';
 
 describe('isAccessTokenStale', () => {
   it('returns true when oauth is undefined', () => {
@@ -74,7 +74,7 @@ describe('refreshAccessToken', () => {
       );
     });
 
-    const result = await refreshAccessToken('rt-1', { fetch });
+    const result = await refreshAccessToken('rt-1', { http: fetch });
     assert.ok(result, 'expected a refreshed oauth block');
     assert.equal(captured.url, 'https://platform.claude.com/v1/oauth/token');
     assert.equal((captured.init as RequestInit).method, 'POST');
@@ -95,7 +95,7 @@ describe('refreshAccessToken', () => {
       JSON.stringify({ access_token: 'new-at', refresh_token: 'new-rt', expires_in: 7200 }),
       { status: 200 },
     ));
-    const result = await refreshAccessToken('rt', { fetch });
+    const result = await refreshAccessToken('rt', { http: fetch });
     const after = Date.now();
     assert.ok(result);
     assert.equal(result?.accessToken, 'new-at');
@@ -111,31 +111,31 @@ describe('refreshAccessToken', () => {
       JSON.stringify({ access_token: 'new-at', expires_in: 100 }),
       { status: 200 },
     ));
-    const result = await refreshAccessToken('original-rt', { fetch });
+    const result = await refreshAccessToken('original-rt', { http: fetch });
     assert.equal(result?.refreshToken, 'original-rt');
   });
 
   it('returns null on non-2xx response', async () => {
     const fetch = fakeFetch(() => new Response('{"error":"invalid_grant"}', { status: 400 }));
-    const result = await refreshAccessToken('rt', { fetch });
+    const result = await refreshAccessToken('rt', { http: fetch });
     assert.equal(result, null);
   });
 
   it('returns null when fetch itself throws (network down, DNS failure, etc.)', async () => {
     const fetch = (() => Promise.reject(new Error('network down'))) as typeof globalThis.fetch;
-    const result = await refreshAccessToken('rt', { fetch });
+    const result = await refreshAccessToken('rt', { http: fetch });
     assert.equal(result, null);
   });
 
   it('returns null when the body is missing access_token', async () => {
     const fetch = fakeFetch(() => new Response(JSON.stringify({ expires_in: 100 }), { status: 200 }));
-    const result = await refreshAccessToken('rt', { fetch });
+    const result = await refreshAccessToken('rt', { http: fetch });
     assert.equal(result, null);
   });
 
   it('returns null when the body is malformed JSON', async () => {
     const fetch = fakeFetch(() => new Response('not-json', { status: 200 }));
-    const result = await refreshAccessToken('rt', { fetch });
+    const result = await refreshAccessToken('rt', { http: fetch });
     assert.equal(result, null);
   });
 
@@ -144,8 +144,21 @@ describe('refreshAccessToken', () => {
       JSON.stringify({ access_token: 'a', expires_in: 100, scope: 'user:inference user:profile' }),
       { status: 200 },
     ));
-    const result = await refreshAccessToken('rt', { fetch });
+    const result = await refreshAccessToken('rt', { http: fetch });
     assert.deepEqual(result?.scopes, ['user:inference', 'user:profile']);
+  });
+
+  it('rejects a response body that exceeds the 1MB DoS cap', async () => {
+    // Pad valid JSON with whitespace inside a string field so the wire
+    // bytes blow past 1 MB while staying syntactically valid — the cap
+    // must catch this before parsing.
+    const padding = 'x'.repeat(2 * 1024 * 1024); // 2 MB
+    const fetch = fakeFetch(() => new Response(
+      JSON.stringify({ access_token: 'a', expires_in: 100, _pad: padding }),
+      { status: 200 },
+    ));
+    const result = await refreshAccessToken('rt', { http: fetch });
+    assert.equal(result, null, 'oversize body must fall through to needsLogin');
   });
 });
 

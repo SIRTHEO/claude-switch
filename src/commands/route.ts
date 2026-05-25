@@ -17,19 +17,20 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { ExitError, errnoCode } from '../errors.js';
-import { writeJsonAtomic } from '../atomic-write.js';
-import { withLock } from '../lock.js';
-import { list as listAccounts, isSafeEmail } from '../accounts.js';
-import { getAlias } from '../aliases.js';
-import { readState } from '../state-store.js';
+import { ExitError, errnoCode } from '../platform/errors.js';
+import { writeJsonAtomic } from '../platform/atomic-write.js';
+import { withLock } from '../platform/lock.js';
+import { list as listAccounts, isSafeEmail } from '../accounts/accounts.js';
+import { getAlias } from '../switching/aliases.js';
+import { readState } from '../switching/state-store.js';
 import {
   parseRoutingFile,
   resolveRouting,
   type RoutingFile,
   type RoutingRule,
-} from '../routing.js';
+} from '../routing/routing.js';
 import type { CommandContext } from './context.js';
+import type { RouteRule, RouteTestResult } from '../contract.js';
 
 const ROUTING_FILE = '.routing.json';
 
@@ -138,7 +139,7 @@ export function handleRouteAdd(
 // route list
 // ---------------------------------------------------------------------------
 
-export interface RouteListOptions {
+interface RouteListOptions {
   json: boolean;
 }
 
@@ -149,10 +150,10 @@ export function handleRouteList(
   const file = readRoutingFileStrict(ctx.accountsDirPath);
 
   if (opts.json) {
-    const payload = file.rules.map((r) => ({
+    const payload: RouteRule[] = file.rules.map((r) => ({
       pattern: r.match,
       target: r.account ?? r.alias ?? '',
-      kind: r.account ? ('email' as const) : ('alias' as const),
+      kind: r.account ? 'email' : 'alias',
     }));
     process.stdout.write(`${JSON.stringify(payload)}\n`);
     return;
@@ -198,7 +199,7 @@ export function handleRouteRemove(ctx: CommandContext, pattern: string | undefin
 // route test
 // ---------------------------------------------------------------------------
 
-export interface RouteTestOptions {
+interface RouteTestOptions {
   json: boolean;
 }
 
@@ -228,22 +229,21 @@ export function handleRouteTest(
   });
 
   if (opts.json) {
-    process.stdout.write(
-      `${JSON.stringify({
-        cwd,
-        activeAccount: activeEmail,
-        savedAccounts: accounts,
-        decision: decision
-          ? {
-              email: decision.email,
-              source: decision.source,
-              banner: decision.banner ?? null,
-              warning: decision.warning ?? null,
-              wouldSwitch: decision.email !== activeEmail && accounts.includes(decision.email),
-            }
-          : null,
-      })}\n`,
-    );
+    const result: RouteTestResult = {
+      cwd,
+      activeAccount: activeEmail,
+      savedAccounts: accounts,
+      decision: decision
+        ? {
+            email: decision.email,
+            source: decision.source,
+            banner: decision.banner ?? null,
+            warning: decision.warning ?? null,
+            wouldSwitch: decision.email !== activeEmail && accounts.includes(decision.email),
+          }
+        : null,
+    };
+    process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
   }
 

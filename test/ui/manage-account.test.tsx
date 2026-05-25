@@ -35,9 +35,9 @@ import path from 'node:path';
 import { render } from 'ink-testing-library';
 
 import { ManageScreen, type ScreenExit } from '../../src/ui/screens/manage-account.js';
-import { save as saveAccount } from '../../src/accounts.js';
-import { setAlias } from '../../src/aliases.js';
-import { makeKeystrokeHelper } from '../ui/ink-keystroke-helper.js';
+import { save as saveAccount } from '../../src/accounts/accounts.js';
+import { setAlias } from '../../src/switching/aliases.js';
+import { makeKeystrokeHelper } from './ink-keystroke-helper.js';
 
 // ---------------------------------------------------------------------------
 // Disable real Keychain for all tests in this file

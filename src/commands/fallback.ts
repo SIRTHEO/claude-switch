@@ -2,14 +2,15 @@
 // `claude switch fallback …` and `… auto-revert / auto-engage` — manage
 // the global fallback flag + the auto-fallback config.
 
-import { ExitError, errMessage } from '../errors.js';
-import { getCurrent } from '../accounts.js';
-import { getApiKey } from '../apikey.js';
-import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
-import { getAutoFallbackConfig, setAutoFallbackConfig } from '../auto-fallback.js';
+import { ExitError, errMessage } from '../platform/errors.js';
+import { getCurrent } from '../accounts/accounts.js';
+import { getApiKey } from '../credentials/apikey.js';
+import { isFallbackEnabled, setFallbackEnabled } from '../fallback/fallback.js';
+import { getAutoFallbackConfig, setAutoFallbackConfig } from '../fallback/auto-fallback.js';
 import type { CommandContext } from './context.js';
+import type { FallbackStatus } from '../contract.js';
 
-export interface FallbackOptions {
+interface FallbackOptions {
   json: boolean;
 }
 
@@ -28,21 +29,20 @@ export function handleFallback(
     if (opts.json) {
       // Atomic snapshot — the GUI reads fallback + auto-revert + auto-engage
       // off a single command instead of stitching three text outputs.
-      process.stdout.write(
-        `${JSON.stringify({
-          enabled: on,
-          autoRevert: {
-            enabled: auto.enabled,
-            threshold: auto.threshold,
-          },
-          autoEngage: {
-            enabled: auto.engageEnabled,
-            threshold: auto.engageThreshold,
-          },
-          activeAccount: current || null,
-          hasApiKey: hasKey,
-        })}\n`,
-      );
+      const status: FallbackStatus = {
+        enabled: on,
+        autoRevert: {
+          enabled: auto.enabled,
+          threshold: auto.threshold,
+        },
+        autoEngage: {
+          enabled: auto.engageEnabled,
+          threshold: auto.engageThreshold,
+        },
+        activeAccount: current || null,
+        hasApiKey: hasKey,
+      };
+      process.stdout.write(`${JSON.stringify(status)}\n`);
       return;
     }
 

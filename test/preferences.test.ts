@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { save } from '../src/accounts.js';
+import { save } from '../src/accounts/accounts.js';
 import {
   DEFAULT_GLOBAL_PREFS,
   readGlobalPrefs,
@@ -20,7 +20,7 @@ import {
   writeStoredAccountPrefs,
   resolveAccountPrefs,
   resolveEffectiveAuthMode,
-} from '../src/preferences.js';
+} from '../src/switching/preferences.js';
 
 describe('global preferences', () => {
   let tmpDir: string;

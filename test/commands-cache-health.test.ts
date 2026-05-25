@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { handleCacheHealth } from '../src/commands/cache-health.js';
-import { ExitError } from '../src/errors.js';
+import { ExitError } from '../src/platform/errors.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

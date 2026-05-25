@@ -3,9 +3,9 @@
 // label helper. Pulled out of `profiles.tsx` so the orchestrator file
 // can stay focused on the state machine + spawn lifecycle.
 
-import { listProfiles, readProfile } from '../../../profiles.js';
-import { list as listAccounts } from '../../../accounts.js';
-import { readGlobalPrefs } from '../../../preferences.js';
+import { listProfiles, readProfile } from '../../../profiles/profiles.js';
+import { list as listAccounts } from '../../../accounts/accounts.js';
+import { readGlobalPrefs } from '../../../switching/preferences.js';
 
 export type Action =
   | 'isolated' | 'list' | 'use' | 'login' | 'create' | 'import' | 'remove' | 'back';
@@ -59,7 +59,7 @@ export function profileLabel(name: string): { label: string; hint: string } {
   try {
     const info = readProfile(name);
     return { label: name, hint: info.emailAddress ?? '(not logged in)' };
-  } catch {
+  } catch { // profile unreadable → show error hint
     return { label: name, hint: '(error reading)' };
   }
 }

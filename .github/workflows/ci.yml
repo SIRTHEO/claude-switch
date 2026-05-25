@@ -52,6 +52,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: File-size ratchet
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
+        run: npm run check:file-sizes
+
       - name: Build
         run: npm run build
 
@@ -92,10 +96,10 @@ jobs:
         env:
           CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1'
           CLAUDE_SWITCH_TESTING: '1'
-          # Temporarily 77 (was 78) after cherry-pick of src/terminals.ts +
-          # src/commands/terminals.ts + src/commands/usage-snapshot.ts.
-          # TODO: add tests for these modules, then ratchet back to 78.
-          COVERAGE_FLOOR: '77'
+          # Ratcheted 77 → 80 in v4.0.0: the Phase 24 file-vault + doctor work
+          # added tests (file-credential-store, keychain-reconcile, doctor,
+          # commands-doctor) that lifted measured line coverage to ~81%.
+          COVERAGE_FLOOR: '80'
         run: |
           set -o pipefail
           REPORT=$(node --test \

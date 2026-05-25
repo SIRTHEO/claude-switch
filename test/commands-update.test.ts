@@ -21,9 +21,9 @@ import {
   detectInstallCommand,
   writeUpdateCache,
   checkForUpdate,
-} from '../src/update-check.js';
+} from '../src/setup/update-check.js';
 import { handleUpdate } from '../src/commands/update.js';
-import { VERSION } from '../src/version.js';
+import { VERSION } from '../src/setup/version.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 // ---------------------------------------------------------------------------

@@ -12,26 +12,27 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getCurrent } from '../accounts.js';
-import { isFallbackEnabled, isFallbackAutoEngaged } from '../fallback.js';
-import { getApiKey } from '../apikey.js';
-import { getAliasesForEmail } from '../aliases.js';
+import { getCurrent } from '../accounts/accounts.js';
+import { isFallbackEnabled, isFallbackAutoEngaged } from '../fallback/fallback.js';
+import { getApiKey } from '../credentials/apikey.js';
+import { getAliasesForEmail } from '../switching/aliases.js';
 import {
   readUsageCacheForAccount,
   readUsageCacheFor,
   isUsageCacheStale,
   triggerBackgroundUsageRefresh,
-} from '../usage.js';
-import { profilesDir } from '../profiles.js';
-import { readProxyMode } from '../proxy-mode.js';
-import { loadActiveSessionHealth } from '../cache-health.js';
+} from '../usage/usage.js';
+import { profilesDir } from '../profiles/profiles.js';
+import { readProxyMode } from '../proxy/proxy-mode.js';
+import { loadActiveSessionHealth } from '../sessions/cache-health.js';
 import type { CommandContext } from './context.js';
+import type { StatuslineSnapshot } from '../contract.js';
 
 // --------------------------------------------------------------------------
 // Render — read-only, hot-path
 // --------------------------------------------------------------------------
 
-export interface StatuslineOptions {
+interface StatuslineOptions {
   format: 'compact' | 'full' | 'json' | 'embedded';
   color: boolean;
   noCacheHealth?: boolean;
@@ -54,14 +55,14 @@ function readClaudeStatusStdin(): null | {
   try {
     // fd 0; CC closes stdin after writing the JSON so this returns quickly.
     raw = fs.readFileSync(0, 'utf-8');
-  } catch {
+  } catch { // stdin closed/unreadable → no input payload
     return null;
   }
   if (!raw || raw.length > 64 * 1024) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch {
+  } catch { // malformed statusline JSON → no input
     return null;
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
@@ -138,7 +139,7 @@ function renderStatusline(
   let email: string;
   try {
     email = getCurrent(identityPath);
-  } catch {
+  } catch { // no resolvable active account → '' (handled below)
     email = '';
   }
   if (!email) {
@@ -250,7 +251,7 @@ function renderStatusline(
           },
         }
       : {};
-    const json = {
+    const json: StatuslineSnapshot = {
       email,
       shortName,
       // `mode` stays binary for back-compat with any consumer that
@@ -309,7 +310,7 @@ export async function handleStatuslineInstall(
     EMBEDDED_COMMAND,
     CCSTATUSLINE_COMMAND,
     claudeSettingsPath,
-  } = await import('../statusline-install.js');
+  } = await import('../statusline/statusline-install.js');
   const command =
     variant === 'ccstatusline'
       ? CCSTATUSLINE_COMMAND
@@ -323,7 +324,7 @@ export async function handleStatuslineInstall(
 }
 
 export async function handleStatuslineUninstall(): Promise<void> {
-  const { uninstallStatusLine, claudeSettingsPath } = await import('../statusline-install.js');
+  const { uninstallStatusLine, claudeSettingsPath } = await import('../statusline/statusline-install.js');
   const removed = uninstallStatusLine();
   console.log(removed
     ? `Removed claude-switch status line from ${claudeSettingsPath()}`
@@ -331,7 +332,7 @@ export async function handleStatuslineUninstall(): Promise<void> {
 }
 
 export async function handleStatuslineStatus(): Promise<void> {
-  const { detectExistingStatusLine, claudeSettingsPath } = await import('../statusline-install.js');
+  const { detectExistingStatusLine, claudeSettingsPath } = await import('../statusline/statusline-install.js');
   const status = detectExistingStatusLine();
   console.log(`Settings file: ${claudeSettingsPath()}`);
   switch (status.kind) {

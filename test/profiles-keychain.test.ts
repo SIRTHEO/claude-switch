@@ -33,7 +33,7 @@ import {
   ensureProfileForAccount,
   removeProfile,
   type ProfileInfo,
-} from '../src/profiles.js';
+} from '../src/profiles/profiles.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 const macAndEnabled =

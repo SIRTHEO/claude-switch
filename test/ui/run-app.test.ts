@@ -17,12 +17,12 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { _internal, _runDispatchLoop } from '../../src/ui/run-app.js';
-import { ExitError } from '../../src/errors.js';
+import { ExitError } from '../../src/platform/errors.js';
 import type { HomeExit } from '../../src/ui/screens/home.js';
-import { save as saveAccount } from '../../src/accounts.js';
-import { setFallbackEnabled } from '../../src/fallback.js';
-import { setApiKey } from '../../src/apikey.js';
-import { writeGlobalPrefs } from '../../src/preferences.js';
+import { save as saveAccount } from '../../src/accounts/accounts.js';
+import { setFallbackEnabled } from '../../src/fallback/fallback.js';
+import { setApiKey } from '../../src/credentials/apikey.js';
+import { writeGlobalPrefs } from '../../src/switching/preferences.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from '../_helpers/fake-home.js';
 
 interface Harness {

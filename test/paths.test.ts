@@ -1,7 +1,7 @@
 // test/paths.test.ts
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { claudeJsonPath, accountsDir, claudeBinFile } from '../src/paths.js';
+import { claudeJsonPath, accountsDir, claudeBinFile } from '../src/platform/paths.js';
 import os from 'node:os';
 import path from 'node:path';
 

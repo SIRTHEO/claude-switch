@@ -24,8 +24,8 @@ import {
   buildPreview,
   type RemoveAccountResult,
 } from '../../src/ui/screens/remove-account.js';
-import { save as saveAccount } from '../../src/accounts.js';
-import { makeKeystrokeHelper } from '../ui/ink-keystroke-helper.js';
+import { save as saveAccount } from '../../src/accounts/accounts.js';
+import { makeKeystrokeHelper } from './ink-keystroke-helper.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

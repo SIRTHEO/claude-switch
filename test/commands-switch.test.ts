@@ -13,8 +13,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { handleSwitchTo } from '../src/commands/switch.js';
-import { save as saveAccount } from '../src/accounts.js';
-import { setAlias } from '../src/aliases.js';
+import { save as saveAccount } from '../src/accounts/accounts.js';
+import { setAlias } from '../src/switching/aliases.js';
 import type { CommandContext } from '../src/commands/context.js';
 
 // ---------------------------------------------------------------------------

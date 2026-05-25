@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { writeProxyMode, readProxyMode, clearProxyMode, PROXY_MODE_STALE_MS } from '../src/proxy-mode.js';
+import { writeProxyMode, readProxyMode, clearProxyMode, PROXY_MODE_STALE_MS } from '../src/proxy/proxy-mode.js';
 
 describe('proxy-mode marker (Phase 13.6)', () => {
   let dir: string;

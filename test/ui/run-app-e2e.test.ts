@@ -23,8 +23,8 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { _runDispatchLoop, _internal } from '../../src/ui/run-app.js';
-import { setApiKey } from '../../src/apikey.js';
-import { save as saveAccount } from '../../src/accounts.js';
+import { setApiKey } from '../../src/credentials/apikey.js';
+import { save as saveAccount } from '../../src/accounts/accounts.js';
 import type { HomeExit } from '../../src/ui/screens/home.js';
 
 // ---------------------------------------------------------------------------

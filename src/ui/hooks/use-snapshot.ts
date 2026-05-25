@@ -4,13 +4,13 @@
 
 import { useCallback, useState } from 'react';
 
-import { getCurrent, list as listAccounts } from '../../accounts.js';
-import { isFallbackEnabled } from '../../fallback.js';
-import { getApiKey, maskApiKey } from '../../apikey.js';
-import { getAliasesForEmail } from '../../aliases.js';
-import { getTokenHealth } from '../../token.js';
-import { readUsageCacheFor } from '../../usage.js';
-import { resolveAccountPrefs } from '../../preferences.js';
+import { getCurrent, list as listAccounts } from '../../accounts/accounts.js';
+import { isFallbackEnabled } from '../../fallback/fallback.js';
+import { getApiKey, maskApiKey } from '../../credentials/apikey.js';
+import { getAliasesForEmail } from '../../switching/aliases.js';
+import { getTokenHealth } from '../../credentials/token.js';
+import { readUsageCacheFor } from '../../usage/usage.js';
+import { resolveAccountPrefs } from '../../switching/preferences.js';
 
 export interface AccountRow {
   email: string;

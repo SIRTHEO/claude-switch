@@ -28,6 +28,9 @@ Usage:
     [--session <path>] [--json]          effective token cost for active session
                                          opts: --session <path> (specific JSONL)
                                                --json (machine-readable output)
+  claude switch doctor [--json] [--fix]  Check credential-store health (token
+                                         collisions, stale usage cache); --fix
+                                         clears poisoned tokens so re-login is clean
   claude switch statusline [opts]        One-line account/mode for shell prompt
                                          opts: --full | --json | --no-color
   claude switch statusline install       Add badge to Claude Code status bar

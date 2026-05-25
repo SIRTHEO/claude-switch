@@ -1,7 +1,7 @@
 // test/completions.test.ts
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateBash, generateZsh, generateFish, generatePowerShell } from '../src/completions.js';
+import { generateBash, generateZsh, generateFish, generatePowerShell } from '../src/setup/completions.js';
 
 describe('completions', () => {
   it('bash completion contains subcommands', () => {

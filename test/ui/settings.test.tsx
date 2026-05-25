@@ -14,8 +14,8 @@ import path from 'node:path';
 import { render } from 'ink-testing-library';
 
 import { SettingsScreen } from '../../src/ui/screens/settings.js';
-import { save as saveAccount } from '../../src/accounts.js';
-import { readGlobalPrefs, readStoredAccountPrefs } from '../../src/preferences.js';
+import { save as saveAccount } from '../../src/accounts/accounts.js';
+import { readGlobalPrefs, readStoredAccountPrefs } from '../../src/switching/preferences.js';
 
 interface Harness {
   tmpDir: string;
