@@ -67,13 +67,13 @@ That's the whole API. Nothing else to memorize.
 | 🪟 | **Two accounts, two terminals, same machine.** Isolated profiles, zero interference. |
 | 🎯 | **Project-aware routing.** Drop a `.claude-switch` in the repo, `claude` picks the right account based on `cwd`. |
 | 💾 | **Cache-health monitor.** Detect Anthropic billing bugs (cache flushes, `--resume` cost amplification) in real time. |
-| 🔐 | **Zero telemetry.** Credentials in your macOS Keychain (`0600` JSON on Linux/Win), atomic writes, no `postinstall`. |
+| 🔐 | **Zero telemetry.** Credentials in a `0600` file vault (no password dialogs), atomic symlink-safe writes, no `postinstall`. |
 
 ---
 
 ## 🪟 Two terminals, two accounts
 
-The hidden gem. Run `@work` in Terminal A and `@personal` in Terminal B **at the same time**, fully isolated. Each profile gets its own `CLAUDE_CONFIG_DIR`, dedicated Keychain entry, and separate session history. No interference, no copy-pasting tokens.
+The hidden gem. Run `@work` in Terminal A and `@personal` in Terminal B **at the same time**, fully isolated. Each profile gets its own `CLAUDE_CONFIG_DIR`, dedicated `.credentials.json`, and separate session history. No interference, no copy-pasting tokens.
 
 **One-time setup** (per account):
 
@@ -142,7 +142,7 @@ Type `claude switch`. Highlight a row. Hit `Enter`. Done.
 <img src="docs/images/switch.gif" alt="claude switch dashboard — highlight a row, press Enter, the active account flips" width="800" />
 
 - ⚡ **Atomic swap** of OAuth token + active account in `~/.claude.json`, protected by a file lock so two terminals can't race.
-- 🌐 **No browser.** Tokens in the macOS Keychain (or `0600`-permissioned on Linux/Windows).
+- 🌐 **No browser.** Tokens in a `0600` file vault (`~/.claude/.credentials.json`), every platform.
 - 🔄 **No logout/login loop.** The next session simply starts as the new account.
 
 ---
@@ -151,7 +151,7 @@ Type `claude switch`. Highlight a row. Hit `Enter`. Done.
 
 Stop losing 5 hours of momentum to the Max cap.
 
-- 🎚 **Per-account fallback.** Each account has its own Anthropic API key, stored in the Keychain on macOS.
+- 🎚 **Per-account fallback.** Each account has its own Anthropic API key, stored `0600` in `~/.claude-switch/apikeys.json`.
 - 🚦 **Auto-engage thresholds.** Switches to API key at ≥95% on 5h or 7d window.
 - ↩️ **Auto-revert.** When both windows drop back below 80%, you're back on OAuth.
 - 🔥 **Burst mode.** After 3 consecutive OAuth failures, the proxy goes API-first until the next probe succeeds.
@@ -230,9 +230,9 @@ Narrow and worth stating clearly so you can decide whether claude-switch fits yo
 
 - **Atomic, symlink-safe writes.** Every credential file is written to `<file>.tmp` with mode `0600` *before* `rename`. On POSIX the temp file is opened with `O_CREAT|O_EXCL`, so a symlink pre-planted at the `.tmp` path **cannot** redirect the write to an attacker-controlled location. A crash mid-write cannot corrupt the existing snapshot or leave a world-readable temp file. (`src/atomic-write.ts`)
 - **Single-writer lock.** Every account swap and fallback flip is wrapped in `withLock(accountsDirPath)`. Two terminals running `claude switch` simultaneously serialize on a `.lock` file with PID + 30s stale reclaim. (`src/lock.ts`)
-- **macOS Keychain for OAuth.** On darwin, tokens use the same Keychain service Claude Code itself uses (`Claude Code-credentials`). Per-profile entries use a derived service name so isolated profiles can't collide.
-- **API keys in a dedicated Keychain service.** On darwin, registered API keys live in `claude-switch-apikey/<email>`, never in plaintext JSON if Keychain access succeeds. Token values are never embedded in error messages (stderr is captured separately so a failed `security` call can't leak the key via Node's default error serialization).
-- **Keychain-write rollback.** If a Keychain write fails *after* `~/.claude.json` was already rewritten, the JSON is rolled back to its pre-switch state so the snapshot and the Keychain can't drift out of sync. (`src/accounts.ts`)
+- **File-based credential vault (`0600`, every platform).** OAuth tokens land in `~/.claude/.credentials.json` — the file Claude Code itself reads when no Keychain item is present. Per-profile tokens live in `<CLAUDE_CONFIG_DIR>/.credentials.json`; per-account archives in `~/.claude/accounts/<email>.json` (`_keychain` block); registered API keys in `~/.claude-switch/apikeys.json`. All written via the atomic, symlink-safe path above, mode `0600`, parent dir `0700`. Token values are never embedded in error messages. (`src/file-credential-store.ts`)
+- **No password dialogs.** claude-switch never invokes the macOS `security` binary in the swap/read path, so macOS never prompts. This replaced the Keychain integration (and its partition-list prompts) in v4.0.0. The legacy Keychain reader survives only for a one-shot migration on first run after upgrade. (`src/credential-migration.ts`)
+- **Credential-write rollback.** If the vault write fails *after* `~/.claude.json` was already rewritten, the JSON is rolled back to its pre-switch state so the snapshot and the vault can't drift out of sync. (`src/accounts.ts`)
 - **Silent-billing defense.** If `~/.claude.json` carries an `apiKey` field claude-switch doesn't track, a one-time stderr banner warns you on the next `claude` run, *then* the key is purged on the next switch. (See [SECURITY.md](SECURITY.md#silent-api-key-risk-claudejson-snapshot-leak).)
 - **No telemetry, no `postinstall`, no external relay.** Outbound traffic: Anthropic API, Anthropic OAuth refresh, npm registry update check. Source is open: `grep -r 'https' src/` and verify.
 
@@ -240,7 +240,7 @@ Narrow and worth stating clearly so you can decide whether claude-switch fits yo
 
 We're being explicit so you can decide.
 
-- **Linux / Windows have no OS keychain integration.** OAuth tokens, refresh tokens and API keys live in `0600`-permissioned JSON under `~/.claude/`. Anyone who can read your home directory **as your user** can read them. This is **the same exposure surface as Claude Code itself** on those platforms: we're not adding risk, but we're not removing it either. libsecret + Windows Credential Manager support is on the roadmap.
+- **Tokens at rest are plaintext (`0600`), every platform.** OAuth tokens, refresh tokens and API keys live in `0600`-permissioned JSON under `~/.claude/` and `~/.claude-switch/`. Anyone who can read your home directory **as your user** can read them. This is the same model as `gh`, `aws`, `npm` and `docker` CLIs, and the same exposure surface as Claude Code itself (which reads `~/.claude/.credentials.json`). We protect against backup/sync leakage only insofar as file permissions are honoured; we do **not** protect against a malicious process running as your own user. Optional encryption-at-rest (machine-bound key) is under evaluation.
 - **Refresh-token drift across switches.** The official `claude` binary may rotate the OAuth refresh token mid-session. claude-switch syncs the latest credentials back to the snapshot on every interaction (best-effort `syncActiveSnapshotIfStale` + `captureLiveCredentialsForActiveAccount`). Worst case (concurrent rotation across two terminals): the swapped-away snapshot lags one rotation; the next switch back triggers a refresh, in the rare edge case a re-login. **No data corruption.** This is the structural trade-off of the swap approach vs. fully-isolated `CLAUDE_CONFIG_DIR` per account. We chose swap because it preserves your shared `~/.claude.json` history.
 - **Fallback proxy on loopback — browser/cross-origin defence, residual same-user risk.** During a `claude` session the proxy listens on `127.0.0.1:<random-port>`. It rejects requests with an `Origin` header set (every browser cross-origin fetch carries one) and requests whose `Host` header doesn't match the loopback bind (defence against DNS-rebinding sites that resolve their domain to `127.0.0.1`). What remains is the same-user threat: any local process that mimics the `claude` CLI exactly (no `Origin`, correct `Host`) can still reach the proxy. The proxy caps request bodies at **32 MB** (`413` past that). Don't run untrusted code as your user during a session. Same advice as any local dev server.
 
@@ -272,7 +272,7 @@ Not a claude-switch bug. Known issues in the Claude Code client / Anthropic bill
 | Fallback on but Claude still uses OAuth | First time Claude Code sees a new key it asks `Use this API key? [y/N]`, press **y** |
 | Usage stats show nothing | Available for Max/Pro subscribers only |
 | Unsure whether claude is billed via OAuth or API key | [SECURITY.md, Silent API-key risk](SECURITY.md#silent-api-key-risk-claudejson-snapshot-leak): 3 `jq` commands to verify |
-| macOS asks for the keychain password on every `claude switch` | Run `claude switch setup-keychain` once (it expands the Keychain partition list so swaps stop prompting). Background: [SECURITY.md, macOS Keychain partition-list prompts](SECURITY.md#macos-keychain-partition-list-prompts). |
+| macOS used to ask for the keychain password on every `claude switch` | Fixed in v4.0.0 — credentials moved to a `0600` file vault, `security` is no longer invoked, no prompts. If you upgraded from v3.x, the first run migrates your existing Keychain item once (may prompt once), then never again. |
 | Max/Pro window exhausting faster than expected | Run `claude switch cache-health` and see [above](#-why-is-my-maxpro-plan-exhausting-faster-than-expected) |
 | Anything else | [Open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) or ping **`sirtheo`** on Discord |
 

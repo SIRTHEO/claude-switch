@@ -8,11 +8,21 @@ claude-switch handles credentials Anthropic considers sensitive:
 - Personal Anthropic API keys (`sk-ant-…`)
 - Per-profile session state for parallel claude sessions
 
-The package never sends these to a third-party. They live under
-`~/.claude/` (mode `0600`) and, on macOS, in the system Keychain
-under `Claude Code-credentials*`. The local fallback proxy speaks
-directly to `api.anthropic.com` over TLS — no telemetry, no analytics,
-no `postinstall` script.
+The package never sends these to a third-party. As of v4.0.0 they live
+in a `0600` file vault on every platform: OAuth tokens in
+`~/.claude/.credentials.json` (the file Claude Code reads natively),
+per-profile tokens in `<CLAUDE_CONFIG_DIR>/.credentials.json`,
+per-account archives in `~/.claude/accounts/<email>.json`, and API keys
+in `~/.claude-switch/apikeys.json`. No macOS Keychain integration, no
+`security` shell-out, no password dialogs. The local fallback proxy
+speaks directly to `api.anthropic.com` over TLS — no telemetry, no
+analytics, no `postinstall` script.
+
+> ❗ **Plaintext at rest** — credentials are stored as `0600` JSON, the
+> same model as `gh`, `aws`, `npm` and `docker`. This protects against
+> backup/sync leakage that honours file permissions; it does **not**
+> protect against a malicious process running as your own user. Optional
+> encryption-at-rest (machine-bound key) is under evaluation.
 
 ## Silent API-key risk (claude.json snapshot leak)
 
@@ -20,7 +30,7 @@ no `postinstall` script.
 
 When the Anthropic Console "extra usage" feature is enabled on an account, or when a user accepts a one-off API key prompt inside the claude binary, the claude binary writes an `apiKey` field into `~/.claude.json`. Before Phase 14.2, `accounts.save()` captured that field as `_claudeJsonApiKey` inside the per-account snapshot (`~/.claude/accounts/<email>.json`). On every subsequent `accounts.load()` (triggered by `claude switch <account>`), that key was silently re-injected back into `~/.claude.json`. The claude binary reads the field and routes all traffic through the API tier — not OAuth subscription — without any visible prompt or banner. The result is unexpected API billing even on accounts that `claude switch apikey list` reports as having no key configured.
 
-The gap: `getApiKey(email)` reads only the claude-switch-managed store (macOS Keychain entry `claude-switch-apikey/<email>` or the `_apiKey` field in the snapshot). It does **not** read `_claudeJsonApiKey`. So the CLI confirms "no key" while the claude binary silently uses one.
+The gap: `getApiKey(email)` reads only the claude-switch-managed store (the `~/.claude-switch/apikeys.json` vault, or the `_apiKey` field in the snapshot). It does **not** read `_claudeJsonApiKey`. So the CLI confirms "no key" while the claude binary silently uses one.
 
 ### How claude-switch handles it (Phase 14.2 + 14.3)
 
@@ -59,7 +69,14 @@ Full root-cause analysis: `.claude/docs/reports/2026-05-13-silent-apikey-after-s
 
 ## Credential exposure via process arguments
 
-### The window
+> ❗ **Largely resolved in v4.0.0** — the file vault writes credentials via
+> `node:fs` (`writeJsonAtomic`), never as a command-line argument, so the
+> argv-exposure window below no longer exists in the normal swap/read/write
+> path. It survives **only** in the one-shot legacy Keychain migration
+> (`credential-migration.ts`), which shells out to `security` once on the
+> first run after upgrade and then never again.
+
+### The window (legacy migration only)
 
 Writing a credential to the macOS Keychain shells out to the system
 `security` tool, and the secret travels as a command-line argument:
@@ -70,8 +87,8 @@ security add-generic-password -s <service> -a <account> -w <SECRET> -T … -U
 
 For the lifetime of that `security` subprocess (sub-second), `<SECRET>`
 is visible in the process argument vector — i.e. to anything that can
-read `ps`/`proc`-style process listings. The same shape applies to the
-OAuth token blob and the API key.
+read `ps`/`proc`-style process listings. As of v4.0.0 this only happens
+inside the migration helper, not the day-to-day credential path.
 
 ### What is mitigated, and how
 
@@ -163,84 +180,24 @@ hook to forward a header we'd inject, so the secret would have to live
 in the URL path, which means it'd also live in `ANTHROPIC_BASE_URL`, an
 env var the same-user attacker can already read.
 
-## macOS Keychain partition-list prompts
+## macOS Keychain partition-list prompts (resolved in v4.0.0)
 
-### The symptom
+**This problem no longer exists.** Through v3.x, claude-switch read and wrote
+the macOS Keychain via the `security` CLI. macOS guards each Keychain item
+with a partition list (`kSecAttrPartitionList`) locked to the creating app's
+team-ID; `/usr/bin/security` sat outside it, so every `claude switch` popped a
+password dialog. A `setup-keychain` command worked around it by widening the
+partition list — but the `claude` binary re-pinned it on token refresh and new
+profiles created fresh locked items, so the prompts kept coming back.
 
-On macOS, every `claude switch <account>` may pop up the system password
-dialog (`security wants to use the Confidential Information stored in
-"Claude Code-credentials"`). Even clicking **Always Allow** doesn't make
-it stop — the next swap prompts again.
+v4.0.0 removed the Keychain integration entirely. Credentials now live in a
+`0600` file vault (see Threat model above); claude-switch never invokes
+`security`, so macOS never prompts. The `setup-keychain` command was removed.
 
-### Why it happens
-
-macOS Sierra+ adds a second access gate to every Keychain item alongside
-the classic ACL: `kSecAttrPartitionList`. An item is locked to the
-code-signing identities listed there. The `claude` binary creates the
-`Claude Code-credentials*` entries with a partition restricted to
-Anthropic's team-ID, so `/usr/bin/security` (Apple team, what claude-switch
-shells out to) is **outside the partition list** and prompts every time.
-Clicking "Always Allow" sticks the ACL entry but not the partition list,
-so it doesn't persist across the next prompt.
-
-### Fix (one-time, requires the macOS user password once)
-
-Run the built-in command:
-
-```bash
-claude switch setup-keychain
-```
-
-It discovers every `Claude Code-credentials*` item (the global entry plus any
-per-config-dir `-<hash>` variants) and expands each item's partition list to
-include Apple-signed CLI tools (`apple-tool:`). You'll be asked for your macOS
-login password (possibly once per item). After that, swaps no longer prompt.
-
-If you prefer to do it by hand — or to inspect what the command runs — the
-equivalent manual steps are:
-
-```bash
-# 1. global entry
-security set-generic-password-partition-list \
-  -S "apple-tool:" \
-  -s "Claude Code-credentials" \
-  -a "Claude Code-credentials"
-
-# 2. discover per-config-dir entries (if any) and run the same for each
-security dump-keychain 2>/dev/null | \
-  grep -oE '"Claude Code-credentials-[0-9a-f]{8}"' | sort -u
-# For each one returned, run:
-#   security set-generic-password-partition-list \
-#     -S "apple-tool:" -s "<service>" -a "<your-username>"
-```
-
-### What's the security trade-off
-
-The partition list previously locked the item to a single team-ID. After
-the change, `apple-tool:` (the category that includes `/usr/bin/security`)
-can also unlock it. If you'd rather be more permissive (e.g. allow
-Apple-signed GUI apps too, useful only if some third-party tool on your
-Mac legitimately needs to read the entry), use `-S "apple-tool:,apple:"`.
-**Do not** add `unsigned:` unless you understand that this category
-covers arbitrary unsigned binaries running as your user — i.e. a local
-malware would no longer be prompted before reading the entry.
-
-The blast radius is narrow: only the three (or so) `Claude Code-credentials*`
-entries are touched, not the rest of your Keychain.
-
-### Why it's opt-in (not run during a swap)
-
-`security set-generic-password-partition-list` needs `-k <keychain-password>`
-to run non-interactively; without it macOS prompts for the password. Doing this
-silently on every swap would mean prompting for the macOS password during a
-swap — worse UX than the dialog it removes. So `claude switch setup-keychain` is
-an explicit one-time command you run yourself: it inherits your terminal so the
-password prompt reaches you, and it never embeds or stores the password.
-
-> **Note** — whether the fix is truly permanent depends on whether the `claude`
-> binary re-pins the partition list when it rotates the OAuth token on refresh.
-> If the per-swap dialog returns after some time, re-run `claude switch
-> setup-keychain`.
+**Upgrading from v3.x:** the first run after upgrade migrates your existing
+`Claude Code-credentials` Keychain item into the file vault once (this single
+read may prompt once if its partition list still excludes `/usr/bin/security`),
+then never touches the Keychain again.
 
 ## Reporting a vulnerability
 
