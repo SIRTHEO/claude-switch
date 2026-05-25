@@ -61,7 +61,10 @@ describe('countActiveClaudeSessions', () => {
   });
 });
 
-describe('countActiveClaudeSessions — parsing with injected ProcessPort', () => {
+// The injected-ProcessPort path only runs on non-Windows: countActiveClaudeSessions
+// short-circuits to { count: 0, unsupportedReason: 'windows' } before touching the
+// ProcessPort on win32 (no portable `ps`), so the parsing assertions don't apply there.
+describe('countActiveClaudeSessions — parsing with injected ProcessPort', { skip: process.platform === 'win32' }, () => {
   const CLAUDE = '/usr/local/bin/claude';
 
   it('counts real claude processes, excluding self', () => {
