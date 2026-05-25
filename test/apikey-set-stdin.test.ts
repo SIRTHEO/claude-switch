@@ -45,7 +45,9 @@ describe('apikey set — empty stdin does not hang', () => {
         input: '', // empty, immediately-closed stdin
         timeout: 5000, // a hang would trip this; the fix exits in well under it
         encoding: 'utf-8',
-        env: { ...process.env, HOME: tmpHome, CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1' },
+        // USERPROFILE too: the spawned CLI resolves home via os.homedir(),
+        // which reads USERPROFILE (not HOME) on Windows.
+        env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome, CLAUDE_SWITCH_DISABLE_KEYCHAIN: '1' },
       },
     );
 
