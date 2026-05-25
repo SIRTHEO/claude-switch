@@ -22,6 +22,7 @@
     "verify-release": "bash scripts/verify-release-readiness.sh",
     "gen:gui-contract": "node scripts/gen-gui-contract.mjs",
     "check:gui-contract": "node scripts/gen-gui-contract.mjs --check",
+    "check:file-sizes": "node scripts/check-file-sizes.mjs",
     "prepublishOnly": "npm test"
   },
   "keywords": [

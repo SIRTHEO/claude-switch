@@ -1,0 +1,21 @@
+{
+  "bin/cli.ts": 746,
+  "src/accounts.ts": 550,
+  "src/api-proxy.ts": 625,
+  "src/cache-health.ts": 454,
+  "src/commands/passthrough.ts": 479,
+  "src/commands/profile.ts": 316,
+  "src/commands/statusline.ts": 357,
+  "src/credential-store.ts": 464,
+  "src/profiles.ts": 737,
+  "src/routing.ts": 522,
+  "src/switcher.ts": 432,
+  "src/ui/run-app.ts": 375,
+  "src/ui/screens/add-account.tsx": 315,
+  "src/ui/screens/auto-fallback.tsx": 287,
+  "src/ui/screens/home.tsx": 331,
+  "src/ui/screens/manage-account.tsx": 364,
+  "src/ui/screens/profiles.tsx": 540,
+  "src/ui/screens/setup-wizard.tsx": 468,
+  "src/usage.ts": 690
+}
