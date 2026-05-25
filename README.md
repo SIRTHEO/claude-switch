@@ -74,7 +74,7 @@ That's the whole API. Nothing else to memorize.
 
 ## 🪟 Two terminals, two accounts
 
-The hidden gem. Run `@work` in Terminal A and `@personal` in Terminal B **at the same time**, fully isolated. Each profile gets its own `CLAUDE_CONFIG_DIR`, dedicated `.credentials.json`, and separate session history. No interference, no copy-pasting tokens.
+The hidden gem. Run `@work` in Terminal A and `@personal` in Terminal B **at the same time**, fully separate. Each one keeps its own login and its own session history, so they never get in each other's way — no copy-pasting tokens between windows.
 
 **One-time setup** (per account):
 
@@ -126,7 +126,7 @@ claude switch --version
 
 ### 🪄 Drop-in wrapper
 
-`claude` is still `claude`. claude-switch ships its `bin` as `claude`, so your existing scripts, IDE integrations, shell history and aliases keep working untouched. Unknown subcommands forward straight to the real Claude Code binary. The **only** new word in your vocabulary is `switch`.
+`claude` is still `claude`. claude-switch installs itself under the same name, so your existing scripts, editor integrations, shell history and aliases all keep working untouched. Anything that isn't `claude switch` is passed straight through to the real Claude Code. The **only** new word to learn is `switch`.
 
 ```bash
 claude --version       # → real Claude Code, just as before
@@ -142,9 +142,9 @@ Type `claude switch`. Highlight a row. Hit `Enter`. Done.
 
 <img src="docs/images/switch.gif" alt="claude switch dashboard — highlight a row, press Enter, the active account flips" width="800" />
 
-- ⚡ **Atomic swap** of OAuth token + active account in `~/.claude.json`, protected by a file lock so two terminals can't race.
-- 🌐 **No browser.** Tokens in a `0600` file vault (`~/.claude/.credentials.json`), every platform.
-- 🔄 **No logout/login loop.** The next session simply starts as the new account.
+- ⚡ **Instant swap.** Changing account takes under a second, and a lock keeps two terminals from clashing if they both switch at once.
+- 🌐 **No browser.** Your logins are kept in a private vault on disk that only your own user can read — on every platform.
+- 🔄 **No logout/login loop.** Your next session just starts as the new account.
 
 ---
 
@@ -152,16 +152,16 @@ Type `claude switch`. Highlight a row. Hit `Enter`. Done.
 
 Stop losing 5 hours of momentum to the Max cap.
 
-- 🎚 **Per-account fallback.** Each account has its own Anthropic API key, stored `0600` in `~/.claude-switch/apikeys.json`.
-- 🚦 **Auto-engage thresholds.** Switches to API key at ≥95% on 5h or 7d window.
-- ↩️ **Auto-revert.** When both windows drop back below 80%, you're back on OAuth.
-- 🔥 **Burst mode.** After 3 consecutive OAuth failures, the proxy goes API-first until the next probe succeeds.
+- 🎚 **Per-account API key.** Each account can have its own Anthropic API key, kept in a private file only your own user can read.
+- 🚦 **Auto-engage.** Once you've used **95%** of either your 5-hour or 7-day allowance, it switches over to the API key on its own.
+- ↩️ **Auto-revert.** When both allowances drop back under **80%**, you're put back on your subscription.
+- 🔥 **Burst mode.** If **3** subscription requests fail in a row, it leans on the API key until the subscription starts working again.
 
 ```text
 📈 Subscription back online (5h:30%, 7d:15%) — switched back to OAuth
 ```
 
-**No external relay.** A local HTTP proxy starts on a loopback port, sets `ANTHROPIC_BASE_URL`, and terminates when `claude` exits. Your traffic goes straight to Anthropic.
+**Nothing sits in the middle.** A small helper runs only on your own computer while `claude` is open, and shuts down the moment you quit. Your traffic still goes straight to Anthropic — claude-switch never relays it through anywhere else.
 
 ---
 
@@ -196,7 +196,7 @@ claude switch route add  '~/clients/foo/**' foobar
 claude switch route test ~/work/payroll-service     # dry-run
 ```
 
-Resolution order: `CLAUDE_SWITCH_ACCOUNT` env > `.claude-switch` > `.routing.json` > active.
+Order of priority (first match wins): a one-off `CLAUDE_SWITCH_ACCOUNT` override you set in your shell → the repo's `.claude-switch` file → your personal per-folder rules → your currently active account.
 
 ---
 
@@ -209,17 +209,17 @@ claude switch statusline install     # live 💾 N% 🚨X badge in Claude Code s
 claude switch cache-health           # CLI report: turns, hit ratio, flush count, billed tokens
 ```
 
-A high flush count (>2-3 in a short session) is the signal that the word-substitution cache-flush bug is active. File the JSONL as evidence on the upstream Anthropic thread.
+If the "context wiped" count is high (more than 2–3 in a short session), that bug is active and draining your plan. Save the session file and attach it as evidence on the Anthropic issue thread.
 
 The same badge doubles as a **live usage gauge** — discreet, turns **yellow at 75%** and **red at 90%**, so a rate limit never ambushes you. You see *why* your plan is draining, not just *that* it is.
 
 ---
 
-### 🎛 Built on Ink, a real TUI
+### 🎛 A real interactive dashboard
 
-Full **React-for-the-terminal** UI: focus rings, live updates, hotkeys, in-place re-renders. `Tab` cycles sections, `↑↓` navigates, single-letter keys (`a` `k` `f` `c` `g` `p`…) are accelerators, `?` for inline help.
+Not a wall of text — a proper interactive screen right in your terminal: live updates, highlighted rows, keyboard shortcuts. `Tab` moves between sections, `↑↓` navigates, single letters (`a` `k` `f` `c` `g` `p`…) are shortcuts, and `?` shows inline help.
 
-Plus: tab completion (`bash` · `zsh` · `fish` · `powershell`), one-shot `claude --as <alias> "task"`, cross-platform CI on Linux + macOS + Windows × Node 20/22/24.
+Plus: tab-completion for `bash`, `zsh`, `fish` and `powershell`; a one-shot `claude --as <alias> "task"`; and it's tested on Linux, macOS and Windows across Node 20, 22 and 24.
 
 ---
 
@@ -253,14 +253,14 @@ We'd rather tell you straight, so you can decide if it fits you.
 
 Not a claude-switch bug. Known issues in the Claude Code client / Anthropic billing pipeline (community-investigated Dec 2025 – Jan 2026):
 
-- **Word-substitution cache flush (10-20× cost amplification).** Cache invalidates per turn under certain conditions; full prompt re-sent and re-billed. POC: [cc-cache-monitor](https://github.com/AlexZan/cc-cache-monitor).
-- **`--resume` / `--continue` invalidate cache on turn 1.** Resumed sessions get billed at full price for the first turn even though context already existed.
-- **Telemetry coupling.** Claude Code's 1-hour cache TTL is silently tied to telemetry opt-in. Disabling telemetry drops the TTL and degrades cache reuse.
+- **Saved context wiped mid-chat (10–20× more expensive).** Under certain conditions Claude Code throws away the context it already paid to cache, every turn — so your whole prompt is re-sent and re-billed. POC: [cc-cache-monitor](https://github.com/AlexZan/cc-cache-monitor).
+- **`--resume` / `--continue` wipe the cache on the first turn.** Resumed sessions get charged full price for that first turn even though the context already existed.
+- **Telemetry coupling.** Claude Code's saved context normally lasts an hour, but that's quietly tied to having telemetry on. Turn telemetry off and it expires sooner, so you re-pay for context more often.
 - **Peak-hour throttling, ≈13:00-19:00 UTC.** Anthropic confirmed (after press contact) that subscription inference is throttled in this window.
 
 **Mitigations you can apply:** avoid `--resume`/`--continue`; avoid peak-hour for long sessions; one session at a time per account; keep telemetry enabled (yes, really).
 
-**Detect with claude-switch:** `claude switch cache-health` for the active session, or `--session <jsonl-path>` for any historical file. A high flush count is the signal. File the JSONL upstream as evidence.
+**Spot it with claude-switch:** run `claude switch cache-health` for the current session, or add `--session <file>` to check any past session. A high "context wiped" count is the giveaway — save that session file as evidence for the Anthropic thread.
 
 ---
 
@@ -270,11 +270,11 @@ Not a claude-switch bug. Known issues in the Claude Code client / Anthropic bill
 |---|---|
 | `claude` not found after install | Open a new terminal. Still broken: `claude switch setup` |
 | `Token: ✗ expired` in the dashboard | Highlight the row, press `c` (re-authenticate) |
-| Swap says "no saved credentials" / statusline numbers look frozen | Run `claude switch doctor` to diagnose (token collision, rate-limited cache), then `claude switch doctor --fix` and re-login the affected account |
+| Swap says "no saved credentials" / statusline numbers look frozen | Run `claude switch doctor` to find the problem (e.g. two accounts sharing a login, or a stuck usage cache), then `claude switch doctor --fix` and log in again on the affected account |
 | Fallback on but Claude still uses OAuth | First time Claude Code sees a new key it asks `Use this API key? [y/N]`, press **y** |
 | Usage stats show nothing | Available for Max/Pro subscribers only |
 | Unsure whether claude is billed via OAuth or API key | [SECURITY.md, Silent API-key risk](SECURITY.md#silent-api-key-risk-claudejson-snapshot-leak): 3 `jq` commands to verify |
-| macOS used to ask for the keychain password on every `claude switch` | Fixed in v4.0.0 — credentials moved to a `0600` file vault. On macOS claude-switch drains Claude Code's Keychain item into the vault and deletes it, silently while the login keychain is unlocked (a locked keychain prompts once). No more `setup-keychain` command. |
+| macOS used to ask for the keychain password on every `claude switch` | Fixed in v4.0.0 — logins now live in a private file instead of the keychain. On macOS your existing keychain login is moved into that file once, quietly (only a locked keychain asks once). The old `setup-keychain` command is gone. |
 | Max/Pro window exhausting faster than expected | Run `claude switch cache-health` and see [above](#-why-is-my-maxpro-plan-exhausting-faster-than-expected) |
 | Anything else | [Open an issue](https://github.com/SIRTHEO/claude-switch/issues/new/choose) or ping **`sirtheo`** on Discord |
 
@@ -291,7 +291,7 @@ Not a claude-switch bug. Known issues in the Claude Code client / Anthropic bill
 <details>
 <summary><b>Is it safe with my real Claude account?</b></summary>
 
-It writes the same files Claude Code itself writes. It does not modify the `claude` binary. Writes are atomic, lock-protected. ~40 KB of compiled JS, Apache-2.0-licensed, no `postinstall`. Worst case if something breaks: re-login.
+It writes the same files Claude Code itself writes, and it never changes the `claude` program. Saves are done safely — all-or-nothing, and guarded so two windows can't clash. It's a small, open-source tool (Apache-2.0 licensed, about 225 KB to download) that runs nothing behind your back when you install it. Worst case if something breaks: just log in again.
 </details>
 
 <details>
@@ -314,28 +314,28 @@ It writes the same files Claude Code itself writes. It does not modify the `clau
 <details>
 <summary><b>Why a drop-in wrapper instead of a new command?</b></summary>
 
-(1) IDE integrations and CI scripts already invoke `claude`. Changing them every time you add a tool is friction. (2) Your shell history of `claude …` invocations stays runnable. (3) `claude switch setup` records the absolute path of the real binary on install so `PATH` ordering stays correct.
+(1) Your editor and CI scripts already call `claude` — having to change them all would be a pain. (2) Your old `claude …` commands in your shell history still run. (3) During setup, claude-switch remembers exactly where the real `claude` lives, so it can always hand off to it correctly.
 </details>
 
 <details>
 <summary><b>My API-key fallback didn't kick in mid-session.</b></summary>
 
-Fallback injects `ANTHROPIC_BASE_URL` into the env of the `claude` process at spawn. A REPL already running can't be hot-swapped. Exit it, turn fallback on, re-run `claude`.
+The switch to your API key is set up at the moment `claude` starts. A session that's already open can't be changed on the fly — just exit it, turn fallback on, and run `claude` again.
 </details>
 
 <details>
 <summary><b>Will this break when Anthropic ships native multi-account?</b></summary>
 
-If/when [#24963](https://github.com/anthropics/claude-code/issues/24963) ships, the wrapper layer stays useful for things outside multi-account: API-key fallback, project-aware routing, cache-health. If first-party support obviates the swap layer entirely, we'll deprecate that path and keep the rest.
+If/when [#24963](https://github.com/anthropics/claude-code/issues/24963) ships, claude-switch is still useful for everything beyond multi-account: API-key fallback, project-aware routing and cache-health. If the built-in support makes account-swapping unnecessary, we'll retire that one piece and keep the rest.
 </details>
 
 ---
 
 ## 📦 What's new
 
-- **v4.0.0** — 🔐 **File-vault credential storage** replaces the macOS Keychain integration: `0600` JSON on every platform, **no more password dialogs** on swap. On macOS a reconcile step drains Claude Code's own Keychain item into the vault. 🩺 New **`claude switch doctor`** health check (`--fix`) for credential-store problems. Honest threat model in SECURITY.md. **Breaking**: `setup-keychain` command removed; first run after upgrade migrates your existing Keychain credentials automatically.
+- **v4.0.0** — 🔐 **New credential vault** replaces the macOS keychain: logins are kept in a private file (readable only by your user) on every platform, with **no more password pop-ups** when you switch. On macOS your existing keychain logins are moved over for you. 🩺 New **`claude switch doctor`** check (with `--fix`) for login problems. Plainly-written threat model in SECURITY.md. **Breaking**: the `setup-keychain` command is gone; the first run after upgrading migrates your old credentials automatically.
 - **v3.8.x** — 🔌 **`--json` contract** on `list`, `profile list`, `route test`, `alias-list`, fallback status (stable machine-readable output). 🪟 Per-profile launch in any detected terminal emulator. 📊 Per-account usage refresh for any saved account + embedded statusline format. 🔐 atomic-write symlink-safety hardening.
-- **v3.7.x** — 🪟 **Profile fresh-install fix**: `claude switch profile use <name>` now enters the REPL directly with stored credentials on Claude Code 2.x. Auto-propagated Keychain ACL + `hasCompletedOnboarding` + statusline config on import.
+- **v3.7.x** — 🪟 **Profile fresh-install fix**: `claude switch profile use <name>` now opens straight into Claude Code with your saved login on Claude Code 2.x. Importing an account also carries over its keychain access, onboarding state and statusline config.
 - **v3.5.x** — 💾 **Cache-health monitor** (live `💾 N% 🚨X` statusline + CLI report) for Anthropic billing bugs. 🎯 **Project-aware routing** (`.claude-switch` + global rules). Silent-API-key billing leak fix. Per-account usage cache.
 - **v3.4.x** — 🔐 API keys in macOS Keychain. On-read state migration.
 - **v3.3.x** — 🔁 Live OAuth ↔ API transitions without re-launching `claude`.
