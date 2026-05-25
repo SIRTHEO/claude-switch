@@ -60,7 +60,7 @@ does not contain the bare string as a contiguous substring.
 ### Pre-commit (looks at staged hunks)
 
 ```bash
-git diff --cached | grep -E '([m]atteo19|[d]imattia|[g]yver|/Users/theo)' \
+git diff --cached | grep -E '([m]atteo19|[d]imattia|[g]yver|/[U]sers/theo)' \
   && echo "LEAK — abort commit" && exit 1 \
   || echo "privacy ok"
 ```
@@ -69,12 +69,12 @@ git diff --cached | grep -E '([m]atteo19|[d]imattia|[g]yver|/Users/theo)' \
 
 ```bash
 git log origin/main..HEAD -p | grep -E '^\+' | \
-  grep -E '([m]atteo19|[d]imattia|[g]yver|/Users/theo)' \
+  grep -E '([m]atteo19|[d]imattia|[g]yver|/[U]sers/theo)' \
   && echo "LEAK in additions" && exit 1 \
   || echo "privacy ok"
 
 git log origin/main..HEAD --pretty=format:"%h %s%n%b" | \
-  grep -iE '[m]atteo19|[d]imattia|[g]yver|/Users/theo|[P]hase [0-9]|[H][0-9] defense|[h]arness|[A]GENTS\.md' \
+  grep -iE '[m]atteo19|[d]imattia|[g]yver|/[U]sers/theo|[P]hase [0-9]|[H][0-9] defense|[h]arness|[A]GENTS\.md' \
   && echo "INTERNALS in messages" && exit 1 \
   || echo "messages ok"
 ```

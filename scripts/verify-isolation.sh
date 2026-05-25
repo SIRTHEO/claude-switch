@@ -85,7 +85,7 @@ echo '{"oauthAccount":{"emailAddress":"verify@test.invalid"}}' \
   > "$HOME/.claude/profiles/work/.claude.json"
 
 # Capture mtime of real .claude.json BEFORE spawn (real, NOT sandboxed)
-REAL_CLAUDE_JSON="/Users/theo/.claude.json"
+REAL_CLAUDE_JSON="$HOME/.claude.json"
 BEFORE_MTIME=""
 [ -f "$REAL_CLAUDE_JSON" ] && BEFORE_MTIME=$(stat -f "%m" "$REAL_CLAUDE_JSON" 2>/dev/null || stat -c "%Y" "$REAL_CLAUDE_JSON")
 
