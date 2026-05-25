@@ -8,7 +8,6 @@
   "src/commands/statusline.ts": 357,
   "src/credential-store.ts": 464,
   "src/profiles.ts": 737,
-  "src/routing.ts": 522,
   "src/switcher.ts": 432,
   "src/ui/run-app.ts": 375,
   "src/ui/screens/add-account.tsx": 315,
