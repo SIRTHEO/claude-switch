@@ -4,77 +4,27 @@
 //   line offer → summary.
 //
 // Side-effects (saveClaudeBin, patchShellConfig, installStatusLine) run
-// between steps, not during render. Pure render of step state, plus async
-// handlers that advance.
+// between steps, not during render. This file owns the step state machine and
+// handlers; the JSX render lives in setup-wizard-view.tsx, and the types/deps
+// in setup-wizard-types.ts.
 
 import { useEffect, useState } from 'react';
-import { Box, Text, render, useApp, useInput } from 'ink';
-import { clearScreen } from '../screen-buffer.js';import { Badge, ConfirmInput, MultiSelect, StatusMessage, TextInput } from '@inkjs/ui';
-
-import {
-  findRealClaude,
-  saveClaudeBin,
-  getNpmBinDir,
-  detectShellConfigs,
-  patchShellConfig,
-} from '../../setup.js';
-import {
-  detectExistingStatusLine,
-  installStatusLine,
-  PLAIN_COMMAND,
-  CCSTATUSLINE_COMMAND,
-} from '../../statusline-install.js';
-import { ORANGE } from '../theme.js';
+import { render, useApp, useInput } from 'ink';
+import { clearScreen } from '../screen-buffer.js';
+import { CCSTATUSLINE_COMMAND, PLAIN_COMMAND } from '../../statusline-install.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
+import {
+  type DetectedExisting,
+  REPLACE_CHAIN_OPTS,
+  type SetupDeps,
+  type SetupWizardResult,
+  type Step,
+  VARIANT_OPTS,
+  defaultDeps,
+} from './setup-wizard-types.js';
+import { SetupStepView } from './setup-wizard-view.js';
 
-/** Injectable dependencies — used for testing. All optional; default to real implementations. */
-export interface SetupDeps {
-  findRealClaude: (selfPath: string) => string | null;
-  saveClaudeBin: (path: string) => void;
-  getNpmBinDir: () => string | null;
-  detectShellConfigs: () => string[];
-  patchShellConfig: (cfg: string, npmBin: string) => boolean;
-  detectExistingStatusLine: () => DetectedExisting;
-  installStatusLine: (command: string) => void;
-}
-
-const defaultDeps: SetupDeps = {
-  findRealClaude,
-  saveClaudeBin,
-  getNpmBinDir,
-  detectShellConfigs,
-  patchShellConfig,
-  detectExistingStatusLine,
-  installStatusLine,
-};
-
-export interface SetupWizardResult {
-  binPath: string | null;
-  patchedConfigs: string[];
-  statusLineInstalled: boolean;
-  cancelled: boolean;
-}
-
-type DetectedExisting =
-  | { kind: 'absent' }
-  | { kind: 'ours-plain' }
-  | { kind: 'ours-embedded' }
-  | { kind: 'ours-ccstatusline' }
-  | { kind: 'foreign'; command: string };
-
-type Step =
-  | { kind: 'detect-bin' }
-  | { kind: 'manual-bin'; error?: string }
-  | { kind: 'detect-shell'; binPath: string | null }
-  | { kind: 'pick-configs'; binPath: string | null; npmBin: string; configs: string[] }
-  | { kind: 'no-shell-config'; binPath: string | null; npmBin: string }
-  | { kind: 'no-npm-bin'; binPath: string | null }
-  | { kind: 'sl-existing'; binPath: string | null; npmBin: string; patched: string[]; existing: DetectedExisting }
-  | { kind: 'sl-replace-or-chain'; binPath: string | null; npmBin: string; patched: string[]; existing: DetectedExisting; cursor: number }
-  | { kind: 'sl-confirm'; binPath: string | null; npmBin: string; patched: string[] }
-  | { kind: 'sl-pick-variant'; binPath: string | null; npmBin: string; patched: string[]; cursor: number }
-  | { kind: 'summary'; result: SetupWizardResult }
-  | { kind: 'cancelled'; result: SetupWizardResult };
+export type { SetupDeps, SetupWizardResult } from './setup-wizard-types.js';
 
 interface Props {
   selfPath: string;
@@ -82,17 +32,6 @@ interface Props {
   /** Override system probes for testing — all optional, default to real implementations. */
   deps?: Partial<SetupDeps>;
 }
-
-const REPLACE_CHAIN_OPTS = [
-  { value: 'skip', label: 'Keep what I have', hint: 'no changes' },
-  { value: 'chain', label: 'Chain with ccstatusline', hint: 'show both — needs npx + ccstatusline' },
-  { value: 'replace', label: 'Replace with claude-switch badge', hint: 'simplest, no extra deps' },
-] as const;
-
-const VARIANT_OPTS = [
-  { value: 'plain', label: 'Just the account badge', hint: 'no extra dependencies' },
-  { value: 'ccstatusline', label: 'Badge + ccstatusline', hint: 'fancy bar — needs npx + ccstatusline' },
-] as const;
 
 export function SetupScreen({ selfPath, onDone, deps: depsOverride }: Props) {
   const { exit } = useApp();
@@ -222,6 +161,25 @@ export function SetupScreen({ selfPath, onDone, deps: depsOverride }: Props) {
     startStatusLine(step.binPath, step.npmBin, patched);
   };
 
+  const onConfirmStatusLine = (): void => {
+    if (step.kind !== 'sl-confirm') return;
+    setStep({
+      kind: 'sl-pick-variant',
+      binPath: step.binPath,
+      npmBin: step.npmBin,
+      patched: step.patched,
+      cursor: 0,
+    });
+  };
+
+  const onCancelStatusLine = (): void => {
+    if (step.kind !== 'sl-confirm') return;
+    setStep({
+      kind: 'summary',
+      result: { binPath: step.binPath, patchedConfigs: step.patched, statusLineInstalled: false, cancelled: false },
+    });
+  };
+
   // Navigation for the two list-based status-line steps.
   useInput((_input, key) => {
     if (step.kind === 'sl-replace-or-chain') {
@@ -288,162 +246,14 @@ export function SetupScreen({ selfPath, onDone, deps: depsOverride }: Props) {
     }
   });
 
-  // ---- Render ----
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={1}>
-      <Box marginBottom={1}>
-        <Badge color={ORANGE}>claude-switch setup</Badge>
-      </Box>
-
-      {step.kind === 'detect-bin' && <Text color={ORANGE}>… looking for the real claude binary</Text>}
-
-      {step.kind === 'manual-bin' && (
-        <Box flexDirection="column">
-          <StatusMessage variant="warning">No claude binary found on PATH.</StatusMessage>
-          <Text color="gray">
-            claude-switch needs the path to the real claude CLI. Install Claude Code first if you haven't:
-          </Text>
-          <Text color="gray">  https://docs.anthropic.com/en/docs/claude-code</Text>
-          <Box marginTop={1}>
-            <Text>Path (Enter to skip): </Text>
-            <TextInput placeholder="/usr/local/bin/claude" onSubmit={onManualBinSubmit} />
-          </Box>
-          {step.error && <StatusMessage variant="error">{step.error}</StatusMessage>}
-        </Box>
-      )}
-
-      {step.kind === 'detect-shell' && <Text color={ORANGE}>… detecting shell config</Text>}
-
-      {step.kind === 'no-npm-bin' && (
-        <Box flexDirection="column">
-          <StatusMessage variant="warning">
-            Could not detect the npm global bin directory. Skipping the PATH patch — set it manually.
-          </StatusMessage>
-        </Box>
-      )}
-
-      {step.kind === 'no-shell-config' && (
-        <Box flexDirection="column">
-          <StatusMessage variant="warning">No shell config detected (.zshrc, .bashrc, fish, …).</StatusMessage>
-          <Text color="gray">Add this to your shell config manually:</Text>
-          <Text bold>  export PATH="{step.npmBin}:$PATH"</Text>
-          <Text color="gray">(enter or esc to continue)</Text>
-        </Box>
-      )}
-
-      {step.kind === 'pick-configs' && (
-        <Box flexDirection="column">
-          <Text>Patch which shell config files? (space toggles, enter confirms)</Text>
-          <Box marginTop={1}>
-            <MultiSelect
-              options={step.configs.map((c) => ({ value: c, label: c }))}
-              defaultValue={step.configs}
-              onSubmit={onPickConfigsSubmit}
-            />
-          </Box>
-          <Text color="gray">(enter with no selection = patch nothing)</Text>
-        </Box>
-      )}
-
-      {step.kind === 'sl-existing' && (
-        <Box flexDirection="column">
-          <StatusMessage variant="info">
-            Claude Code already has a custom status line.
-          </StatusMessage>
-          <Text color="gray">  {step.existing.kind === 'foreign' ? step.existing.command : ''}</Text>
-          <Text color="gray">
-            claude-switch can replace it with the account badge, or chain it with ccstatusline.
-          </Text>
-          <Text color="gray">(enter or esc to continue)</Text>
-        </Box>
-      )}
-
-      {step.kind === 'sl-replace-or-chain' && (
-        <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1}>
-          <Text bold>What would you like to do?</Text>
-          {REPLACE_CHAIN_OPTS.map((opt, i) => {
-            const selected = i === step.cursor;
-            return (
-              <Box key={opt.value}>
-                <Text color={selected ? ORANGE : undefined}>{selected ? '▸ ' : '  '}</Text>
-                <Text bold={selected}>{opt.label}</Text>
-                {opt.hint && <Text color="gray">  · {opt.hint}</Text>}
-              </Box>
-            );
-          })}
-        </Box>
-      )}
-
-      {step.kind === 'sl-confirm' && (
-        <Box flexDirection="column">
-          <Text>Show the active account in Claude Code's status bar?</Text>
-          <Box>
-            <Text>› </Text>
-            <ConfirmInput
-              defaultChoice="confirm"
-              onConfirm={() =>
-                setStep({
-                  kind: 'sl-pick-variant',
-                  binPath: step.binPath,
-                  npmBin: step.npmBin,
-                  patched: step.patched,
-                  cursor: 0,
-                })
-              }
-              onCancel={() =>
-                setStep({
-                  kind: 'summary',
-                  result: { binPath: step.binPath, patchedConfigs: step.patched, statusLineInstalled: false, cancelled: false },
-                })
-              }
-            />
-          </Box>
-        </Box>
-      )}
-
-      {step.kind === 'sl-pick-variant' && (
-        <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1}>
-          <Text bold>Which style?</Text>
-          {VARIANT_OPTS.map((opt, i) => {
-            const selected = i === step.cursor;
-            return (
-              <Box key={opt.value}>
-                <Text color={selected ? ORANGE : undefined}>{selected ? '▸ ' : '  '}</Text>
-                <Text bold={selected}>{opt.label}</Text>
-                {opt.hint && <Text color="gray">  · {opt.hint}</Text>}
-              </Box>
-            );
-          })}
-        </Box>
-      )}
-
-      {step.kind === 'summary' && (
-        <Box flexDirection="column" borderStyle="round" borderColor={ORANGE} paddingX={1}>
-          <Text bold color={ORANGE}>Summary</Text>
-          {step.result.binPath && <Text color="gray">Real claude: {step.result.binPath}</Text>}
-          {step.result.patchedConfigs.length > 0 ? (
-            <Text color="gray">
-              Patched: {step.result.patchedConfigs.map((c) => c.replace(process.env.HOME || '~', '~')).join(', ')}
-            </Text>
-          ) : (
-            <Text color="gray">Shell config: nothing changed</Text>
-          )}
-          {step.result.statusLineInstalled && (
-            <Text color="gray">Status bar: account badge installed</Text>
-          )}
-          {step.result.patchedConfigs.length > 0 && (
-            <Box marginTop={1}>
-              <Text color="yellow">Open a new terminal so the PATH update takes effect.</Text>
-            </Box>
-          )}
-          <Text color="gray">(enter or esc to finish)</Text>
-        </Box>
-      )}
-
-      {step.kind === 'cancelled' && (
-        <StatusMessage variant="info">Setup cancelled. (enter or esc to close)</StatusMessage>
-      )}
-    </Box>
+    <SetupStepView
+      step={step}
+      onManualBinSubmit={onManualBinSubmit}
+      onPickConfigsSubmit={onPickConfigsSubmit}
+      onConfirmStatusLine={onConfirmStatusLine}
+      onCancelStatusLine={onCancelStatusLine}
+    />
   );
 }
 

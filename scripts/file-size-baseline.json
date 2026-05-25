@@ -12,6 +12,5 @@
   "src/ui/screens/home.tsx": 331,
   "src/ui/screens/manage-account.tsx": 364,
   "src/ui/screens/profiles.tsx": 540,
-  "src/ui/screens/setup-wizard.tsx": 468,
   "src/usage.ts": 690
 }
