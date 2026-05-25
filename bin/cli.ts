@@ -478,13 +478,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Phase 24 one-shot migration: copy Keychain → file vault if not yet done.
-  // Idempotent (marker file gates re-runs); skipped on the statusline hot
-  // path above so we never pay the migration cost on a high-frequency call.
-  // Best-effort: on any failure the marker is written as 'none' and the
-  // next `claude /login` repopulates the file vault.
-  const { runFileVaultMigration } = await import('../src/credential-migration.js');
-  runFileVaultMigration();
+  // Phase 24 (macOS): drain Claude Code's Keychain OAuth item into the file
+  // vault, then delete it, so Claude Code reads our file and subsequent swaps
+  // touch only files (zero dialogs). Idempotent — a no-op cheap probe when no
+  // item exists (the steady state). Runs after the statusline early-return
+  // above so the high-frequency redraw never pays a `security` spawn, and is
+  // self-gated off-darwin / under the disable + no-prompt flags.
+  const { reconcileClaudeCodeKeychain } = await import('../src/keychain-reconcile.js');
+  reconcileClaudeCodeKeychain();
   if (cmd.action === 'statusline-install') {
     await handleStatuslineInstall(cmd.variant);
     return;
