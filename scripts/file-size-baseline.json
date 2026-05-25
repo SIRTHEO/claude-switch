@@ -9,6 +9,5 @@
   "src/ui/screens/add-account.tsx": 315,
   "src/ui/screens/auto-fallback.tsx": 287,
   "src/ui/screens/home.tsx": 331,
-  "src/ui/screens/manage-account.tsx": 364,
-  "src/ui/screens/profiles.tsx": 540
+  "src/ui/screens/manage-account.tsx": 364
 }
