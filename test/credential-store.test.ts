@@ -23,7 +23,7 @@ import {
   parseClaudeOAuthItems,
   type SecurityExec,
   type KeychainData,
-} from '../src/credential-store.js';
+} from '../src/credentials/credential-store.js';
 
 const OAUTH_SERVICE = 'Claude Code-credentials';
 const APIKEY_SERVICE = 'claude-switch-apikey';
@@ -510,7 +510,7 @@ describe('defaultCredentialStore selection', () => {
     // Phase 24 made the file vault the default everywhere. The legacy
     // KeychainAdapter is reachable only via CLAUDE_SWITCH_USE_KEYCHAIN=1
     // for one back-compat release before removal.
-    const { FileCredentialStore } = await import('../src/file-credential-store.js');
+    const { FileCredentialStore } = await import('../src/credentials/file-credential-store.js');
     assert.ok(defaultCredentialStore instanceof FileCredentialStore);
   });
 });

@@ -1,8 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ChildProcess, SpawnSyncReturns } from 'node:child_process';
-import { launchInTerminal } from '../src/terminals.js';
-import type { ProcessPort } from '../src/process.js';
+import { launchInTerminal } from '../src/sessions/terminals.js';
+import type { ProcessPort } from '../src/platform/process.js';
 
 interface SpawnCall { command: string; args: readonly string[]; }
 

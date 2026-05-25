@@ -1,8 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { countActiveClaudeSessions } from '../src/active-sessions.js';
-import type { ProcessPort } from '../src/process.js';
+import { countActiveClaudeSessions } from '../src/sessions/active-sessions.js';
+import type { ProcessPort } from '../src/platform/process.js';
 
 // Build a ProcessPort whose spawnSync returns canned `ps` output (or a
 // failure), so the parsing/filtering logic can be exercised without a real

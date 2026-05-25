@@ -11,7 +11,7 @@ import path from 'node:path';
 import { render } from 'ink-testing-library';
 
 import { HomeScreen, type HomeExit } from '../../src/ui/screens/home.js';
-import { save as saveAccount } from '../../src/accounts.js';
+import { save as saveAccount } from '../../src/accounts/accounts.js';
 import { makeKeystrokeHelper } from './ink-keystroke-helper.js';
 
 // ---------------------------------------------------------------------------

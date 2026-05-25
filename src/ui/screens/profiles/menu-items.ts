@@ -3,9 +3,9 @@
 // label helper. Pulled out of `profiles.tsx` so the orchestrator file
 // can stay focused on the state machine + spawn lifecycle.
 
-import { listProfiles, readProfile } from '../../../profiles.js';
-import { list as listAccounts } from '../../../accounts.js';
-import { readGlobalPrefs } from '../../../preferences.js';
+import { listProfiles, readProfile } from '../../../profiles/profiles.js';
+import { list as listAccounts } from '../../../accounts/accounts.js';
+import { readGlobalPrefs } from '../../../switching/preferences.js';
 
 export type Action =
   | 'isolated' | 'list' | 'use' | 'login' | 'create' | 'import' | 'remove' | 'back';

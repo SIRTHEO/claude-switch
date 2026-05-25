@@ -2,7 +2,7 @@
 // `claude switch setup` — first-run / re-run wizard.
 
 import { fileURLToPath } from 'node:url';
-import { runSetup } from '../setup.js';
+import { runSetup } from '../setup/setup.js';
 import { runSetupWizardScreen } from '../ui/screens/setup-wizard.js';
 import type { CommandContext } from './context.js';
 

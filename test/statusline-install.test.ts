@@ -10,7 +10,7 @@ import {
   PLAIN_COMMAND,
   CCSTATUSLINE_COMMAND,
   CCSTATUSLINE_VERSION,
-} from '../src/statusline-install.js';
+} from '../src/statusline/statusline-install.js';
 
 describe('detectExistingStatusLine', () => {
   let dir: string;

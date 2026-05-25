@@ -18,7 +18,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { save, load, remove } from '../src/accounts.js';
+import { save, load, remove } from '../src/accounts/accounts.js';
 
 let dir: string;
 let claudeJson: string;

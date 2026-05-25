@@ -5,14 +5,14 @@
 // `--refresh-only` is an internal flag the statusline uses to refresh the
 // cache asynchronously without producing any output.
 
-import { ExitError, errMessage } from '../errors.js';
-import { withLock } from '../lock.js';
-import { getCurrent } from '../accounts.js';
+import { ExitError, errMessage } from '../platform/errors.js';
+import { withLock } from '../platform/lock.js';
+import { getCurrent } from '../accounts/accounts.js';
 import {
   getAccessTokenFromKeychain,
   fetchUsageCached,
   refreshUsageForAccount,
-} from '../usage.js';
+} from '../usage/usage.js';
 import type { CommandContext } from './context.js';
 
 export async function handleUsage(
@@ -77,7 +77,7 @@ export async function handleUsage(
   // When forcing, surface the raw fetch error so failures are diagnosable
   // (the cached path silently swallows non-429 errors to keep noise low).
   if (options.force) {
-    const { fetchUsage: rawFetch } = await import('../usage.js');
+    const { fetchUsage: rawFetch } = await import('../usage/usage.js');
     const raw = await rawFetch(token);
     if (!raw.ok && !raw.rateLimited) {
       console.log(`Fetch error: ${raw.error}`);

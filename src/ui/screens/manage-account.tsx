@@ -9,10 +9,10 @@ import { useEffect, useState } from 'react';
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { clearScreen } from '../screen-buffer.js';import { Badge, ConfirmInput, StatusMessage, TextInput } from '@inkjs/ui';
 
-import { getCurrent, list as listAccounts } from '../../accounts.js';
-import { getApiKey, removeApiKey } from '../../apikey.js';
-import { getAliasesForEmail, setAlias, removeAlias } from '../../aliases.js';
-import { withLock } from '../../lock.js';
+import { getCurrent, list as listAccounts } from '../../accounts/accounts.js';
+import { getApiKey, removeApiKey } from '../../credentials/apikey.js';
+import { getAliasesForEmail, setAlias, removeAlias } from '../../switching/aliases.js';
+import { withLock } from '../../platform/lock.js';
 import { ORANGE } from '../theme.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 import { runApikeyScreen } from './set-apikey.js';

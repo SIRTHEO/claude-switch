@@ -6,8 +6,8 @@
 
 import { Box, Text } from 'ink';
 import { Badge, StatusMessage, TextInput } from '@inkjs/ui';
-import { list as listAccounts } from '../../accounts.js';
-import { listProfiles } from '../../profiles.js';
+import { list as listAccounts } from '../../accounts/accounts.js';
+import { listProfiles } from '../../profiles/profiles.js';
 import { ORANGE } from '../theme.js';
 import { type MenuItem, profileLabel } from './profiles/menu-items.js';
 import { PickList } from './profiles/pick-list.js';

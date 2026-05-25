@@ -2,7 +2,7 @@
 // host has installed and the launcher can target. The GUI consumes the
 // JSON shape to populate the per-profile "Launch in ▾" dropdown.
 
-import { detectTerminals } from '../terminals.js';
+import { detectTerminals } from '../sessions/terminals.js';
 
 interface TerminalsOptions {
   json: boolean;

@@ -10,8 +10,8 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { load } from '../src/accounts.js';
-import type { CredentialStore, KeychainData } from '../src/credential-store.js';
+import { load } from '../src/accounts/accounts.js';
+import type { CredentialStore, KeychainData } from '../src/credentials/credential-store.js';
 
 let dir: string;
 let claudeJson: string;

@@ -1,8 +1,8 @@
 // src/commands/alias.ts
 // `claude switch alias …` — set / list / remove aliases for accounts.
 
-import { ExitError, errMessage } from '../errors.js';
-import { setAlias, listAliases, removeAlias } from '../aliases.js';
+import { ExitError, errMessage } from '../platform/errors.js';
+import { setAlias, listAliases, removeAlias } from '../switching/aliases.js';
 import type { CommandContext } from './context.js';
 import type { AliasEntry } from '../contract.js';
 

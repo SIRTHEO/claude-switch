@@ -26,9 +26,9 @@ import {
   ApikeyScreen,
   type SetApiKeyResult,
 } from '../../src/ui/screens/set-apikey.js';
-import { save as saveAccount } from '../../src/accounts.js';
-import { setApiKey } from '../../src/apikey.js';
-import { makeKeystrokeHelper } from '../ui/ink-keystroke-helper.js';
+import { save as saveAccount } from '../../src/accounts/accounts.js';
+import { setApiKey } from '../../src/credentials/apikey.js';
+import { makeKeystrokeHelper } from './ink-keystroke-helper.js';
 
 // ---------------------------------------------------------------------------
 // Disable real Keychain for all tests in this file

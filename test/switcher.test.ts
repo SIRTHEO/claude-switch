@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fuzzyMatch, switchTo, switchToAndSyncFallback, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switcher.js';
-import { isFallbackEnabled, setFallbackEnabledInLock } from '../src/fallback.js';
+import { fuzzyMatch, switchTo, switchToAndSyncFallback, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switching/switcher.js';
+import { isFallbackEnabled, setFallbackEnabledInLock } from '../src/fallback/fallback.js';
 
 describe('fuzzyMatch', () => {
   const accounts = ['work@company.com', 'personal@gmail.com', 'test@company.com'];
@@ -346,8 +346,8 @@ import {
   reAuthenticate,
   addAccount,
   type SwitcherDeps,
-} from '../src/switcher.js';
-import type { ProcessPort } from '../src/process.js';
+} from '../src/switching/switcher.js';
+import type { ProcessPort } from '../src/platform/process.js';
 
 describe('reAuthOutcome — re-auth decision logic', () => {
   it('success: token was broken, login fixed it (same account)', () => {
@@ -546,7 +546,7 @@ describe('switchInteractive — active marker / getCurrent() consistency (11.11 
     await switchInteractive(claudeJson, accDir, { askFn: async () => '2' });
 
     // getCurrent() must now report b@x.com
-    const { getCurrent } = await import('../src/accounts.js');
+    const { getCurrent } = await import('../src/accounts/accounts.js');
     assert.equal(getCurrent(claudeJson), 'b@x.com', 'getCurrent() after switch must be b@x.com');
 
     // The next menu render must display (active) on b@x.com, not a@x.com.
@@ -565,7 +565,7 @@ describe('switchInteractive — active marker / getCurrent() consistency (11.11 
     fs.writeFileSync(path.join(accDir, 'a@x.com.json'), JSON.stringify({ emailAddress: 'a@x.com' }));
     fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com' }));
 
-    const { getCurrent } = await import('../src/accounts.js');
+    const { getCurrent } = await import('../src/accounts/accounts.js');
 
     // a → b
     await switchInteractive(claudeJson, accDir, { askFn: async () => '2' });
@@ -595,9 +595,9 @@ describe('switchInteractive — active marker / getCurrent() consistency (11.11 
     fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com' }));
     fs.writeFileSync(path.join(accDir, 'c@x.com.json'), JSON.stringify({ emailAddress: 'c@x.com' }));
 
-    const { getCurrent } = await import('../src/accounts.js');
-    const { withLock } = await import('../src/lock.js');
-    const { load } = await import('../src/accounts.js');
+    const { getCurrent } = await import('../src/accounts/accounts.js');
+    const { withLock } = await import('../src/platform/lock.js');
+    const { load } = await import('../src/accounts/accounts.js');
 
     // During the ask() call, simulate an external process switching a→b.
     const askFn = async (): Promise<string> => {

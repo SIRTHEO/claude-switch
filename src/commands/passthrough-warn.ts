@@ -4,7 +4,7 @@
 // on the next switch. To be removed in a future minor release.
 
 import fs from 'node:fs';
-import { getApiKey } from '../apikey.js';
+import { getApiKey } from '../credentials/apikey.js';
 
 let _warnedUntrackedApiKey = false;
 

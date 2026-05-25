@@ -17,18 +17,18 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { ExitError, errnoCode } from '../errors.js';
-import { writeJsonAtomic } from '../atomic-write.js';
-import { withLock } from '../lock.js';
-import { list as listAccounts, isSafeEmail } from '../accounts.js';
-import { getAlias } from '../aliases.js';
-import { readState } from '../state-store.js';
+import { ExitError, errnoCode } from '../platform/errors.js';
+import { writeJsonAtomic } from '../platform/atomic-write.js';
+import { withLock } from '../platform/lock.js';
+import { list as listAccounts, isSafeEmail } from '../accounts/accounts.js';
+import { getAlias } from '../switching/aliases.js';
+import { readState } from '../switching/state-store.js';
 import {
   parseRoutingFile,
   resolveRouting,
   type RoutingFile,
   type RoutingRule,
-} from '../routing.js';
+} from '../routing/routing.js';
 import type { CommandContext } from './context.js';
 import type { RouteRule, RouteTestResult } from '../contract.js';
 

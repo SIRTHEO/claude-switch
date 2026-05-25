@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { ExitError } from '../src/errors.js';
+import { ExitError } from '../src/platform/errors.js';
 
 describe('ExitError', () => {
   it('creates with message and default code 1', () => {

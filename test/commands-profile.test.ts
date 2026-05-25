@@ -23,8 +23,8 @@ import {
   handleProfileStatus,
   handleProfileRemove,
 } from '../src/commands/profile.js';
-import { save as saveAccount } from '../src/accounts.js';
-import { ExitError } from '../src/errors.js';
+import { save as saveAccount } from '../src/accounts/accounts.js';
+import { ExitError } from '../src/platform/errors.js';
 import type { CommandContext } from '../src/commands/context.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 

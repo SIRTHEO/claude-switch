@@ -18,10 +18,10 @@ import { spawnSync } from 'node:child_process';
 import { Box, Text, render, useApp } from 'ink';
 import { clearScreen } from '../screen-buffer.js';import { Badge, ConfirmInput, StatusMessage, TextInput } from '@inkjs/ui';
 
-import { getCurrent, save, load, list } from '../../accounts.js';
-import { withLock } from '../../lock.js';
-import { setAlias } from '../../aliases.js';
-import { buildSpawnArgs } from '../../proxy.js';
+import { getCurrent, save, load, list } from '../../accounts/accounts.js';
+import { withLock } from '../../platform/lock.js';
+import { setAlias } from '../../switching/aliases.js';
+import { buildSpawnArgs } from '../../proxy/proxy.js';
 import { ORANGE } from '../theme.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 

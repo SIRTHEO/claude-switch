@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isFallbackEnabled, isFallbackAutoEngaged, setFallbackEnabled } from '../src/fallback.js';
+import { isFallbackEnabled, isFallbackAutoEngaged, setFallbackEnabled } from '../src/fallback/fallback.js';
 
 describe('fallback toggle', () => {
   let tmpDir: string;

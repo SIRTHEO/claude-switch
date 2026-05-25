@@ -30,7 +30,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ensureProfileForAccount } from '../src/profiles.js';
+import { ensureProfileForAccount } from '../src/profiles/profiles.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

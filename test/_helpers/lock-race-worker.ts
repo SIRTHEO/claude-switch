@@ -7,7 +7,7 @@
 // the critical section at once, the witness check trips and we report it.
 import fs from 'node:fs';
 import path from 'node:path';
-import { acquireLock } from '../../src/lock.js';
+import { acquireLock } from '../../src/platform/lock.js';
 
 const dir = process.argv[2]!;
 const iters = parseInt(process.argv[3] ?? '40', 10);

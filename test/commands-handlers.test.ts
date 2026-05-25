@@ -31,11 +31,11 @@ import {
   handleAliasList,
   handleAliasRemove,
 } from '../src/commands/alias.js';
-import { setApiKey } from '../src/apikey.js';
-import { setFallbackEnabled } from '../src/fallback.js';
-import { save as saveAccount } from '../src/accounts.js';
+import { setApiKey } from '../src/credentials/apikey.js';
+import { setFallbackEnabled } from '../src/fallback/fallback.js';
+import { save as saveAccount } from '../src/accounts/accounts.js';
 import type { CommandContext } from '../src/commands/context.js';
-import { ExitError } from '../src/errors.js';
+import { ExitError } from '../src/platform/errors.js';
 
 // ────────────────────────────────────────────────────────────────────
 // Test scaffolding

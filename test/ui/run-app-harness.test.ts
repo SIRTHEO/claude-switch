@@ -21,7 +21,7 @@ import fs from 'node:fs';
 
 import { makeRunAppHarness, type RunAppHarness } from './run-app-harness.js';
 import { _internal } from '../../src/ui/run-app.js';
-import { save as saveAccount } from '../../src/accounts.js';
+import { save as saveAccount } from '../../src/accounts/accounts.js';
 
 // Disable real Keychain for the whole file.
 process.env['CLAUDE_SWITCH_DISABLE_KEYCHAIN'] = '1';

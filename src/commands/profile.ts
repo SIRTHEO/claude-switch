@@ -3,15 +3,15 @@
 // CLAUDE_CONFIG_DIR. Each profile lives at ~/.claude/profiles/<name>/
 // with its own userID, Keychain entry, sessions.
 //
-// All sub-commands here use dynamic `import('../profiles.js')` so cli.ts
+// All sub-commands here use dynamic `import('../profiles/profiles.js')` so cli.ts
 // startup doesn't pay the profiles module cost on the hot path
 // (statusline, passthrough). The module itself pulls in node:crypto +
 // keychain helpers.
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { ExitError, errMessage } from '../errors.js';
-import { getTokenHealth } from '../token.js';
+import { ExitError, errMessage } from '../platform/errors.js';
+import { getTokenHealth } from '../credentials/token.js';
 import { findClaude } from './_helpers.js';
 import type { CommandContext } from './context.js';
 import type { ProfileEntry } from '../contract.js';
@@ -23,7 +23,7 @@ interface ProfileListOptions {
 export async function handleProfileList(
   opts: ProfileListOptions = { json: false },
 ): Promise<void> {
-  const { listProfiles, readProfile } = await import('../profiles.js');
+  const { listProfiles, readProfile } = await import('../profiles/profiles.js');
   const profiles = listProfiles();
 
   if (opts.json) {
@@ -55,7 +55,7 @@ export async function handleProfileList(
 }
 
 export async function handleProfileCreate(name: string): Promise<void> {
-  const { createProfile } = await import('../profiles.js');
+  const { createProfile } = await import('../profiles/profiles.js');
   let dir: string;
   try {
     dir = createProfile(name);
@@ -70,7 +70,7 @@ export async function handleProfileCreate(name: string): Promise<void> {
 }
 
 export async function handleProfileStatus(name: string | undefined): Promise<void> {
-  const { readProfile, listProfiles } = await import('../profiles.js');
+  const { readProfile, listProfiles } = await import('../profiles/profiles.js');
   if (name) {
     let info: ReturnType<typeof readProfile>;
     try {
@@ -93,7 +93,7 @@ export async function handleProfileStatus(name: string | undefined): Promise<voi
 
     let keychainLine = '(not applicable on this platform)';
     if (process.platform === 'darwin') {
-      const { claudeKeychainServiceFor, claudeKeychainAccount } = await import('../keychain.js');
+      const { claudeKeychainServiceFor, claudeKeychainAccount } = await import('../credentials/keychain.js');
       // Keychain probe — stays on raw spawnSync until CredentialStore lands
       // (this `security` call belongs to that port, not ProcessPort).
       const { spawnSync } = await import('node:child_process');
@@ -139,7 +139,7 @@ export async function handleProfileStatus(name: string | undefined): Promise<voi
 }
 
 export async function handleProfileLogin(ctx: CommandContext, name: string): Promise<void> {
-  const { profilePath, profileExists, createProfile, readProfile } = await import('../profiles.js');
+  const { profilePath, profileExists, createProfile, readProfile } = await import('../profiles/profiles.js');
   let dir: string;
   try {
     if (!profileExists(name)) {
@@ -152,11 +152,11 @@ export async function handleProfileLogin(ctx: CommandContext, name: string): Pro
   }
   const claudeBin = findClaude(ctx.selfUrl);
   process.stderr.write(`🔐 Opening browser to authenticate profile "${name}"...\n\n`);
-  const { buildSpawnArgs } = await import('../proxy.js');
+  const { buildSpawnArgs } = await import('../proxy/proxy.js');
   const { command, args, options } = buildSpawnArgs(claudeBin, ['auth', 'login'], process.platform, {
     CLAUDE_CONFIG_DIR: dir,
   });
-  const { nodeProcessAdapter } = await import('../process.js');
+  const { nodeProcessAdapter } = await import('../platform/process.js');
   nodeProcessAdapter.spawnSync(command, args, options);
 
   const info = readProfile(name);
@@ -180,7 +180,7 @@ async function resolveActiveProfile(
   ctx: CommandContext,
   name: string,
 ) {
-  const { profilePath, profileExists, readProfile } = await import('../profiles.js');
+  const { profilePath, profileExists, readProfile } = await import('../profiles/profiles.js');
   if (!profileExists(name)) {
     throw new ExitError(
       `Profile "${name}" does not exist. Create it with: claude switch profile create ${name}`,
@@ -217,7 +217,7 @@ export async function handleProfileLaunch(
   terminalId: string,
 ): Promise<void> {
   const { dir, claudeBin } = await resolveActiveProfile(ctx, name);
-  const { launchInTerminal } = await import('../terminals.js');
+  const { launchInTerminal } = await import('../sessions/terminals.js');
   try {
     launchInTerminal({
       terminalId,
@@ -238,11 +238,11 @@ export async function handleProfileUse(
 ): Promise<never> {
   const { info, dir, claudeBin } = await resolveActiveProfile(ctx, name);
   process.stderr.write(`🔑 ${name} (profile, isolated) — ${info.emailAddress}\n\n`);
-  const { buildSpawnArgs } = await import('../proxy.js');
+  const { buildSpawnArgs } = await import('../proxy/proxy.js');
   const { command, args, options } = buildSpawnArgs(claudeBin, passthroughArgs, process.platform, {
     CLAUDE_CONFIG_DIR: dir,
   });
-  const { nodeProcessAdapter } = await import('../process.js');
+  const { nodeProcessAdapter } = await import('../platform/process.js');
   const result = nodeProcessAdapter.spawnSync(command, args, options);
   if (result.error) {
     console.error(`Error: could not run claude: ${result.error.message}`);
@@ -256,7 +256,7 @@ export async function handleProfileImport(
   email: string,
   profileName: string | undefined,
 ): Promise<void> {
-  const { importProfileFromAccount, refreshLegacySnapshotIfStale } = await import('../profiles.js');
+  const { importProfileFromAccount, refreshLegacySnapshotIfStale } = await import('../profiles/profiles.js');
 
   // Refresh the snapshot's access token if it's stale before we
   // import — otherwise the imported profile lands with an expired
@@ -291,7 +291,7 @@ export async function handleProfileImport(
 }
 
 export async function handleProfileRemove(name: string): Promise<void> {
-  const { removeProfile } = await import('../profiles.js');
+  const { removeProfile } = await import('../profiles/profiles.js');
   let result: ReturnType<typeof removeProfile>;
   try {
     result = removeProfile(name);
@@ -301,7 +301,7 @@ export async function handleProfileRemove(name: string): Promise<void> {
   console.log(`Removed profile dir: ${result.dir}`);
   if (process.platform === 'darwin') {
     const { claudeKeychainServiceFor, claudeKeychainAccount, deleteKeychainForConfigDir } =
-      await import('../keychain.js');
+      await import('../credentials/keychain.js');
     const service = claudeKeychainServiceFor(result.dir);
     const account = claudeKeychainAccount();
     const removed = deleteKeychainForConfigDir(result.dir);

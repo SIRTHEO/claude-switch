@@ -9,8 +9,8 @@ import {
   getNpmBinDir,
   patchShellConfig,
   saveClaudeBin,
-} from '../../setup.js';
-import { detectExistingStatusLine, installStatusLine } from '../../statusline-install.js';
+} from '../../setup/setup.js';
+import { detectExistingStatusLine, installStatusLine } from '../../statusline/statusline-install.js';
 
 /** Injectable dependencies — used for testing. All optional; default to real implementations. */
 export interface SetupDeps {

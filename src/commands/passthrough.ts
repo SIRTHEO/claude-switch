@@ -16,23 +16,23 @@
 // live in sibling modules (passthrough-warn / passthrough-routing /
 // passthrough-prewarm); the public surface is re-exported here.
 
-import { withLock } from '../lock.js';
-import { ExitError } from '../errors.js';
-import { VERSION } from '../version.js';
-import { getCurrent, save, list as listAccounts } from '../accounts.js';
-import { checkPendingRestore } from '../switcher.js';
-import { run as proxyRun } from '../proxy.js';
-import { getApiKey } from '../apikey.js';
-import { getTokenHealth } from '../token.js';
-import { fallbackEnvFor } from '../fallback-env.js';
+import { withLock } from '../platform/lock.js';
+import { ExitError } from '../platform/errors.js';
+import { VERSION } from '../setup/version.js';
+import { getCurrent, save, list as listAccounts } from '../accounts/accounts.js';
+import { checkPendingRestore } from '../switching/switcher.js';
+import { run as proxyRun } from '../proxy/proxy.js';
+import { getApiKey } from '../credentials/apikey.js';
+import { getTokenHealth } from '../credentials/token.js';
+import { fallbackEnvFor } from '../fallback/fallback-env.js';
 import {
   maybeAutoDisableFallback,
   maybeAutoEngageFallback,
   maybeInitSmartFallback,
-} from '../auto-fallback.js';
-import { readUsageCacheForAccount } from '../usage.js';
-import { startFallbackProxy } from '../api-proxy.js';
-import { resolveAccountPrefs, resolveEffectiveAuthMode } from '../preferences.js';
+} from '../fallback/auto-fallback.js';
+import { readUsageCacheForAccount } from '../usage/usage.js';
+import { startFallbackProxy } from '../proxy/api-proxy.js';
+import { resolveAccountPrefs, resolveEffectiveAuthMode } from '../switching/preferences.js';
 import { findClaude } from './_helpers.js';
 import { warnUntrackedApiKeyIfNeeded } from './passthrough-warn.js';
 import { resolveRoutingForPassthrough } from './passthrough-routing.js';

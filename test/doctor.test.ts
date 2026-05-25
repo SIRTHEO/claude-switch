@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { diagnose, type DoctorInput } from '../src/doctor.js';
+import { diagnose, type DoctorInput } from '../src/setup/doctor.js';
 
 const NOW = 1_000_000_000_000;
 

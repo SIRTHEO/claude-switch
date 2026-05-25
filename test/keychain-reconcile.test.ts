@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { reconcileClaudeCodeKeychain, type SecurityExec } from '../src/keychain-reconcile.js';
-import { FileCredentialStore, defaultCredentialsFilePath } from '../src/file-credential-store.js';
+import { reconcileClaudeCodeKeychain, type SecurityExec } from '../src/credentials/keychain-reconcile.js';
+import { FileCredentialStore, defaultCredentialsFilePath } from '../src/credentials/file-credential-store.js';
 
 // reconcile shells out to `security` (faked here) and writes the file vault
 // under $HOME. Redirect HOME to a temp dir and fake the exec so no real

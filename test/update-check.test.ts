@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isNewer, detectInstallCommand, checkForUpdate, writeUpdateCache } from '../src/update-check.js';
+import { isNewer, detectInstallCommand, checkForUpdate, writeUpdateCache } from '../src/setup/update-check.js';
 import { setFakeHome, restoreFakeHome } from './_helpers/fake-home.js';
 
 describe('isNewer', () => {

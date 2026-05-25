@@ -10,7 +10,7 @@ import {
   isAccessTokenStale,
   refreshAccessToken,
   refreshIfStale,
-} from '../src/oauth-refresh.js';
+} from '../src/credentials/oauth-refresh.js';
 
 describe('isAccessTokenStale', () => {
   it('returns true when oauth is undefined', () => {

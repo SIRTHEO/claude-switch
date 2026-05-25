@@ -8,8 +8,8 @@ import { useEffect, useState } from 'react';
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { StatusMessage } from '@inkjs/ui';
 
-import { switchToAndSyncFallback } from '../../switcher.js';
-import { resolveAccountPrefs } from '../../preferences.js';
+import { switchToAndSyncFallback } from '../../switching/switcher.js';
+import { resolveAccountPrefs } from '../../switching/preferences.js';
 import { useSnapshot } from '../hooks/use-snapshot.js';
 import { useAsyncAction } from '../hooks/use-async-action.js';
 import { ORANGE } from '../theme.js';

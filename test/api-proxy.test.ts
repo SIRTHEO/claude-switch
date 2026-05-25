@@ -14,7 +14,7 @@ import {
   stripOauthBeta,
   looksLikeErrorBody,
   isRetryableStatus,
-} from '../src/api-proxy.js';
+} from '../src/proxy/api-proxy.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

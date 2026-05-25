@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { Badge, StatusMessage } from '@inkjs/ui';
 
-import { list as listAccounts } from '../../accounts.js';
+import { list as listAccounts } from '../../accounts/accounts.js';
 import {
   readGlobalPrefs,
   writeGlobalPrefs,
@@ -16,7 +16,7 @@ import {
   resolveAccountPrefs,
   type GlobalPrefs,
   type AccountPrefs,
-} from '../../preferences.js';
+} from '../../switching/preferences.js';
 import { ORANGE } from '../theme.js';
 import { clearScreen } from '../screen-buffer.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';

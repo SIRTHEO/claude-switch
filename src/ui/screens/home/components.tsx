@@ -50,7 +50,7 @@ function Section({ title, subtitle, focused, children }: SectionProps) {
 interface AccountSummaryProps {
   row: AccountRow;
   fallbackOn: boolean;
-  tokenHealth: ReturnType<typeof import('../../../token.js').getTokenHealth> | null;
+  tokenHealth: ReturnType<typeof import('../../../credentials/token.js').getTokenHealth> | null;
 }
 
 /** Per-account detail block. Active row gets the live runtime context
@@ -131,7 +131,7 @@ interface AccountListProps {
   cursor: number;
   focused: boolean;
   fallbackOn: boolean;
-  tokenHealth: ReturnType<typeof import('../../../token.js').getTokenHealth> | null;
+  tokenHealth: ReturnType<typeof import('../../../credentials/token.js').getTokenHealth> | null;
 }
 
 export function AccountList({

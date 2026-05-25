@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getCurrent, save, load, list, remove, removeSafely, syncActiveSnapshotIfStale } from '../src/accounts.js';
-import type { CredentialStore } from '../src/credential-store.js';
+import { getCurrent, save, load, list, remove, removeSafely, syncActiveSnapshotIfStale } from '../src/accounts/accounts.js';
+import type { CredentialStore } from '../src/credentials/credential-store.js';
 
 describe('getCurrent', () => {
   let tmpDir: string;

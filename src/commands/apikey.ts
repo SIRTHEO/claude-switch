@@ -3,10 +3,10 @@
 // for an account. The `set` flow prefers the Ink screen on a TTY; falls
 // back to stdin pipe for non-interactive contexts (CI, scripts).
 
-import { ExitError } from '../errors.js';
-import { withLock } from '../lock.js';
-import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../apikey.js';
-import { maybeInitSmartFallback } from '../auto-fallback.js';
+import { ExitError } from '../platform/errors.js';
+import { withLock } from '../platform/lock.js';
+import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../credentials/apikey.js';
+import { maybeInitSmartFallback } from '../fallback/auto-fallback.js';
 import { runApikeyScreen } from '../ui/screens/set-apikey.js';
 import { resolveTargetEmail, promptSecret } from './_helpers.js';
 import type { CommandContext } from './context.js';

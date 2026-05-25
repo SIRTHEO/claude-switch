@@ -18,7 +18,7 @@ import { createHash } from 'node:crypto';
 import {
   claudeKeychainServiceFor,
   claudeKeychainAccount,
-} from '../src/keychain.js';
+} from '../src/credentials/keychain.js';
 
 describe('claudeKeychainServiceFor', () => {
   it('returns the bare credentials service when no config dir is given', () => {

@@ -3,7 +3,7 @@
 // `list` (+ `--json` for the GUI contract). Composing a profile's skills lands
 // in Phase 22.2 (`profile skills link/unlink`).
 
-import { ExitError } from '../errors.js';
+import { ExitError } from '../platform/errors.js';
 import type { ProfileSkillEntry, SkillEntry } from '../contract.js';
 
 interface SkillsListOptions {
@@ -13,7 +13,7 @@ interface SkillsListOptions {
 export async function handleSkillsList(
   opts: SkillsListOptions = { json: false },
 ): Promise<void> {
-  const { listSkills, readSkill } = await import('../skills.js');
+  const { listSkills, readSkill } = await import('../profiles/skills.js');
   const names = listSkills();
 
   if (opts.json) {
@@ -47,7 +47,7 @@ function truncate(s: string, max: number): string {
 }
 
 async function requireProfile(profileName: string): Promise<void> {
-  const { profileExists } = await import('../profiles.js');
+  const { profileExists } = await import('../profiles/profiles.js');
   if (!profileExists(profileName)) {
     throw new ExitError(`Profile "${profileName}" does not exist.`);
   }
@@ -58,7 +58,7 @@ export async function handleProfileSkillsList(
   opts: SkillsListOptions = { json: false },
 ): Promise<void> {
   await requireProfile(profileName);
-  const { listProfileSkills } = await import('../skills.js');
+  const { listProfileSkills } = await import('../profiles/skills.js');
   const entries = listProfileSkills(profileName);
 
   if (opts.json) {
@@ -92,7 +92,7 @@ export async function handleProfileSkillsLink(
   skillName: string,
 ): Promise<void> {
   await requireProfile(profileName);
-  const { linkSkillToProfile } = await import('../skills.js');
+  const { linkSkillToProfile } = await import('../profiles/skills.js');
   linkSkillToProfile(profileName, skillName);
   console.log(`Linked skill "${skillName}" into profile "${profileName}".`);
 }
@@ -102,7 +102,7 @@ export async function handleProfileSkillsUnlink(
   skillName: string,
 ): Promise<void> {
   await requireProfile(profileName);
-  const { unlinkSkillFromProfile } = await import('../skills.js');
+  const { unlinkSkillFromProfile } = await import('../profiles/skills.js');
   unlinkSkillFromProfile(profileName, skillName);
   console.log(`Unlinked skill "${skillName}" from profile "${profileName}".`);
 }

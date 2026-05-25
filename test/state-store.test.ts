@@ -11,8 +11,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { readState, updateState, updateStateInLock } from '../src/state-store.js';
-import { withLock } from '../src/lock.js';
+import { readState, updateState, updateStateInLock } from '../src/switching/state-store.js';
+import { withLock } from '../src/platform/lock.js';
 
 let tmp: string;
 let accDir: string;

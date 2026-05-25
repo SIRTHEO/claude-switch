@@ -14,13 +14,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { save } from '../src/accounts.js';
+import { save } from '../src/accounts/accounts.js';
 import {
   getApiKey,
   setApiKey,
   removeApiKey,
   migrateApiKeysToKeychain,
-} from '../src/apikey.js';
+} from '../src/credentials/apikey.js';
 
 const macAndEnabled =
   process.platform === 'darwin' && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1';

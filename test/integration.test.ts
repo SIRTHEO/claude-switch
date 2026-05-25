@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getCurrent, save, list, remove } from '../src/accounts.js';
-import { switchTo, fuzzyMatch, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switcher.js';
-import { setAlias, resolveAlias, getAliasesForEmail } from '../src/aliases.js';
-import { setApiKey, getApiKey } from '../src/apikey.js';
-import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback.js';
+import { getCurrent, save, list, remove } from '../src/accounts/accounts.js';
+import { switchTo, fuzzyMatch, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switching/switcher.js';
+import { setAlias, resolveAlias, getAliasesForEmail } from '../src/switching/aliases.js';
+import { setApiKey, getApiKey } from '../src/credentials/apikey.js';
+import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback/fallback.js';
 
 describe('integration: full account lifecycle', () => {
   let tmpDir: string;
@@ -292,7 +292,7 @@ describe('integration: fallback auto-sync on switch', () => {
   });
 
   it('switchToAndSyncFallback bundles switch + flip atomically', async () => {
-    const { switchToAndSyncFallback } = await import('../src/switcher.js');
+    const { switchToAndSyncFallback } = await import('../src/switching/switcher.js');
     setFallbackEnabled(accDir, true);
 
     // Switching to a key-less account with autoFlipFallback=true should
@@ -303,12 +303,12 @@ describe('integration: fallback auto-sync on switch', () => {
     assert.equal(isFallbackEnabled(accDir), false);
     // getCurrent must reflect the new account — both reads are inside the
     // same lock so we never observe an inconsistent intermediate state.
-    const { getCurrent } = await import('../src/accounts.js');
+    const { getCurrent } = await import('../src/accounts/accounts.js');
     assert.equal(getCurrent(claudeJson), 'b@x.com');
   });
 
   it('switchToAndSyncFallback respects autoFlipFallback=false', async () => {
-    const { switchToAndSyncFallback } = await import('../src/switcher.js');
+    const { switchToAndSyncFallback } = await import('../src/switching/switcher.js');
     setFallbackEnabled(accDir, true);
     const out = switchToAndSyncFallback('b@x.com', claudeJson, accDir, { autoFlipFallback: false });
     assert.equal(out.fallbackFlipped, false);
@@ -316,7 +316,7 @@ describe('integration: fallback auto-sync on switch', () => {
   });
 
   it('switchToAndSyncFallback is idempotent when no flip is needed', async () => {
-    const { switchToAndSyncFallback } = await import('../src/switcher.js');
+    const { switchToAndSyncFallback } = await import('../src/switching/switcher.js');
     // Account a@x.com has key, fallback already ON.
     setFallbackEnabled(accDir, true);
     const out = switchToAndSyncFallback('a@x.com', claudeJson, accDir, { autoFlipFallback: true });

@@ -7,22 +7,22 @@
 // Keeping the orchestrator outside React keeps spawn handling and process
 // exits straightforward — Ink owns rendering, this owns control flow.
 
-import { nodeProcessAdapter } from '../process.js';
+import { nodeProcessAdapter } from '../platform/process.js';
 
-import { getCurrent } from '../accounts.js';
-import { ExitError } from '../errors.js';
-import { isFallbackEnabled, setFallbackEnabled } from '../fallback.js';
-import { getApiKey } from '../apikey.js';
+import { getCurrent } from '../accounts/accounts.js';
+import { ExitError } from '../platform/errors.js';
+import { isFallbackEnabled, setFallbackEnabled } from '../fallback/fallback.js';
+import { getApiKey } from '../credentials/apikey.js';
 import {
   readUsageCacheForAccount,
   isUsageCacheStale,
   fetchUsageCached,
   getAccessTokenFromKeychain,
-} from '../usage.js';
-import { findClaudeBinary } from '../find-claude.js';
-import { getTokenHealth } from '../token.js';
-import { reAuthenticate } from '../switcher.js';
-import { buildSpawnArgs } from '../proxy.js';
+} from '../usage/usage.js';
+import { findClaudeBinary } from '../setup/find-claude.js';
+import { getTokenHealth } from '../credentials/token.js';
+import { reAuthenticate } from '../switching/switcher.js';
+import { buildSpawnArgs } from '../proxy/proxy.js';
 import { runSetupWizardScreen } from './screens/setup-wizard.js';
 
 import { renderHome, type HomeExit } from './screens/home.js';
@@ -36,7 +36,7 @@ import { runConfirm } from './screens/confirm.js';
 import { runPickAccount } from './screens/pick-account.js';
 import { runSettingsScreen } from './screens/settings.js';
 import { ALT_BUFFER_ENTER, ALT_BUFFER_EXIT, altBufferSupported } from './screen-buffer.js';
-import { readGlobalPrefs } from '../preferences.js';
+import { readGlobalPrefs } from '../switching/preferences.js';
 
 type Notice = Parameters<typeof renderHome>[2];
 
@@ -198,7 +198,7 @@ async function handleSwitched(
   let extraEnv: NodeJS.ProcessEnv | undefined;
   if (payload.defaultIsolated) {
     try {
-      const { ensureProfileForAccount } = await import('../profiles.js');
+      const { ensureProfileForAccount } = await import('../profiles/profiles.js');
       // ensureProfileForAccount is async and handles the legacy-snapshot
       // refresh internally.
       const ensured = await ensureProfileForAccount(payload.switchedTo, accountsDirPath);

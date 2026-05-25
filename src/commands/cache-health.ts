@@ -13,15 +13,15 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ExitError } from '../errors.js';
+import { ExitError } from '../platform/errors.js';
 import {
   loadActiveSessionHealth,
   readSessionJsonl,
   summariseCacheHealth,
   extractFlushTurns,
   findActiveSessionJsonl,
-} from '../cache-health.js';
-import type { CacheHealthSummary, FlushEvent } from '../cache-health.js';
+} from '../sessions/cache-health.js';
+import type { CacheHealthSummary, FlushEvent } from '../sessions/cache-health.js';
 import type { CacheHealthReport } from '../contract.js';
 
 interface CacheHealthOptions {

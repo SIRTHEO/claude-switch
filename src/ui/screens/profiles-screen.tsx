@@ -16,7 +16,7 @@ import {
   profilePath,
   readProfile,
   removeProfile,
-} from '../../profiles.js';
+} from '../../profiles/profiles.js';
 import { type Action, type MenuItem, buildHomeItems } from './profiles/menu-items.js';
 import { ProfilesView } from './profiles-view.js';
 import type { LaunchRequest, ScreenExit, Step } from './profiles-types.js';

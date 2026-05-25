@@ -6,8 +6,8 @@
 // isolated automatically (see profiles-mcp-inheritance design note).
 
 import type { McpTransport, ProfileMcpEntry } from '../contract.js';
-import { ExitError } from '../errors.js';
-import type { McpServerDef } from '../mcp.js';
+import { ExitError } from '../platform/errors.js';
+import type { McpServerDef } from '../setup/mcp.js';
 
 interface JsonOpt {
   json: boolean;
@@ -24,7 +24,7 @@ export interface McpAddSpec {
 }
 
 async function requireProfile(profileName: string): Promise<void> {
-  const { profileExists } = await import('../profiles.js');
+  const { profileExists } = await import('../profiles/profiles.js');
   if (!profileExists(profileName)) {
     throw new ExitError(`Profile "${profileName}" does not exist.`);
   }
@@ -35,7 +35,7 @@ export async function handleProfileMcpList(
   opts: JsonOpt = { json: false },
 ): Promise<void> {
   await requireProfile(profileName);
-  const { listProfileMcp } = await import('../mcp.js');
+  const { listProfileMcp } = await import('../setup/mcp.js');
   const entries = listProfileMcp(profileName);
 
   if (opts.json) {
@@ -96,7 +96,7 @@ export async function handleProfileMcpAdd(
   spec: McpAddSpec,
 ): Promise<void> {
   await requireProfile(profileName);
-  const { addProfileMcpFromGlobal, addProfileMcpInline } = await import('../mcp.js');
+  const { addProfileMcpFromGlobal, addProfileMcpInline } = await import('../setup/mcp.js');
 
   const inline = spec.command != null || spec.url != null || spec.transport != null;
   if (inline) {
@@ -113,7 +113,7 @@ export async function handleProfileMcpRemove(
   server: string,
 ): Promise<void> {
   await requireProfile(profileName);
-  const { removeProfileMcp } = await import('../mcp.js');
+  const { removeProfileMcp } = await import('../setup/mcp.js');
   removeProfileMcp(profileName, server);
   console.log(`Removed MCP server "${server}" from profile "${profileName}".`);
 }

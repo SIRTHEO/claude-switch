@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { resolve } from '../src/resolver.js';
+import { resolve } from '../src/routing/resolver.js';
 
 describe('resolver', () => {
   let tmpDir: string;

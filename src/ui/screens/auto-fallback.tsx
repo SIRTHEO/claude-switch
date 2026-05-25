@@ -14,7 +14,7 @@ import {
   getAutoFallbackConfig,
   setAutoFallbackConfig,
   type AutoFallbackConfig,
-} from '../../auto-fallback.js';
+} from '../../fallback/auto-fallback.js';
 import { ORANGE } from '../theme.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 

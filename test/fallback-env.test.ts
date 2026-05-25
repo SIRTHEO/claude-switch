@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fallbackEnvFor } from '../src/fallback-env.js';
-import { setFallbackEnabled } from '../src/fallback.js';
-import { setApiKey } from '../src/apikey.js';
+import { fallbackEnvFor } from '../src/fallback/fallback-env.js';
+import { setFallbackEnabled } from '../src/fallback/fallback.js';
+import { setApiKey } from '../src/credentials/apikey.js';
 
 describe('fallbackEnvFor', () => {
   let dir: string;

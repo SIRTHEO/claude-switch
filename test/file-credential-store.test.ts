@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { FileCredentialStore, defaultCredentialsFilePath, credentialsFileForConfigDir, configDirHash } from '../src/file-credential-store.js';
+import { FileCredentialStore, defaultCredentialsFilePath, credentialsFileForConfigDir, configDirHash } from '../src/credentials/file-credential-store.js';
 
 // FileCredentialStore writes to ~/.claude/.credentials.json and
 // ~/.claude-switch/apikeys.json — both under $HOME. Tests redirect HOME to

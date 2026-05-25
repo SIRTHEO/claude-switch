@@ -16,7 +16,7 @@ import {
   encodeProjectPath,
   findActiveSessionJsonl,
   loadActiveSessionHealth,
-} from '../src/cache-health.js';
+} from '../src/sessions/cache-health.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

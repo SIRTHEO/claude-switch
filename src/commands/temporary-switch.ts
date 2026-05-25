@@ -4,11 +4,11 @@
 // State recovery is handled inside `runTemporarySwitch` (save → spawn →
 // restore on exit/SIGINT, with a `.pending-restore` file as crash anchor).
 
-import { ExitError } from '../errors.js';
-import { fuzzyMatch, runTemporarySwitch } from '../switcher.js';
-import { resolveAlias } from '../aliases.js';
-import { list as listAccounts } from '../accounts.js';
-import { fallbackEnvFor } from '../fallback-env.js';
+import { ExitError } from '../platform/errors.js';
+import { fuzzyMatch, runTemporarySwitch } from '../switching/switcher.js';
+import { resolveAlias } from '../switching/aliases.js';
+import { list as listAccounts } from '../accounts/accounts.js';
+import { fallbackEnvFor } from '../fallback/fallback-env.js';
 import { findClaude } from './_helpers.js';
 import type { CommandContext } from './context.js';
 

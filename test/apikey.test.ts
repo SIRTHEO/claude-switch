@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/apikey.js';
-import { save, load } from '../src/accounts.js';
+import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/credentials/apikey.js';
+import { save, load } from '../src/accounts/accounts.js';
 
 describe('apikey storage', () => {
   let tmpDir: string;

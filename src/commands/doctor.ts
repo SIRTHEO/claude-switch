@@ -12,9 +12,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { getCurrent, list as listAccounts } from '../accounts.js';
-import { fsAccountRepo } from '../account-repository.js';
-import { diagnose, type DoctorSnapshotView, type DoctorUsageView } from '../doctor.js';
+import { getCurrent, list as listAccounts } from '../accounts/accounts.js';
+import { fsAccountRepo } from '../accounts/account-repository.js';
+import { diagnose, type DoctorSnapshotView, type DoctorUsageView } from '../setup/doctor.js';
 import type { DoctorReport } from '../contract.js';
 
 interface DoctorOptions {

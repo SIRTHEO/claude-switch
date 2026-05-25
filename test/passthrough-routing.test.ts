@@ -14,8 +14,8 @@ import {
   resolveRoutingForPassthrough,
   type RoutingForPassthroughInput,
 } from '../src/commands/passthrough.js';
-import { getCurrent, save } from '../src/accounts.js';
-import { writeStoredAccountPrefs } from '../src/preferences.js';
+import { getCurrent, save } from '../src/accounts/accounts.js';
+import { writeStoredAccountPrefs } from '../src/switching/preferences.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 const ROOT = path.join(os.tmpdir(), 'cs-passthrough-routing');

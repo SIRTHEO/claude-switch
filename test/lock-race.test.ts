@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { acquireLock } from '../src/lock.js';
+import { acquireLock } from '../src/platform/lock.js';
 
 let dir: string;
 

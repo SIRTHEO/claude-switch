@@ -9,10 +9,10 @@
 // CLI releases and broke text parsers downstream. The JSON contract is
 // the single source of truth.
 
-import { getCurrent, list as listAccounts } from '../accounts.js';
-import { getAliasesForEmail } from '../aliases.js';
+import { getCurrent, list as listAccounts } from '../accounts/accounts.js';
+import { getAliasesForEmail } from '../switching/aliases.js';
 import type { CommandContext } from './context.js';
-import { errMessage } from '../errors.js';
+import { errMessage } from '../platform/errors.js';
 import type { AccountSummary } from '../contract.js';
 
 interface ListOptions {

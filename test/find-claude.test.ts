@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { findClaudeBinary } from '../src/find-claude.js';
+import { findClaudeBinary } from '../src/setup/find-claude.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 // findClaudeBinary resolves via:

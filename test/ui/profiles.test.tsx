@@ -29,9 +29,9 @@ import path from 'node:path';
 import { render } from 'ink-testing-library';
 
 import { ProfilesScreen, type ScreenExit } from '../../src/ui/screens/profiles.js';
-import { save as saveAccount } from '../../src/accounts.js';
-import { createProfile } from '../../src/profiles.js';
-import { makeKeystrokeHelper } from '../ui/ink-keystroke-helper.js';
+import { save as saveAccount } from '../../src/accounts/accounts.js';
+import { createProfile } from '../../src/profiles/profiles.js';
+import { makeKeystrokeHelper } from './ink-keystroke-helper.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from '../_helpers/fake-home.js';
 
 // ---------------------------------------------------------------------------
@@ -740,7 +740,7 @@ describe('ProfilesScreen — pick-profile use with no login', () => {
 // ---------------------------------------------------------------------------
 
 import { spawnClaudeAndExit } from '../../src/ui/screens/profiles.js';
-import { ExitError } from '../../src/errors.js';
+import { ExitError } from '../../src/platform/errors.js';
 
 describe('spawnClaudeAndExit', () => {
   it('throws ExitError with code 1 when the binary does not exist', () => {

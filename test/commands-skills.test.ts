@@ -15,7 +15,7 @@ import {
   linkSkillToProfile,
   listProfileSkills,
   unlinkSkillFromProfile,
-} from '../src/skills.js';
+} from '../src/profiles/skills.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 interface Harness {

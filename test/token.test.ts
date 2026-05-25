@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getTokenHealth } from '../src/token.js';
+import { getTokenHealth } from '../src/credentials/token.js';
 
 // Inject a null Keychain reader so these tests exercise the ~/.claude.json
 // fallback path, independent of the real macOS Keychain on the test machine.

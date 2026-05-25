@@ -8,9 +8,9 @@
 import { spawnSync } from 'node:child_process';
 import { render } from 'ink';
 import { clearScreen } from '../screen-buffer.js';
-import { buildSpawnArgs } from '../../proxy.js';
-import { ExitError } from '../../errors.js';
-import { readProfile } from '../../profiles.js';
+import { buildSpawnArgs } from '../../proxy/proxy.js';
+import { ExitError } from '../../platform/errors.js';
+import { readProfile } from '../../profiles/profiles.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 import { ProfilesScreen } from './profiles-screen.js';
 import type { ScreenExit } from './profiles-types.js';

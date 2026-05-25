@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react';
 import { render, useApp, useInput } from 'ink';
 import { clearScreen } from '../screen-buffer.js';
-import { CCSTATUSLINE_COMMAND, PLAIN_COMMAND } from '../../statusline-install.js';
+import { CCSTATUSLINE_COMMAND, PLAIN_COMMAND } from '../../statusline/statusline-install.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 import {
   type DetectedExisting,

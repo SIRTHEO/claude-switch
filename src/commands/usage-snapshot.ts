@@ -6,9 +6,9 @@
 //
 // JSON shape mirrors the on-disk cache so consumers stay one schema.
 
-import { readUsageCacheForAccount, type UsageCache } from '../usage.js';
-import { isSafeEmail } from '../accounts.js';
-import { ExitError } from '../errors.js';
+import { readUsageCacheForAccount, type UsageCache } from '../usage/usage.js';
+import { isSafeEmail } from '../accounts/accounts.js';
+import { ExitError } from '../platform/errors.js';
 import type { CommandContext } from './context.js';
 import type { UsageSnapshot } from '../contract.js';
 

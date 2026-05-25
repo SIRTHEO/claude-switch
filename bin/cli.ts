@@ -3,11 +3,11 @@
 
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { checkPendingRestore } from '../src/switcher.js';
-import { claudeJsonPath, accountsDir } from '../src/paths.js';
-import { VERSION } from '../src/version.js';
-import { ExitError } from '../src/errors.js';
-import { checkForUpdate, performUpdate } from '../src/update-check.js';
+import { checkPendingRestore } from '../src/switching/switcher.js';
+import { claudeJsonPath, accountsDir } from '../src/platform/paths.js';
+import { VERSION } from '../src/setup/version.js';
+import { ExitError } from '../src/platform/errors.js';
+import { checkForUpdate, performUpdate } from '../src/setup/update-check.js';
 import { runApp } from '../src/ui/run-app.js';
 import { handleHelp } from '../src/commands/help.js';
 import { handleVersion } from '../src/commands/version.js';
@@ -28,7 +28,7 @@ import {
 import { handleStatus } from '../src/commands/status.js';
 import { handleAliasSet, handleAliasList, handleAliasRemove } from '../src/commands/alias.js';
 import { handleApikeySet, handleApikeyShow, handleApikeyRemove } from '../src/commands/apikey.js';
-import { migrateApiKeysToKeychain } from '../src/apikey.js';
+import { migrateApiKeysToKeychain } from '../src/credentials/apikey.js';
 import { handleFallback, handleFallbackAuto, handleFallbackAutoEngage } from '../src/commands/fallback.js';
 import { handleUsage } from '../src/commands/usage.js';
 import { handleUsageSnapshot } from '../src/commands/usage-snapshot.js';
@@ -488,7 +488,7 @@ async function main(): Promise<void> {
   // item exists (the steady state). Runs after the statusline early-return
   // above so the high-frequency redraw never pays a `security` spawn, and is
   // self-gated off-darwin / under the disable + no-prompt flags.
-  const { reconcileClaudeCodeKeychain } = await import('../src/keychain-reconcile.js');
+  const { reconcileClaudeCodeKeychain } = await import('../src/credentials/keychain-reconcile.js');
   reconcileClaudeCodeKeychain();
   if (cmd.action === 'statusline-install') {
     await handleStatuslineInstall(cmd.variant);

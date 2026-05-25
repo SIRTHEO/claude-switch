@@ -4,15 +4,15 @@
 // hot path is based on the actual current quota state rather than a stale
 // reading. Silent on every failure mode — the cache-based path takes over.
 
-import { getCurrent } from '../accounts.js';
-import { getApiKey } from '../apikey.js';
-import { isFallbackEnabled } from '../fallback.js';
+import { getCurrent } from '../accounts/accounts.js';
+import { getApiKey } from '../credentials/apikey.js';
+import { isFallbackEnabled } from '../fallback/fallback.js';
 import {
   fetchUsageCached,
   getAccessTokenFromKeychain,
   isUsageCacheStale,
   readUsageCacheForAccount,
-} from '../usage.js';
+} from '../usage/usage.js';
 
 /**
  * Synchronously refresh the usage cache when the active account is on

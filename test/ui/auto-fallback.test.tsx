@@ -20,8 +20,8 @@ import path from 'node:path';
 import { render } from 'ink-testing-library';
 
 import { AutoFallbackScreen } from '../../src/ui/screens/auto-fallback.js';
-import { getAutoFallbackConfig, setAutoFallbackConfig } from '../../src/auto-fallback.js';
-import { makeKeystrokeHelper } from '../ui/ink-keystroke-helper.js';
+import { getAutoFallbackConfig, setAutoFallbackConfig } from '../../src/fallback/auto-fallback.js';
+import { makeKeystrokeHelper } from './ink-keystroke-helper.js';
 
 // ---------------------------------------------------------------------------
 // Shared helpers

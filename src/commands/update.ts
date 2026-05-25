@@ -3,14 +3,14 @@
 // Quiet mode for non-TTY (CI / scripts) prints the install command but
 // never auto-installs.
 
-import { VERSION } from '../version.js';
+import { VERSION } from '../setup/version.js';
 import {
   fetchLatestVersionSync,
   performUpdate,
   isNewer,
   detectInstallCommand,
   writeUpdateCache,
-} from '../update-check.js';
+} from '../setup/update-check.js';
 import { askYN } from './_helpers.js';
 
 // Deps injection point for testing — callers pass `{ fetch }` to avoid

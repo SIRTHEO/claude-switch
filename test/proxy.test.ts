@@ -1,7 +1,7 @@
 // test/proxy.test.ts
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSpawnArgs } from '../src/proxy.js';
+import { buildSpawnArgs } from '../src/proxy/proxy.js';
 
 describe('proxy', () => {
   it('builds spawn args for unix', () => {

@@ -13,7 +13,7 @@ import {
   removeProfile,
   importProfileFromAccount,
   ensureProfileForAccount,
-} from '../src/profiles.js';
+} from '../src/profiles/profiles.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 // All tests redirect HOME so the profiles dir is sandboxed in /tmp.

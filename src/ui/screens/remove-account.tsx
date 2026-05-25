@@ -10,9 +10,9 @@ import path from 'node:path';
 import { Box, Text, render, useApp } from 'ink';
 import { clearScreen } from '../screen-buffer.js';import { Badge, ConfirmInput, StatusMessage } from '@inkjs/ui';
 
-import { removeSafely as removeAccountSafely, getCurrent } from '../../accounts.js';
-import { getAliasesForEmail } from '../../aliases.js';
-import { getApiKey, maskApiKey } from '../../apikey.js';
+import { removeSafely as removeAccountSafely, getCurrent } from '../../accounts/accounts.js';
+import { getAliasesForEmail } from '../../switching/aliases.js';
+import { getApiKey, maskApiKey } from '../../credentials/apikey.js';
 import { ORANGE } from '../theme.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 

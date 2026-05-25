@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readUsageCache, readUsageCacheForAccount, fetchUsage, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter, readUsageCacheFor, isUsageCacheStale, shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh, parseUsageHeadersIfPresent, updateUsageCacheFromHeaders } from '../src/usage.js';
+import { readUsageCache, readUsageCacheForAccount, fetchUsage, fetchUsageCached, getAccessTokenFromKeychain, parseRetryAfter, readUsageCacheFor, isUsageCacheStale, shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh, parseUsageHeadersIfPresent, updateUsageCacheFromHeaders } from '../src/usage/usage.js';
 import { createHash } from 'node:crypto';
 
 describe('readUsageCache', () => {

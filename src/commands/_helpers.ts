@@ -3,11 +3,11 @@
 // part of any public API surface.
 
 import { fileURLToPath } from 'node:url';
-import { resolve } from '../resolver.js';
-import { getSavedClaudeBin } from '../setup.js';
-import { resolveAlias } from '../aliases.js';
-import { list as listAccounts } from '../accounts.js';
-import { ExitError } from '../errors.js';
+import { resolve } from '../routing/resolver.js';
+import { getSavedClaudeBin } from '../setup/setup.js';
+import { resolveAlias } from '../switching/aliases.js';
+import { list as listAccounts } from '../accounts/accounts.js';
+import { ExitError } from '../platform/errors.js';
 
 /** Locate the real `claude` binary path (not our wrapper). */
 export function findClaude(selfUrl: string): string {

@@ -5,11 +5,11 @@
 // so we can't call switchTo which re-locks). routing.ts is the pure resolver;
 // this is where the swap-and-update lifecycle lives.
 
-import { load, save } from '../accounts.js';
-import { getAlias } from '../aliases.js';
-import { resolveAccountPrefs } from '../preferences.js';
-import { type RoutingDecision, resolveRouting } from '../routing.js';
-import { readState, updateStateInLock } from '../state-store.js';
+import { load, save } from '../accounts/accounts.js';
+import { getAlias } from '../switching/aliases.js';
+import { resolveAccountPrefs } from '../switching/preferences.js';
+import { type RoutingDecision, resolveRouting } from '../routing/routing.js';
+import { readState, updateStateInLock } from '../switching/state-store.js';
 
 /** Routing snapshot returned to the passthrough caller for banner emission. */
 interface RoutingSnapshot {

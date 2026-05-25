@@ -16,7 +16,7 @@ import {
   parseRoutingFile,
   findClaudeSwitchFile,
   resolveRouting,
-} from '../src/routing.js';
+} from '../src/routing/routing.js';
 
 const FAKE_HOME_PARENT = path.join(os.tmpdir(), 'cs-routing-test');
 
