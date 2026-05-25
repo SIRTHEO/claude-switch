@@ -15,7 +15,7 @@
 
 import { type ProcessPort, nodeProcessAdapter } from './process.js';
 
-export interface ActiveSessionsResult {
+interface ActiveSessionsResult {
   /** Number of likely-active claude sessions that aren't this process. */
   count: number;
   /** Why we returned 0 (only set when 0 and we couldn't really check). */

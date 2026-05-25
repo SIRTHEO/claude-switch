@@ -18,7 +18,7 @@ import path from 'node:path';
 // Public types
 // ---------------------------------------------------------------------------
 
-export interface AssistantTurn {
+interface AssistantTurn {
   cache_read: number;
   cache_creation: number;
   input_tokens: number;

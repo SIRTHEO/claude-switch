@@ -13,7 +13,7 @@ import path from 'node:path';
 
 import { profilePath } from './profiles.js';
 
-export interface SkillInfo {
+interface SkillInfo {
   name: string;
   /** Absolute path to the skill directory. */
   path: string;
@@ -110,7 +110,7 @@ function skillExists(name: string): boolean {
   }
 }
 
-export interface ProfileSkillStatus {
+interface ProfileSkillStatus {
   name: string;
   /** A symlink for this skill exists in the profile's skills dir. */
   linked: boolean;

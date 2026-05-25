@@ -4,7 +4,7 @@
 import { Text } from 'ink';
 import { usageGlyph } from './usage-glyph.js';
 
-export interface ProgressBarProps {
+interface ProgressBarProps {
   pct: number | undefined;
   width?: number;
 }

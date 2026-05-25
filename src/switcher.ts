@@ -66,7 +66,7 @@ export function switchTo(targetEmail: string, claudeJsonPath: string, accountsDi
   });
 }
 
-export interface SwitchOutcome {
+interface SwitchOutcome {
   /** Human-readable status line (already includes any warning). */
   message: string;
   /** Whether the new account has a saved API key. */

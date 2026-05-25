@@ -49,11 +49,11 @@ const DEFAULT_BURST_PROBE_INTERVAL_MS = 5 * 60 * 1000;
 /** Modes externally chosen by the caller (per-account `authMode`).
  *  `oauth-only` is not a proxy mode — when there's no API key the caller
  *  doesn't start the proxy at all. */
-export type ProxyMode = 'oauth-first' | 'api-first';
+type ProxyMode = 'oauth-first' | 'api-first';
 
 /** Snapshot of the proxy's runtime state, exposed to callers for diagnostics
  *  and statusline display. */
-export interface ProxyRuntimeState {
+interface ProxyRuntimeState {
   mode: ProxyMode;
   /** True when oauth-first has temporarily downgraded to API key only after
    *  N consecutive OAuth failures. False in `api-first` mode (always). */
@@ -83,14 +83,14 @@ export interface ProxyRuntimeState {
   lastRetryReason: string | null;
 }
 
-export interface ProxyHandle {
+interface ProxyHandle {
   port: number;
   close: (cb?: () => void) => void;
   /** Read the current runtime state (mode + burst flag + counter). */
   state(): ProxyRuntimeState;
 }
 
-export interface BurstConfig {
+interface BurstConfig {
   failureThreshold: number;
   probeIntervalMs: number;
 }
@@ -188,7 +188,7 @@ export function buildApiKeyHeaders(
   return out;
 }
 
-export interface StartFallbackProxyOptions {
+interface StartFallbackProxyOptions {
   apiKey: string;
   mode: ProxyMode;
   upstreamBase?: string;

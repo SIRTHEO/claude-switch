@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { readKeychain } from './keychain.js';
 
-export interface TokenHealth {
+interface TokenHealth {
   status: 'valid' | 'expired' | 'present' | 'missing';
   expiresAt?: Date;
   expiresIn?: string;

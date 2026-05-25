@@ -312,7 +312,7 @@ export async function refreshLegacySnapshotIfStale(
   return true;
 }
 
-export interface ImportResult {
+interface ImportResult {
   profileName: string;
   profilePath: string;
   userID: string;

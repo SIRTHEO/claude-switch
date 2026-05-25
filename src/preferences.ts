@@ -153,7 +153,7 @@ export function readStoredAccountPrefs(email: string, accountsDirPath: string): 
 /** Effective authentication mode at proxy startup. Same set as `AuthMode`
  *  plus `oauth-only` (proxy uses OAuth, no key fallback) and `error` (no
  *  working auth at all — caller should refuse to start). */
-export type EffectiveAuthMode = 'oauth-first' | 'oauth-only' | 'api-first' | 'error';
+type EffectiveAuthMode = 'oauth-first' | 'oauth-only' | 'api-first' | 'error';
 
 /** Resolve the effective auth mode from the stored preference + the current
  *  token + key state. Pure function — easy to unit-test the matrix. */

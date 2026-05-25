@@ -23,12 +23,12 @@ import path from 'node:path';
 import { writeJsonAtomic } from './atomic-write.js';
 import { errnoCode } from './errors.js';
 
-export type ProxyRuntimeMode =
+type ProxyRuntimeMode =
   | 'oauth-first'    // proxy started in oauth-first, no burst active
   | 'oauth-burst'    // 3+ OAuth failures in a row → routing through API key with periodic probe
   | 'api-first';     // explicit api-first mode (per-account `authMode='api-first'`)
 
-export interface ProxyModeMarker {
+interface ProxyModeMarker {
   mode: ProxyRuntimeMode;
   updatedAt: number;
   /** Why the last transition happened. Useful for `claude switch status`

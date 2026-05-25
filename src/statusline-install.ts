@@ -34,7 +34,7 @@ export const CCSTATUSLINE_VERSION = '2.2.12';
 export const CCSTATUSLINE_COMMAND =
   `bash -c 'INPUT=$(cat); claude switch sl; echo "$INPUT" | npx -y ccstatusline@${CCSTATUSLINE_VERSION}'`;
 
-export type ExistingStatus =
+type ExistingStatus =
   | { kind: 'absent' }
   | { kind: 'ours-plain' }
   | { kind: 'ours-embedded' }

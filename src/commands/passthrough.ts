@@ -324,7 +324,7 @@ export async function handlePassthrough(
 /** Routing snapshot returned to the passthrough caller for banner emission.
  *  Exported for tests; `routing.ts` is the pure resolver, this module is
  *  where the swap-and-update lifecycle lives. */
-export interface RoutingSnapshot {
+interface RoutingSnapshot {
   decision: RoutingDecision | null;
   /** True when we actually flipped the active account inside the snapshot
    *  lock. False for: same-as-active, 0-match warnings, isolated-target

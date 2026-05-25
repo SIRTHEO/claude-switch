@@ -40,7 +40,7 @@ const STATUSLINE_REFRESH_AFTER_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 5_000;
 const MAX_BODY_BYTES = 16 * 1024;
 
-export interface UsageWindow {
+interface UsageWindow {
   utilization: number;
   resets_at?: string; // ISO 8601 timestamp
 }
@@ -191,7 +191,7 @@ interface FetchError {
   rateLimited: false;
   error: string;
 }
-export type FetchUsageOutcome = FetchResult | FetchRateLimited | FetchError;
+type FetchUsageOutcome = FetchResult | FetchRateLimited | FetchError;
 
 // `readBodyCapped` was extracted to `src/http.ts` so oauth-refresh.ts can
 // reuse the same DoS guard. Same shape, no behaviour change.

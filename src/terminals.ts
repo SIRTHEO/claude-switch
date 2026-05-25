@@ -26,7 +26,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { type ProcessPort, nodeProcessAdapter } from './process.js';
 
-export interface TerminalEntry {
+interface TerminalEntry {
   id: string;
   label: string;
   isDefault: boolean;

@@ -31,14 +31,14 @@ import { errMessage } from './errors.js';
 // Public types
 // ---------------------------------------------------------------------------
 
-export interface ClaudeSwitchMatch {
+interface ClaudeSwitchMatch {
   email?: string;
   emailDomain?: string;
   any?: ClaudeSwitchMatch[];
   disable?: boolean;
 }
 
-export interface ClaudeSwitchFile {
+interface ClaudeSwitchFile {
   match?: ClaudeSwitchMatch;
 }
 
@@ -70,7 +70,7 @@ export interface RoutingDecision {
   warning?: string;
 }
 
-export interface ResolveRoutingInput {
+interface ResolveRoutingInput {
   cwd: string;
   accountsDirPath: string;
   env: NodeJS.ProcessEnv;
@@ -185,7 +185,7 @@ function withinHome(absPath: string, home: string): boolean {
 // Schema validators (tolerant — invalid input becomes "null", never throws)
 // ---------------------------------------------------------------------------
 
-export interface ParseResult<T> {
+interface ParseResult<T> {
   ok: boolean;
   value?: T;
   error?: string;
