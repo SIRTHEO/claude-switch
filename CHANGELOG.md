@@ -7,6 +7,17 @@
 
 (empty — release-please will repopulate from conventional-commit subjects)
 
+## [4.0.0](https://github.com/SIRTHEO/claude-switch/compare/v3.8.0...v4.0.0) (2026-05-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* the setup-keychain command is removed; the first run after upgrading migrates existing Keychain credentials automatically.
+
+### Features
+
+* file-vault credential storage, doctor command, and feature-folder refactor ([7aba446](https://github.com/SIRTHEO/claude-switch/commit/7aba44658cd7f4f2c9e16cab4eee67b86bce42fa))
+
 ## [3.8.0](https://github.com/SIRTHEO/claude-switch/compare/v3.7.0...v3.8.0) (2026-05-21)
 
 
