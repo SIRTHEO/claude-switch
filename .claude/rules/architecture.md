@@ -26,18 +26,40 @@ sites stay short. Tests inject explicitly.
 - `logger / stderr` (write directly via `process.stderr.write` in CLI surface
   code, never in domain)
 
-## File layout — pragmatic flat, not folder-split
+## File layout — feature folders
 
-Current state: every domain module lives directly under `src/*.ts`. Sub-folders
-exist only for genuine sub-systems: `src/commands/*.ts` (the CLI surface),
-`src/ui/screens/*.tsx` (Ink screens), `src/ui/components/`.
+Since 2026-05-25 (Phase 26.5, commit `411829d`) `src/` is organised **by
+feature**, not flat and not by technical layer:
 
-**Do not** introduce `src/domain/`, `src/ports/`, `src/adapters/` folder split
-unless a future task explicitly approves it. Reason: the flat layout is
-load-bearing for existing imports across ~70 modules; a move would invalidate
-~150 import paths for no behavioural gain. The naming convention (`*-store`,
-`*-repository`, `*-adapter`, port modules: `http.ts`, `process.ts`) carries
-the architectural intent without a folder split.
+```
+src/
+  accounts/    credentials/  proxy/      routing/   usage/      fallback/
+  switching/   profiles/     sessions/   statusline/ setup/     platform/
+  commands/    ui/           contract.ts (GUI-contract SSOT, kept at root)
+```
+
+A feature folder co-locates that capability's domain logic, its adapters, and
+its types. `platform/` holds the shared primitives + ports that **must not**
+become domain modules (`lock`, `atomic-write`, `paths`, `errors`, `http`,
+`process`). `commands/` (CLI surface) and `ui/` (Ink screens/components) keep
+their existing sub-structure. `contract.ts` stays at `src/` root because
+`scripts/gen-gui-contract.mjs` reads it by path.
+
+Rules:
+- **By feature, not by technical type.** Do **NOT** introduce `src/domain/`,
+  `src/ports/`, `src/adapters/` layer folders — that was deliberately rejected
+  (it fights the by-feature convention). The naming convention (`*-store`,
+  `*-repository`, `*-adapter`, port modules `http.ts`/`process.ts`) still
+  carries the hexagonal intent within each feature folder.
+- **Imports are plain relative, no barrel `index.ts`.** Barrels risk
+  reintroducing import cycles in this interdependent code and force eager
+  loading of a whole folder on the CLI startup hot path (which uses lazy
+  `await import()` deliberately).
+- **Moving a module deeper breaks depth-relative runtime paths.** `dist`
+  mirrors the tree, so any `dirname(fileURLToPath(import.meta.url)) + '..'`-walk
+  must match the file's depth (see `usage.ts` → `cli.js`, `version.ts` →
+  `package.json`). Audit those when relocating a file, and verify on the
+  **built** CLI, not just `tsc`.
 
 ## Core invariant — enforce by review, not by build
 
