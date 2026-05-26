@@ -17,11 +17,6 @@ build/
 .stryker-tmp/
 reports/mutation/
 
-# graphify knowledge graph — regenerable, local-only.
-# Holds machine-specific absolute paths (.graphify_python/.graphify_root) that
-# would trip the privacy gate; never a product surface. Rebuild with /graphify.
-graphify-out/
-
 # OS and editor cruft
 .DS_Store
 Thumbs.db
