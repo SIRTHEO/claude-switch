@@ -20,6 +20,13 @@ import { writeJsonAtomic } from '../platform/atomic-write.js';
 
 const PACKAGE_NAME = '@sirtheo/claude-switch';
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
+// Lightweight dist-tags endpoint (~20 bytes vs ~2 KB for /latest). Returns
+// `{ "latest": "x.y.z", "minsafe"?: "x.y.z" }`. The `minsafe` tag is published
+// by the release pipeline on a security/data-loss release: any version BELOW
+// it carries a known-unsafe bug, so the client escalates the update notice
+// from a quiet hint to a critical banner. Absent tag → no escalation.
+const DIST_TAGS_URL = `https://registry.npmjs.org/-/package/${PACKAGE_NAME}/dist-tags`;
+const MIN_SAFE_TAG = 'minsafe';
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once per day
 
 // ---------------------------------------------------------------------------
@@ -29,6 +36,9 @@ const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once per day
 interface CheckCache {
   checkedAt: number;
   latestVersion: string;
+  /** The `minsafe` dist-tag, when published. Absent on caches written before
+   *  the critical channel existed, and whenever the tag isn't set. */
+  minSafeVersion?: string;
 }
 
 function cacheFilePath(): string {
@@ -106,15 +116,15 @@ export function isNewer(current: string, latest: string): boolean {
 // ---------------------------------------------------------------------------
 
 function fetchLatestVersionBackground(): void {
-  const req = https.get(REGISTRY_URL, { timeout: 5000 }, (res) => {
+  const req = https.get(DIST_TAGS_URL, { timeout: 5000 }, (res) => {
     if (res.statusCode !== 200) { res.resume(); return; }
     let body = '';
     let aborted = false;
     res.on('data', (chunk: Buffer) => {
       if (aborted) return;
       body += chunk.toString();
-      // Cap response size — npm /latest is ~2 KB, anything more is suspect
-      // (compromised registry or MITM). 64 KB is generous.
+      // Cap response size — the dist-tags doc is a handful of bytes, anything
+      // more is suspect (compromised registry or MITM). 64 KB is generous.
       if (body.length > 64 * 1024) {
         aborted = true;
         res.destroy();
@@ -122,10 +132,19 @@ function fetchLatestVersionBackground(): void {
     });
     res.on('end', () => {
       try {
-        const version = extractVersion(JSON.parse(body));
-        if (typeof version === 'string') {
-          writeCache({ checkedAt: Date.now(), latestVersion: version });
-        }
+        // dist-tags shape: { "latest": "x.y.z", "minsafe"?: "x.y.z" }.
+        const parsed: unknown = JSON.parse(body);
+        const tags = (typeof parsed === 'object' && parsed !== null)
+          ? (parsed as Record<string, unknown>)
+          : {};
+        const latest = tags['latest'];
+        if (typeof latest !== 'string' || !latest) return;
+        const minSafe = tags[MIN_SAFE_TAG];
+        writeCache({
+          checkedAt: Date.now(),
+          latestVersion: latest,
+          ...(typeof minSafe === 'string' && minSafe ? { minSafeVersion: minSafe } : {}),
+        });
       } catch { /* ignore */ }
     });
   });
@@ -227,6 +246,11 @@ export function performUpdate(deps?: { process?: ProcessPort }): boolean {
 export interface UpdateInfo {
   latestVersion: string;
   installCommand: string;
+  /** True when the installed version is BELOW the published `minsafe` tag —
+   *  i.e. it carries a known security/data-loss bug. Callers escalate the
+   *  notice (loud, persistent, shown even on the passthrough hot path).
+   *  Fail-open: any uncertainty (no tag, fetch failure, parse error) → false. */
+  critical: boolean;
 }
 
 /**
@@ -258,9 +282,15 @@ export function checkForUpdate(currentVersion: string): UpdateInfo | null {
 
   if (cache && isNewer(currentVersion, cache.latestVersion)) {
     const [cmd, ...args] = detectInstallCommand();
+    // Critical when the installed version is below the published minsafe tag.
+    // Reuses isNewer (minSafe newer than current ⇒ current is below minSafe).
+    // Fail-open: no tag in cache ⇒ not critical, routine hint only.
+    const critical = typeof cache.minSafeVersion === 'string'
+      && isNewer(currentVersion, cache.minSafeVersion);
     return {
       latestVersion: cache.latestVersion,
       installCommand: [cmd, ...args].join(' '),
+      critical,
     };
   }
 
