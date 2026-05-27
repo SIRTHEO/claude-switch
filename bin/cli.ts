@@ -7,7 +7,7 @@ import { checkPendingRestore } from '../src/switching/switcher.js';
 import { claudeJsonPath, accountsDir } from '../src/platform/paths.js';
 import { VERSION } from '../src/setup/version.js';
 import { ExitError } from '../src/platform/errors.js';
-import { checkForUpdate, performUpdate } from '../src/setup/update-check.js';
+import { checkForUpdate, performUpdate, formatUpdateNotice } from '../src/setup/update-check.js';
 import { runApp } from '../src/ui/run-app.js';
 import { handleHelp } from '../src/commands/help.js';
 import { handleVersion } from '../src/commands/version.js';
@@ -556,10 +556,13 @@ async function main(): Promise<void> {
   if (updateInfo && cmd.action !== 'update' && cmd.action !== 'passthrough') {
     const isTTY = process.stdin.isTTY && process.stderr.isTTY;
     if (isTTY) {
-      // Interactive terminal: offer to update now.
-      process.stderr.write(
-        `\n  Update available: ${VERSION} → ${updateInfo.latestVersion}\n`
-      );
+      // Interactive terminal: surface the notice (loud for a critical/security
+      // update, quiet otherwise) and offer to update now.
+      process.stderr.write('\n' + formatUpdateNotice(updateInfo, VERSION, { color: true }));
+      // askYN is default-N (Enter ≠ yes); keep the prompt honest. The critical
+      // escalation is carried by the loud banner above, not by flipping the
+      // default — auto-applying an install on Enter is the wrong default for a
+      // credential tool.
       const answer = await askYN('  Update now? [y/N] ');
       if (answer) {
         const ok = performUpdate();
@@ -574,11 +577,8 @@ async function main(): Promise<void> {
         process.stderr.write(`  Run: ${updateInfo.installCommand}\n\n`);
       }
     } else {
-      // Non-interactive (piped/scripted): just print the hint to stderr.
-      process.stderr.write(
-        `\n  Update available: ${VERSION} → ${updateInfo.latestVersion}\n` +
-        `  Run: ${updateInfo.installCommand}\n\n`
-      );
+      // Non-interactive (piped/scripted): print the hint to stderr, no colour.
+      process.stderr.write('\n' + formatUpdateNotice(updateInfo, VERSION, { color: false }) + '\n');
     }
   }
 

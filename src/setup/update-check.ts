@@ -296,3 +296,32 @@ export function checkForUpdate(currentVersion: string): UpdateInfo | null {
 
   return null;
 }
+
+/**
+ * Render the user-facing update notice, shared by the passthrough hot path and
+ * the `claude switch` dispatcher so the two never drift. A `critical` update
+ * (installed version below the minsafe tag) gets a loud, bold-red, can't-miss
+ * banner; a routine update keeps the quiet one-liner. Colour is gated by the
+ * caller (off when stderr isn't a TTY, or under --no-color / NO_COLOR), so
+ * piped/scripted output stays clean.
+ */
+export function formatUpdateNotice(
+  info: UpdateInfo,
+  currentVersion: string,
+  opts: { color: boolean },
+): string {
+  const paint = (code: string, s: string): string =>
+    opts.color ? `\x1b[${code}m${s}\x1b[0m` : s;
+  if (info.critical) {
+    return (
+      paint('1;31', // bold red
+        `🔴 claude-switch SECURITY UPDATE — ${currentVersion} has a known ` +
+        `security/data-loss bug, fixed in ${info.latestVersion}.`) + '\n' +
+      `   Update now:  ${info.installCommand}\n`
+    );
+  }
+  return (
+    `↥ claude-switch ${currentVersion} → ${info.latestVersion} available\n` +
+    `  Update: ${info.installCommand}\n`
+  );
+}

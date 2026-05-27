@@ -19,6 +19,7 @@
 import { withLock } from '../platform/lock.js';
 import { ExitError, errMessage } from '../platform/errors.js';
 import { VERSION } from '../setup/version.js';
+import { formatUpdateNotice } from '../setup/update-check.js';
 import { getCurrent, save, list as listAccounts, syncActiveSnapshotIfStale } from '../accounts/accounts.js';
 import { checkPendingRestore } from '../switching/switcher.js';
 import { run as proxyRun } from '../proxy/proxy.js';
@@ -180,9 +181,11 @@ export async function handlePassthrough(
     process.stderr.write(`⚠ auto-engage wanted to switch to API key but ${engage.blocked}\n\n`);
   }
   if (updateInfo) {
+    // Critical updates escalate to a loud banner even here on the hot path
+    // (a known security/data-loss bug must not be lost in a quiet hint);
+    // routine updates stay a one-liner. Never blocks — claude still launches.
     process.stderr.write(
-      `↥ claude-switch ${VERSION} → ${updateInfo.latestVersion} available\n` +
-      `  Update manually: ${updateInfo.installCommand}\n\n`,
+      formatUpdateNotice(updateInfo, VERSION, { color: process.stderr.isTTY === true }) + '\n',
     );
   }
   // Banner on stderr so we don't pollute structured stdout (e.g. when
