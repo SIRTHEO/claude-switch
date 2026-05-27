@@ -1,16 +1,20 @@
 // src/atomic-write.ts
-// Atomic JSON write helper. Writes to <file>.tmp with mode 0600, then
-// renames into place. The temp file is created restricted from the start
-// so a concurrent reader on the same uid can never observe credentials
-// in a world-readable file even briefly.
+// Atomic write helpers. Write to <file>.tmp with a restricted mode, then
+// rename into place. The temp file is created restricted from the start so a
+// concurrent reader on the same uid can never observe credentials in a
+// world-readable file even briefly.
 //
-// All credential / config files in claude-switch funnel through this:
+// All credential / config files in claude-switch funnel through writeJsonAtomic:
 //   - account JSON files (accounts.ts, apikey.ts)
 //   - aliases.json (aliases.ts)
 //   - .auto-fallback.json (auto-fallback.ts)
 //   - .usage-cache.json (usage.ts)
 // — keeping the safety pattern in one place avoids drift like the bug
 // where aliases.ts shipped without { mode: 0o600 }.
+//
+// writeFileAtomic is the raw-string core for non-JSON payloads (e.g. the saved
+// claude-bin pointer), which are read back verbatim and must not be wrapped in
+// JSON quoting.
 //
 // Symlink safety: the temp file is opened with O_CREAT|O_EXCL on POSIX
 // platforms so that a pre-existing symlink at the .tmp path cannot
@@ -19,16 +23,15 @@
 
 import fs from 'node:fs';
 
-export function writeJsonAtomic(file: string, data: unknown, indent = 2): void {
+export function writeFileAtomic(file: string, payload: string, mode = 0o600): void {
   const tmp = `${file}.tmp`;
-  const payload = JSON.stringify(data, null, indent);
 
   if (process.platform === 'win32') {
     // O_EXCL on Windows over node:fs doesn't deny symlink targets the
     // way it does on POSIX (NTFS ACL model is different). Fall back to
     // the simpler writeFileSync path; the 0o700 directory protections
     // around credential dirs are the load-bearing defense there.
-    fs.writeFileSync(tmp, payload, { mode: 0o600 });
+    fs.writeFileSync(tmp, payload, { mode });
   } else {
     // O_WRONLY|O_CREAT|O_EXCL refuses if `tmp` already exists, so a
     // symlink planted there can't redirect this write. Any stale .tmp
@@ -43,7 +46,7 @@ export function writeJsonAtomic(file: string, data: unknown, indent = 2): void {
     const fd = fs.openSync(
       tmp,
       fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL,
-      0o600,
+      mode,
     );
     try {
       fs.writeSync(fd, payload);
@@ -53,4 +56,8 @@ export function writeJsonAtomic(file: string, data: unknown, indent = 2): void {
   }
 
   fs.renameSync(tmp, file);
+}
+
+export function writeJsonAtomic(file: string, data: unknown, indent = 2): void {
+  writeFileAtomic(file, JSON.stringify(data, null, indent), 0o600);
 }

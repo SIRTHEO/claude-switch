@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { resolve } from '../routing/resolver.js';
 import { claudeBinFile } from '../platform/paths.js';
+import { writeFileAtomic } from '../platform/atomic-write.js';
 
 const BLOCK_START = '# claude-switch';
 const BLOCK_END = '# end claude-switch';
@@ -52,10 +53,10 @@ export function saveClaudeBin(binPath: string, binFile?: string): void {
   const file = binFile ?? claudeBinFile();
   const dir = path.dirname(file);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(file, binPath, 'utf-8');
-  if (process.platform !== 'win32') {
-    fs.chmodSync(file, 0o600);
-  }
+  // Atomic + 0600: a crash mid-write can't leave a truncated path the spawner
+  // would try to exec, and the rename preserves the temp file's restricted mode
+  // (so no separate chmod is needed).
+  writeFileAtomic(file, binPath, 0o600);
 }
 
 export function findRealClaude(selfPath: string): string | null {
