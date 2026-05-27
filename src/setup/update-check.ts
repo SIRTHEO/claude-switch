@@ -16,6 +16,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { type ProcessPort, nodeProcessAdapter } from '../platform/process.js';
+import { writeJsonAtomic } from '../platform/atomic-write.js';
 
 const PACKAGE_NAME = '@sirtheo/claude-switch';
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
@@ -68,7 +69,7 @@ function writeCache(cache: CheckCache): void {
   try {
     const filePath = cacheFilePath();
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(cache));
+    writeJsonAtomic(filePath, cache, 0);
   } catch { /* best-effort */ }
 }
 
