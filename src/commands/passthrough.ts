@@ -19,7 +19,7 @@
 import { withLock } from '../platform/lock.js';
 import { ExitError, errMessage } from '../platform/errors.js';
 import { VERSION } from '../setup/version.js';
-import { getCurrent, save, list as listAccounts } from '../accounts/accounts.js';
+import { getCurrent, save, list as listAccounts, syncActiveSnapshotIfStale } from '../accounts/accounts.js';
 import { checkPendingRestore } from '../switching/switcher.js';
 import { run as proxyRun } from '../proxy/proxy.js';
 import { getApiKey } from '../credentials/apikey.js';
@@ -97,6 +97,15 @@ export async function handlePassthrough(
   // skipped when CLAUDE_CONFIG_DIR is set externally (we are inside an
   // explicit profile chosen by the user — don't override).
   const snapshot = withLock(accountsDirPath, () => {
+    // Capture any token the claude binary rotated into `.credentials.json`
+    // during the previous session BEFORE any routing swap, so the active
+    // account's snapshot keeps a usable refresh token. Without this the
+    // snapshot only updated on an explicit `switch`, drifted stale during
+    // normal passthrough use, and a later switch-back restored an expired
+    // token → re-login. Best-effort + mtime-gated, so it's a no-op (no write)
+    // unless the live credentials are actually newer than the snapshot.
+    syncActiveSnapshotIfStale(claudeJsonPath, accountsDirPath);
+
     const initial = getCurrent(claudeJsonPath);
     const accounts = listAccounts(accountsDirPath);
 
