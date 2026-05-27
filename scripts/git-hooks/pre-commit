@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+# Pre-commit hook: privacy gate on staged hunks. Catches maintainer PII before
+# it ever enters a commit. The body/message backstop runs at pre-push (this
+# hook only sees the staged diff, not commit messages).
+# Bypass (discouraged): git commit --no-verify
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+sh "$REPO_ROOT/scripts/privacy-gate.sh" staged

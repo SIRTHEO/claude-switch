@@ -7,6 +7,13 @@
 # Bypass (discouraged): git push --no-verify
 set -e
 
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# Privacy backstop FIRST (cheap, fail-fast) — scan additions + commit-message
+# bodies of everything ahead of origin/main before spending time on the build.
+echo "[pre-push] privacy gate..."
+sh "$REPO_ROOT/scripts/privacy-gate.sh" range origin/main..HEAD
+
 echo "[pre-push] lint..."
 npm run lint
 
