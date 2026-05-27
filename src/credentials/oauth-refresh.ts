@@ -133,10 +133,17 @@ export async function refreshAccessToken(
  */
 export async function refreshIfStale(
   oauth: ClaudeAiOauth | undefined,
+  deps: { http?: HttpPort } = {},
 ): Promise<ClaudeAiOauth | null> {
   if (!oauth) return null;
   if (!isAccessTokenStale(oauth)) return oauth;
   if (!oauth.refreshToken) return null;
-  const refreshed = await refreshAccessToken(oauth.refreshToken);
-  return refreshed;
+  const refreshed = await refreshAccessToken(oauth.refreshToken, deps);
+  if (!refreshed) return null;
+  // The token endpoint only returns the token-bearing fields, so merge them
+  // onto the prior block to preserve metadata it doesn't echo back
+  // (subscriptionType, rateLimitTier, and scopes when the response omits them).
+  // Otherwise a refresh would silently strip the subscription tier that the
+  // claude binary reads from the credentials file.
+  return { ...oauth, ...refreshed, scopes: refreshed.scopes ?? oauth.scopes };
 }

@@ -185,4 +185,27 @@ describe('refreshIfStale', () => {
     });
     assert.equal(result, null);
   });
+
+  it('preserves subscriptionType/rateLimitTier and prior scopes across a refresh', async () => {
+    // The token endpoint echoes back only the token-bearing fields. The merge
+    // must keep metadata it omits, or a refresh silently strips the tier the
+    // claude binary reads from the credentials file.
+    const fetch = (() => Promise.resolve(new Response(
+      JSON.stringify({ access_token: 'fresh-at', refresh_token: 'fresh-rt', expires_in: 3600 }),
+      { status: 200 },
+    ))) as typeof globalThis.fetch;
+    const result = await refreshIfStale({
+      accessToken: 'old-at',
+      refreshToken: 'old-rt',
+      expiresAt: Date.now() - 1_000,
+      scopes: ['user:inference'],
+      subscriptionType: 'max',
+      rateLimitTier: 'tier-2',
+    }, { http: fetch });
+    assert.equal(result?.accessToken, 'fresh-at');
+    assert.equal(result?.refreshToken, 'fresh-rt');
+    assert.equal(result?.subscriptionType, 'max', 'subscriptionType must survive the refresh');
+    assert.equal(result?.rateLimitTier, 'tier-2', 'rateLimitTier must survive the refresh');
+    assert.deepEqual(result?.scopes, ['user:inference'], 'prior scopes must survive when the response omits them');
+  });
 });
