@@ -113,6 +113,14 @@ export function isNewer(current: string, latest: string): boolean {
   return isPreRelease(current) && !isPreRelease(latest);
 }
 
+/** True when `v` is a string shaped like a semver version (optional `v`
+ *  prefix, optional pre-release). Sanitizer for registry-fetched dist-tags:
+ *  only version-like strings are ever written to the cache, so a
+ *  compromised/MITM registry can't persist arbitrary content. */
+function isVersionLike(v: unknown): v is string {
+  return typeof v === 'string' && /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(v);
+}
+
 // ---------------------------------------------------------------------------
 // Registry fetch — background (unref'd)
 // ---------------------------------------------------------------------------
@@ -139,13 +147,17 @@ function fetchLatestVersionBackground(): void {
         const tags = (typeof parsed === 'object' && parsed !== null)
           ? (parsed as Record<string, unknown>)
           : {};
+        // Validate the shape before persisting: only ever cache strings that
+        // look like a semver version. A compromised/MITM registry must not be
+        // able to write arbitrary content into our cache file, and downstream
+        // version comparison only makes sense on version-like values.
         const latest = tags['latest'];
-        if (typeof latest !== 'string' || !latest) return;
+        if (!isVersionLike(latest)) return;
         const minSafe = tags[MIN_SAFE_TAG];
         writeCache({
           checkedAt: Date.now(),
           latestVersion: latest,
-          ...(typeof minSafe === 'string' && minSafe ? { minSafeVersion: minSafe } : {}),
+          ...(isVersionLike(minSafe) ? { minSafeVersion: minSafe } : {}),
         });
       } catch { /* ignore */ }
     });
