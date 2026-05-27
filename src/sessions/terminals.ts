@@ -1,29 +1,15 @@
-// Terminal detection. Used by `claude switch terminals` and by the GUI's
-// per-profile launcher to surface the terminal emulators the user has
-// installed, plus the command shape to spawn a fresh window in each.
-//
-// Strategy by platform:
-//
-//   macOS    — probe known Application bundle paths under /Applications
-//              and ~/Applications. The OS default Terminal.app is always
-//              counted as present.
-//   Linux    — probe the FreeDesktop XDG default (`xdg-mime query default
-//              x-scheme-handler/terminal`) plus a fixed allowlist of
-//              executables on PATH (gnome-terminal, konsole, alacritty,
-//              kitty, wezterm, terminator, foot, …).
-//   Windows  — probes `where.exe` for the standard terminal hosts
-//              (wt.exe = Windows Terminal, powershell.exe, cmd.exe,
-//              and any wezterm.exe / alacritty.exe on PATH).
-//
-// Each detected entry carries a stable `id` (kebab-case slug used by the
-// GUI and the launcher CLI), a human label, an `isDefault` flag (true
-// for the system default terminal), and a `launchHint` describing the
-// shell-out shape the launcher will use. Detection is pure: it does not
-// spawn anything, so it's safe to call from a hot path.
+// Terminal detection + launch. Used by `claude switch terminals` and the GUI's
+// per-profile launcher to enumerate installed emulators and spawn a fresh
+// window in one. Detection probes per platform (macOS: app bundle paths;
+// Linux: XDG default + PATH allowlist; Windows: where.exe over known hosts)
+// and is pure — it spawns nothing, so it is safe on a hot path. Each entry
+// carries a stable kebab-case `id`, a label, an `isDefault` flag, and a
+// `launchHint`.
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { SpawnOptions } from 'node:child_process';
 import { type ProcessPort, nodeProcessAdapter } from '../platform/process.js';
 
 interface TerminalEntry {
@@ -43,9 +29,7 @@ export function detectTerminals(deps: { process?: ProcessPort } = {}): TerminalE
   return [];
 }
 
-// ---------------------------------------------------------------------------
-// macOS
-// ---------------------------------------------------------------------------
+// --- macOS ---
 
 interface MacApp {
   id: string;
@@ -84,9 +68,7 @@ function detectDarwin(): TerminalEntry[] {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Linux
-// ---------------------------------------------------------------------------
+// --- Linux ---
 
 interface LinuxBin {
   id: string;
@@ -257,14 +239,41 @@ function launchLinux(opts: LaunchOptions, proc: ProcessPort): void {
   child.unref();
 }
 
-function launchWindows(opts: LaunchOptions, proc: ProcessPort): void {
+/**
+ * Build exe / argv / spawn options for a Windows terminal launch. Pure, so the
+ * shaping is unit-testable without a Windows host. `opts.env` (carries
+ * CLAUDE_CONFIG_DIR for profile isolation) and `cwd` ride on the spawn OPTIONS
+ * — dropping env, as the prior inline version did, opened the DEFAULT profile.
+ * argv stays as separate elements (wt's `-d <path>`, command trailing) instead
+ * of one glued, quoted string wt.exe could not parse. Per-terminal command
+ * semantics (powershell `-NoExit`, cmd `/K`) are deferred to the Windows work.
+ */
+export function buildWindowsLaunch(opts: LaunchOptions): {
+  exe: string;
+  args: string[];
+  options: SpawnOptions;
+} {
   const bin = WIN_BINS.find((w) => w.id === opts.terminalId);
   if (!bin) throw new Error(`Unknown terminal id on Windows: ${opts.terminalId}`);
-  const cmd = opts.command.join(' ');
-  const cwd = opts.cwd ? `--starting-directory "${opts.cwd}"` : '';
-  const child = proc.spawn(bin.exe, [cwd, cmd].filter(Boolean), {
-    stdio: 'ignore',
-    detached: true,
-  });
+  const args: string[] = [];
+  // Windows Terminal opens the new tab in `-d <dir>`; other hosts inherit the
+  // spawn cwd below.
+  if (bin.id === 'windows-terminal' && opts.cwd) args.push('-d', opts.cwd);
+  args.push(...opts.command);
+  return {
+    exe: bin.exe,
+    args,
+    options: {
+      stdio: 'ignore',
+      detached: true,
+      cwd: opts.cwd,
+      env: { ...process.env, ...opts.env },
+    },
+  };
+}
+
+function launchWindows(opts: LaunchOptions, proc: ProcessPort): void {
+  const { exe, args, options } = buildWindowsLaunch(opts);
+  const child = proc.spawn(exe, args, options);
   child.unref();
 }
