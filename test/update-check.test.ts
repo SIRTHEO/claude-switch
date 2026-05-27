@@ -136,6 +136,71 @@ describe('checkForUpdate / writeUpdateCache — type guard coverage', () => {
     }
   });
 
+  it('flags critical when the installed version is below the minsafe tag', () => {
+    const savedCi = process.env.CI;
+    const savedNo = process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    delete process.env.CI;
+    delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    try {
+      withTempHome((home) => {
+        const p = path.join(home, '.claude', 'accounts', '.update-check.json');
+        fs.mkdirSync(path.dirname(p), { recursive: true });
+        fs.writeFileSync(p, JSON.stringify({
+          checkedAt: Date.now(), latestVersion: '4.1.0', minSafeVersion: '4.1.0',
+        }));
+        const r = checkForUpdate('4.0.0');
+        assert.ok(r !== null);
+        assert.strictEqual(r.critical, true, '4.0.0 is below minsafe 4.1.0 → critical');
+      });
+    } finally {
+      if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
+      if (savedNo === undefined) delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+      else process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = savedNo;
+    }
+  });
+
+  it('does NOT flag critical when at/above minsafe but a newer version exists', () => {
+    const savedCi = process.env.CI;
+    const savedNo = process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    delete process.env.CI;
+    delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    try {
+      withTempHome((home) => {
+        const p = path.join(home, '.claude', 'accounts', '.update-check.json');
+        fs.mkdirSync(path.dirname(p), { recursive: true });
+        fs.writeFileSync(p, JSON.stringify({
+          checkedAt: Date.now(), latestVersion: '4.2.0', minSafeVersion: '4.1.0',
+        }));
+        const r = checkForUpdate('4.1.0');
+        assert.ok(r !== null, 'a newer version (4.2.0) still yields an update');
+        assert.strictEqual(r.critical, false, '4.1.0 is at minsafe → routine, not critical');
+      });
+    } finally {
+      if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
+      if (savedNo === undefined) delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+      else process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = savedNo;
+    }
+  });
+
+  it('fail-open: no minsafe tag in cache → never critical', () => {
+    const savedCi = process.env.CI;
+    const savedNo = process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    delete process.env.CI;
+    delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    try {
+      withTempHome(() => {
+        writeUpdateCache('9.9.9'); // legacy cache, no minSafeVersion field
+        const r = checkForUpdate('1.0.0');
+        assert.ok(r !== null);
+        assert.strictEqual(r.critical, false, 'absent minsafe must fail open to non-critical');
+      });
+    } finally {
+      if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
+      if (savedNo === undefined) delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+      else process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = savedNo;
+    }
+  });
+
   it('opts out under CI=true', () => {
     const saved = process.env.CI;
     process.env.CI = 'true';
