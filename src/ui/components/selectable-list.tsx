@@ -12,7 +12,7 @@ import { ORANGE } from '../theme.js';
 /** Minimal row shape. Screens pass their own MenuItem-like arrays — any object
  *  with a string `value` (used as the React key), a `label`, and an optional
  *  `hint` is structurally compatible. */
-export interface SelectableRow {
+interface SelectableRow {
   value: string;
   label: string;
   hint?: string;
