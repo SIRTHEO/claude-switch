@@ -16,6 +16,7 @@ import {
   type AutoFallbackConfig,
 } from '../../fallback/auto-fallback.js';
 import { ORANGE } from '../theme.js';
+import { SelectableList } from '../components/selectable-list.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 
 type Action =
@@ -219,18 +220,7 @@ export function AutoFallbackScreen({ accountsDirPath, onDone }: ScreenProps) {
         </Text>
       </Box>
 
-      <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1}>
-        {items.map((item, i) => {
-          const selected = i === cursor;
-          return (
-            <Box key={item.value}>
-              <Text color={selected ? ORANGE : undefined}>{selected ? '▸ ' : '  '}</Text>
-              <Text bold={selected}>{item.label}</Text>
-              {item.hint && <Text color="gray">  · {item.hint}</Text>}
-            </Box>
-          );
-        })}
-      </Box>
+      <SelectableList items={items} cursor={cursor} />
 
       {prompt && (
         <Box flexDirection="column" marginTop={1}>
