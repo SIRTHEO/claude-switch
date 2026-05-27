@@ -21,7 +21,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { writeJsonAtomic } from '../platform/atomic-write.js';
-import { errnoCode } from '../platform/errors.js';
 
 type ProxyRuntimeMode =
   | 'oauth-first'    // proxy started in oauth-first, no burst active
@@ -82,10 +81,9 @@ export function writeProxyMode(
 export function clearProxyMode(accountsDirPath: string): void {
   try {
     fs.unlinkSync(markerPath(accountsDirPath));
-  } catch (e) {
-    if (errnoCode(e) !== 'ENOENT') {
-      /* file existed but couldn't be removed — best-effort, swallow */
-    }
+  } catch {
+    // best-effort: missing (ENOENT) or unremovable — nothing more to do. The
+    // marker self-heals via PROXY_MODE_STALE_MS on the next read regardless.
   }
 }
 
