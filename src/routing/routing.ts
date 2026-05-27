@@ -95,8 +95,10 @@ export function resolveRouting(input: ResolveRoutingInput): RoutingDecision | nu
         : `🎯 routed to ${target} via CLAUDE_SWITCH_ACCOUNT`;
       return { email: target, source: 'env', ...(banner ? { banner } : {}) };
     }
-    // Env var set but unresolvable. Don't pretend it routed — emit a
-    // warning so the user notices, then continue resolution.
+    // Env var set but unresolvable. It was an explicit override, so don't
+    // silently fall through to repo/global rules (that would surprise a user
+    // who thought they pinned an account). Stay on the active account and
+    // surface a warning so they can fix the value.
     if (input.activeEmail) {
       return {
         email: input.activeEmail,
