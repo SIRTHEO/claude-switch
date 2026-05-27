@@ -503,11 +503,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  // One-shot migration of legacy plaintext API keys into the macOS
-  // Keychain. Idempotent and silent — runs on every non-statusline
-  // invocation but is essentially free once everything is migrated
-  // (just reads each Keychain entry name to confirm it exists). Skipped
-  // on non-macOS automatically by `migrateApiKeysToKeychain`.
+  // One-shot migration of legacy plaintext API keys into the active
+  // credential vault (the cross-platform file vault by default; the macOS
+  // Keychain only under CLAUDE_SWITCH_USE_KEYCHAIN=1). Idempotent and silent —
+  // runs on every non-statusline invocation on every platform, but is
+  // essentially free once everything is migrated (it just confirms each key
+  // already exists in the vault). The legacy `_apiKey` field is left in place
+  // as a fallback, so a missed write self-heals on the next run.
   migrateApiKeysToKeychain(aDir);
 
   // Profile subcommands — isolated per-terminal claude sessions via
