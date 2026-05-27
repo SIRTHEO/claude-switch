@@ -1,8 +1,8 @@
 // src/fallback-env.ts
 // Decide whether to inject ANTHROPIC_API_KEY when spawning claude.
 //
-// The flag is global (`.fallback-enabled` marker file) and the key is
-// per-account. The composition is: fallback ON + account has key →
+// The flag is global (stored in state.json, see state-store.ts) and the key
+// is per-account. The composition is: fallback ON + account has key →
 // inject. Otherwise null and the spawn proceeds with claude's normal
 // OAuth subscription auth.
 //
