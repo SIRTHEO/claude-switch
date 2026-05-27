@@ -150,6 +150,17 @@ describe('parseClaudeSwitchFile', () => {
     const r = parseClaudeSwitchFile('[]');
     assert.equal(r.ok, false);
   });
+
+  it('rejects deeply-nested match.any without throwing (adversarial repo file)', () => {
+    // A repo-controlled .claude-switch could nest `any` deep enough to
+    // overflow the parser's recursion. The depth cap must turn that into a
+    // clean { ok: false } instead of an uncaught RangeError.
+    const depth = 5000;
+    const raw = `{"match":${'{"any":['.repeat(depth)}{"email":"a@b.com"}${']}'.repeat(depth)}}`;
+    let r: ReturnType<typeof parseClaudeSwitchFile>;
+    assert.doesNotThrow(() => { r = parseClaudeSwitchFile(raw); });
+    assert.equal(r!.ok, false);
+  });
 });
 
 describe('parseRoutingFile', () => {

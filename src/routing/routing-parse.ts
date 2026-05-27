@@ -16,6 +16,13 @@ interface ParseResult<T> {
   error?: string;
 }
 
+// `match.any` nests recursively. A `.claude-switch` file is discovered by
+// walking up from the cwd, so it is effectively repo-controlled (untrusted)
+// input — an adversarial file with deeply-nested `any` would overflow the
+// stack in parseMatch and throw an uncaught RangeError, breaking this module's
+// "never throws" contract. Cap the depth well above any legitimate rule.
+const MAX_MATCH_DEPTH = 32;
+
 export function parseClaudeSwitchFile(raw: string): ParseResult<ClaudeSwitchFile> {
   let json: unknown;
   try {
@@ -28,12 +35,15 @@ export function parseClaudeSwitchFile(raw: string): ParseResult<ClaudeSwitchFile
   }
   const m = json.match;
   if (m === undefined) return { ok: true, value: {} };
-  const parsed = parseMatch(m);
+  const parsed = parseMatch(m, 0);
   if (!parsed.ok) return { ok: false, error: parsed.error };
   return { ok: true, value: { match: parsed.value } };
 }
 
-function parseMatch(m: unknown): ParseResult<ClaudeSwitchMatch> {
+function parseMatch(m: unknown, depth: number): ParseResult<ClaudeSwitchMatch> {
+  if (depth > MAX_MATCH_DEPTH) {
+    return { ok: false, error: 'match nesting too deep' };
+  }
   if (!isPlainObject(m)) return { ok: false, error: 'match must be an object' };
   const out: ClaudeSwitchMatch = {};
   const obj = m;
@@ -49,7 +59,7 @@ function parseMatch(m: unknown): ParseResult<ClaudeSwitchMatch> {
   if (Array.isArray(obj.any)) {
     const inner: ClaudeSwitchMatch[] = [];
     for (const item of obj.any) {
-      const p = parseMatch(item);
+      const p = parseMatch(item, depth + 1);
       if (!p.ok) return { ok: false, error: `match.any: ${p.error}` };
       if (p.value) inner.push(p.value);
     }
