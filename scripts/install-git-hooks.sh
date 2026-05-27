@@ -22,6 +22,7 @@ install_hook() {
   echo "[install-hooks] installed $name -> $dst"
 }
 
+install_hook pre-commit
 install_hook pre-push
 
-echo "[install-hooks] done. Verify with: ls -la .git/hooks/pre-push"
+echo "[install-hooks] done. Verify with: ls -la .git/hooks/pre-commit .git/hooks/pre-push"
