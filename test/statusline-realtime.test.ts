@@ -68,7 +68,7 @@ function runStatusline(
   const r = spawnSync(process.execPath, [CLI, 'switch', 'statusline', '--json', '--no-color'], {
     env,
     encoding: 'utf-8',
-    timeout: 10_000,
+    timeout: 30_000, // generous hang-detector (slow Windows CI cold spawn)
   });
   if (r.error) throw r.error;
   const line = r.stdout.trim().split('\n').pop() ?? '';
@@ -91,7 +91,7 @@ function runSwitch(home: string, target: string): { status: number | null; stder
   const r = spawnSync(process.execPath, [CLI, 'switch', target], {
     env,
     encoding: 'utf-8',
-    timeout: 10_000,
+    timeout: 30_000, // generous hang-detector (slow Windows CI cold spawn)
   });
   if (r.error) throw r.error;
   return { status: r.status, stderr: r.stderr };

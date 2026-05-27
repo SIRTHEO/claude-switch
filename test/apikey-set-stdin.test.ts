@@ -43,7 +43,7 @@ describe('apikey set — empty stdin does not hang', () => {
       [CLI, 'switch', 'apikey', 'set', 'sirtheo.work@example.com'],
       {
         input: '', // empty, immediately-closed stdin
-        timeout: 5000, // a hang would trip this; the fix exits in well under it
+        timeout: 30_000, // generous hang-detector: a real hang still trips it, but a 5s cap false-trips on a slow Windows CI cold spawn
         encoding: 'utf-8',
         // USERPROFILE too: the spawned CLI resolves home via os.homedir(),
         // which reads USERPROFILE (not HOME) on Windows.
