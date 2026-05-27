@@ -547,7 +547,7 @@ function captureLiveCredentialsForActiveAccount(
 // Idempotent "open account isolated" helper
 // ───────────────────────────────────────────────────────────────────────────
 
-export interface EnsureProfileResult {
+interface EnsureProfileResult {
   profileName: string;
   profilePath: string;
   emailAddress: string;
