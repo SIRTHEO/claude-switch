@@ -26,6 +26,7 @@ import {
   writeApiKeyToKeychain,
   deleteApiKeyFromKeychain,
 } from './apikey-keychain.js';
+import { defaultCredentialStore, type CredentialStore } from './credential-store.js';
 
 function accountFilePath(email: string, accountsDirPath: string): string {
   if (!email || !isSafeEmail(email)) {
@@ -70,7 +71,12 @@ export function getApiKey(email: string, accountsDirPath: string): string | null
   return typeof key === 'string' && key ? key : null;
 }
 
-export function setApiKey(email: string, key: string, accountsDirPath: string): void {
+export function setApiKey(
+  email: string,
+  key: string,
+  accountsDirPath: string,
+  deps: { credentials?: CredentialStore } = {},
+): void {
   // Trim whitespace — pasted keys often arrive with leading/trailing
   // spaces or newlines that Anthropic rejects with a 401, and the user
   // has no clue why. Trim once here so both the TUI and CLI paths benefit.
@@ -83,11 +89,20 @@ export function setApiKey(email: string, key: string, accountsDirPath: string): 
     throw new Error(`No saved account for ${email}. Run: claude switch add`);
   }
 
-  // Primary write: Keychain on macOS, JSON elsewhere. On macOS we ALSO
-  // remove the legacy JSON field — once Keychain succeeds we don't want
-  // a stale fallback hanging around with a different value.
-  if (keychainAvailable()) {
-    writeApiKeyToKeychain(email, trimmed);
+  // Primary write: the credential vault (file vault by default, Keychain only
+  // under CLAUDE_SWITCH_USE_KEYCHAIN=1). When it accepts the key we ALSO drop
+  // the legacy `_apiKey` JSON field so a stale fallback can't shadow the vault.
+  const store = deps.credentials ?? defaultCredentialStore;
+  if (store.available()) {
+    // Confirm the write succeeded BEFORE deleting the fallback. The Keychain
+    // adapter throws on failure (so the delete is skipped), but the file vault
+    // swallows write errors and returns false — deleting `_apiKey` on a false
+    // return would lose the key from both places. Fail loud instead.
+    if (!store.writeApiKey(email, trimmed)) {
+      throw new Error(
+        `Failed to store the API key for ${email}. Your existing key (if any) was left untouched.`,
+      );
+    }
     if (data._apiKey !== undefined) {
       delete data._apiKey;
       writeAccountFile(file, data);
