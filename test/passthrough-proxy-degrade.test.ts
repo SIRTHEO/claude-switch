@@ -54,7 +54,10 @@ describe('handlePassthrough — proxy start failure degrades to direct spawn', (
       claudeJsonPath: claudeJson,
       accountsDirPath: accDir,
       updateInfo: null,
-      selfUrl: fileURLToPath(import.meta.url),
+      // selfUrl is a file:// URL (findClaude does fileURLToPath on it); passing
+      // a plain path throws "Invalid URL" once getSavedClaudeBin misses, which
+      // is the CI case (no real ~/.claude-bin to short-circuit on).
+      selfUrl: import.meta.url,
     };
 
     let proxyAttempted = false;
