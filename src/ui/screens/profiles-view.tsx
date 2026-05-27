@@ -11,6 +11,7 @@ import { listProfiles } from '../../profiles/profiles.js';
 import { ORANGE } from '../theme.js';
 import { type MenuItem, profileLabel } from './profiles/menu-items.js';
 import { PickList } from './profiles/pick-list.js';
+import { SelectableList } from '../components/selectable-list.js';
 import type { Step } from './profiles-types.js';
 
 interface ProfilesViewProps {
@@ -51,18 +52,7 @@ export function ProfilesView({
       )}
 
       {step.kind === 'home' && (
-        <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1}>
-          {items.map((item, i) => {
-            const selected = i === cursor;
-            return (
-              <Box key={item.value}>
-                <Text color={selected ? ORANGE : undefined}>{selected ? '▸ ' : '  '}</Text>
-                <Text bold={selected}>{item.label}</Text>
-                {item.hint && <Text color="gray">  · {item.hint}</Text>}
-              </Box>
-            );
-          })}
-        </Box>
+        <SelectableList items={items} cursor={cursor} />
       )}
 
       {step.kind === 'pick-account' && (

@@ -14,6 +14,7 @@ import { getApiKey, removeApiKey } from '../../credentials/apikey.js';
 import { getAliasesForEmail, setAlias, removeAlias } from '../../switching/aliases.js';
 import { withLock } from '../../platform/lock.js';
 import { ORANGE } from '../theme.js';
+import { SelectableList } from '../components/selectable-list.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 import { runApikeyScreen } from './set-apikey.js';
 import { runRemoveAccountScreen } from './remove-account.js';
@@ -248,18 +249,7 @@ export function ManageScreen({ claudeJsonPath, accountsDirPath, initialEmail, on
       )}
 
       {step.kind === 'menu' && (
-        <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1}>
-          {menuItems.map((item, i) => {
-            const selected = i === menuCursor;
-            return (
-              <Box key={item.value}>
-                <Text color={selected ? ORANGE : undefined}>{selected ? '▸ ' : '  '}</Text>
-                <Text bold={selected}>{item.label}</Text>
-                {item.hint && <Text color="gray">  · {item.hint}</Text>}
-              </Box>
-            );
-          })}
-        </Box>
+        <SelectableList items={menuItems} cursor={menuCursor} />
       )}
 
       {step.kind === 'alias-add' && (
