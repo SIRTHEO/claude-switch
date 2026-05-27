@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isNewer, detectInstallCommand, checkForUpdate, writeUpdateCache } from '../src/setup/update-check.js';
+import { isNewer, detectInstallCommand, checkForUpdate, writeUpdateCache, formatUpdateNotice } from '../src/setup/update-check.js';
 import { setFakeHome, restoreFakeHome } from './_helpers/fake-home.js';
 
 describe('isNewer', () => {
@@ -213,6 +213,34 @@ describe('checkForUpdate / writeUpdateCache — type guard coverage', () => {
       if (saved === undefined) delete process.env.CI;
       else process.env.CI = saved;
     }
+  });
+});
+
+describe('formatUpdateNotice', () => {
+  const routine = { latestVersion: '4.2.0', installCommand: 'npm i -g x', critical: false };
+  const crit = { latestVersion: '4.2.0', installCommand: 'npm i -g x', critical: true };
+
+  it('routine update → quiet one-liner, no SECURITY wording', () => {
+    const s = formatUpdateNotice(routine, '4.1.0', { color: false });
+    assert.match(s, /4\.1\.0 → 4\.2\.0 available/);
+    assert.doesNotMatch(s, /SECURITY/);
+  });
+
+  it('critical update → loud SECURITY banner', () => {
+    const s = formatUpdateNotice(crit, '4.0.0', { color: false });
+    assert.match(s, /SECURITY UPDATE/);
+    assert.match(s, /4\.0\.0/);
+    assert.match(s, /4\.2\.0/);
+  });
+
+  it('color:false emits no ANSI escape codes', () => {
+    const s = formatUpdateNotice(crit, '4.0.0', { color: false });
+    assert.doesNotMatch(s, /\x1b\[/, 'piped output must stay clean');
+  });
+
+  it('color:true paints the critical banner', () => {
+    const s = formatUpdateNotice(crit, '4.0.0', { color: true });
+    assert.match(s, /\x1b\[1;31m/, 'critical banner is bold red when colour is on');
   });
 });
 
