@@ -235,12 +235,14 @@ describe('formatUpdateNotice', () => {
 
   it('color:false emits no ANSI escape codes', () => {
     const s = formatUpdateNotice(crit, '4.0.0', { color: false });
-    assert.doesNotMatch(s, /\x1b\[/, 'piped output must stay clean');
+    // String check (not regex) so the literal ESC byte doesn't trip the
+    // noControlCharactersInRegex lint rule.
+    assert.ok(!s.includes('\x1b['), 'piped output must stay clean');
   });
 
   it('color:true paints the critical banner', () => {
     const s = formatUpdateNotice(crit, '4.0.0', { color: true });
-    assert.match(s, /\x1b\[1;31m/, 'critical banner is bold red when colour is on');
+    assert.ok(s.includes('\x1b[1;31m'), 'critical banner is bold red when colour is on');
   });
 });
 
