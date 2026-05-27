@@ -98,13 +98,11 @@ export async function handlePassthrough(
   // skipped when CLAUDE_CONFIG_DIR is set externally (we are inside an
   // explicit profile chosen by the user — don't override).
   const snapshot = withLock(accountsDirPath, () => {
-    // Capture any token the claude binary rotated into `.credentials.json`
-    // during the previous session BEFORE any routing swap, so the active
-    // account's snapshot keeps a usable refresh token. Without this the
-    // snapshot only updated on an explicit `switch`, drifted stale during
-    // normal passthrough use, and a later switch-back restored an expired
-    // token → re-login. Best-effort + mtime-gated, so it's a no-op (no write)
-    // unless the live credentials are actually newer than the snapshot.
+    // Capture (before any routing swap) a token the claude binary rotated into
+    // `.credentials.json` during the previous session, so the snapshot keeps a
+    // usable refresh token instead of drifting stale until the next explicit
+    // `switch` (which previously forced a re-login). mtime-gated → a no-op
+    // unless the live creds are newer than the snapshot.
     syncActiveSnapshotIfStale(claudeJsonPath, accountsDirPath);
 
     const initial = getCurrent(claudeJsonPath);
@@ -181,9 +179,8 @@ export async function handlePassthrough(
     process.stderr.write(`⚠ auto-engage wanted to switch to API key but ${engage.blocked}\n\n`);
   }
   if (updateInfo) {
-    // Critical updates escalate to a loud banner even here on the hot path
-    // (a known security/data-loss bug must not be lost in a quiet hint);
-    // routine updates stay a one-liner. Never blocks — claude still launches.
+    // Critical updates render a loud banner even on this hot path; routine ones
+    // stay a one-liner. Never blocks — claude still launches.
     process.stderr.write(
       formatUpdateNotice(updateInfo, VERSION, { color: process.stderr.isTTY === true }) + '\n',
     );
@@ -237,27 +234,20 @@ export async function handlePassthrough(
         proxy = await startProxy({
           apiKey: activeApiKey,
           mode: effective,
-          // Persist final counters next to the accounts dir so the next
-          // `claude switch status` can render the previous session's
-          // proxy stats. Lets the user verify the proxy actually saw
-          // traffic / fired retries instead of guessing from a banner.
+          // Persist final counters so the next `claude switch status` can show
+          // the previous session's proxy stats instead of guessing.
           persistStatsTo: `${accountsDirPath}/.proxy-stats.json`,
-          // Enable realtime usage push from upstream response headers AND
-          // runtime-mode marker for the statusline. Both wired together:
-          // the marker tells the statusline what mode the proxy is in
-          // (oauth-first / oauth-burst / api-first);
-          // the header push keeps the per-account usage cache fresh
+          // accountsDirPath+account enable the statusline runtime-mode marker
+          // and the header-push that keeps the per-account usage cache fresh
           // without polling /api/oauth/usage.
           accountsDirPath,
           account: email,
         });
       } catch (e) {
-        // The loopback proxy failed to bind/start (port exhaustion, a broken
-        // network stack, sandbox without loopback). Degrade gracefully: a
-        // wrapper must keep `claude` usable. Fall through to a direct OAuth
-        // spawn — the live API-key fallback won't be available this run, so
-        // say so instead of silently dropping the capability or hard-failing
-        // the whole invocation.
+        // Loopback proxy failed to bind/start (port exhaustion, broken network
+        // stack, sandbox without loopback). A wrapper must keep `claude`
+        // usable: degrade to a direct OAuth spawn (live API-key fallback off
+        // this run) instead of hard-failing the whole invocation.
         process.stderr.write(
           `⚠ claude-switch: could not start the fallback proxy (${errMessage(e)}) — ` +
           `running claude on OAuth directly; live API-key fallback is off this session.\n`,
@@ -267,13 +257,8 @@ export async function handlePassthrough(
       }
       process.on('exit', () => proxy.close());
 
-      // Visible confirmation that the live-fallback proxy is in front of
-      // claude. Without it, the only signal the user gets is when the
-      // proxy actually fires (subscription returned 429 → retried with
-      // API key) — and if that path never trips, there's no way to tell
-      // if it would. One terse line on stderr makes the architecture
-      // legible, so when something goes wrong (or doesn't fall back as
-      // expected) the user can debug.
+      // One terse stderr line so the user knows the live-fallback proxy is in
+      // front of claude — otherwise the only signal is when it actually fires.
       const modeLabel = effective === 'oauth-first'
         ? 'OAuth subscription, API-key on rate-limit'
         : 'API key';

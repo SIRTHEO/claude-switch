@@ -297,12 +297,9 @@ export async function refreshLegacySnapshotIfStale(
   const refreshed = await refreshAccessToken(oauth.refreshToken);
   if (!refreshed) return false;
 
-  // Atomic-rewrite the legacy file with the refreshed snapshot. We preserve
-  // every other field — only `_keychain.claudeAiOauth` is replaced, and within
-  // it only the token-bearing fields change: merge the refreshed fields onto
-  // the prior oauth so metadata the token endpoint doesn't echo back
-  // (subscriptionType, rateLimitTier, scopes) survives the refresh. Other
-  // blocks (`mcpOAuth` etc.) stay untouched.
+  // Atomic-rewrite preserving every other field — only `_keychain.claudeAiOauth`
+  // changes, and there we MERGE refreshed onto prior so metadata the token
+  // endpoint omits (subscriptionType, rateLimitTier, scopes) survives.
   const next: AccountSnapshot = {
     ...legacy,
     _keychain: {
