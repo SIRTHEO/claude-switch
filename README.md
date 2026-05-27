@@ -118,7 +118,7 @@ Then **open a new terminal** (the old one has a stale `PATH`) and verify:
 claude switch --version
 ```
 
-> 💡 **Tip** — **Already installed?** claude-switch checks for new versions in the background once a day and offers a one-keypress install on your next `claude switch`. Or run `claude switch update`. Nothing is ever installed without your `y`.
+> 💡 **Tip** — **Already installed?** claude-switch checks for new versions in the background once a day and offers a one-keypress install on your next `claude` run. A release that fixes a security or data-loss bug is flagged with a louder notice so you don't miss it. Or run `claude switch update`. Nothing is ever installed without your `y`. Set `CLAUDE_SWITCH_NO_UPDATE_CHECK=1` (or run in CI) to silence the check entirely.
 
 ---
 

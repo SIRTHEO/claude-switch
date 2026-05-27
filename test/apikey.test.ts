@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { getApiKey, setApiKey, removeApiKey, maskApiKey } from '../src/credentials/apikey.js';
 import { save, load } from '../src/accounts/accounts.js';
+import type { CredentialStore } from '../src/credentials/credential-store.js';
 
 describe('apikey storage', () => {
   let tmpDir: string;
@@ -83,6 +84,38 @@ describe('apikey storage', () => {
     setApiKey('a@b.com', 'sk-ant-api03-secret', accDir);
     const stat = fs.statSync(path.join(accDir, 'a@b.com.json'));
     assert.equal(stat.mode & 0o777, 0o600);
+  });
+
+  it('does not delete the legacy _apiKey fallback when the vault write fails', () => {
+    // Seed a legacy plaintext _apiKey: the runner sets
+    // CLAUDE_SWITCH_DISABLE_KEYCHAIN=1, so the default store is unavailable and
+    // setApiKey writes _apiKey straight into the account file.
+    setApiKey('a@b.com', 'sk-ant-old-fallback', accDir);
+    assert.equal(getApiKey('a@b.com', accDir), 'sk-ant-old-fallback');
+
+    // Drive the vault branch with a store whose write fails (returns false,
+    // mimicking FileCredentialStore swallowing an fs error). The fix must
+    // throw BEFORE deleting the fallback — the bug deleted it, losing the key.
+    const failingStore: CredentialStore = {
+      available: () => true,
+      writeApiKey: () => false,
+      readApiKey: () => null,
+      deleteApiKey: () => false,
+      readOAuth: () => null,
+      writeOAuth: () => {},
+      readOAuthForConfigDir: () => null,
+      writeOAuthForConfigDir: () => {},
+      deleteOAuthForConfigDir: () => false,
+      listOAuthKeychainItems: () => [],
+      setPartitionList: () => false,
+    };
+
+    assert.throws(
+      () => setApiKey('a@b.com', 'sk-ant-new-key', accDir, { credentials: failingStore }),
+      /Failed to store the API key/,
+    );
+
+    assert.equal(getApiKey('a@b.com', accDir), 'sk-ant-old-fallback');
   });
 });
 

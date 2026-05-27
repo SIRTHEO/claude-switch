@@ -297,15 +297,14 @@ export async function refreshLegacySnapshotIfStale(
   const refreshed = await refreshAccessToken(oauth.refreshToken);
   if (!refreshed) return false;
 
-  // Atomic-rewrite the legacy file with the refreshed snapshot. We
-  // preserve every other field — only `_keychain.claudeAiOauth` is
-  // replaced. Other claudeCode-specific block (`mcpOAuth` etc.) stays
-  // untouched.
+  // Atomic-rewrite preserving every other field — only `_keychain.claudeAiOauth`
+  // changes, and there we MERGE refreshed onto prior so metadata the token
+  // endpoint omits (subscriptionType, rateLimitTier, scopes) survives.
   const next: AccountSnapshot = {
     ...legacy,
     _keychain: {
       ...legacy._keychain,
-      claudeAiOauth: refreshed,
+      claudeAiOauth: { ...oauth, ...refreshed, scopes: refreshed.scopes ?? oauth.scopes },
     },
   };
   writeJsonAtomic(resolvedAccountFile(email, accountsDirPath), next);
@@ -547,7 +546,7 @@ function captureLiveCredentialsForActiveAccount(
 // Idempotent "open account isolated" helper
 // ───────────────────────────────────────────────────────────────────────────
 
-export interface EnsureProfileResult {
+interface EnsureProfileResult {
   profileName: string;
   profilePath: string;
   emailAddress: string;

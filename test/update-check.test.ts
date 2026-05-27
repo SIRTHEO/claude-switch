@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isNewer, detectInstallCommand, checkForUpdate, writeUpdateCache } from '../src/setup/update-check.js';
+import { isNewer, detectInstallCommand, checkForUpdate, writeUpdateCache, formatUpdateNotice } from '../src/setup/update-check.js';
 import { setFakeHome, restoreFakeHome } from './_helpers/fake-home.js';
 
 describe('isNewer', () => {
@@ -101,12 +101,148 @@ describe('checkForUpdate / writeUpdateCache — type guard coverage', () => {
   });
 
   it('writeUpdateCache + checkForUpdate round-trip (happy path)', () => {
-    withTempHome(() => {
-      writeUpdateCache('9.9.9');
-      const result = checkForUpdate('1.0.0');
-      assert.ok(result !== null, 'expected an update to be detected');
-      assert.strictEqual(result.latestVersion, '9.9.9');
-    });
+    // Clear the opt-out envs so this exercises the real update path even when
+    // the suite runs in CI (GitHub Actions sets CI=true, which now suppresses
+    // the check).
+    const savedCi = process.env.CI;
+    const savedNo = process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    delete process.env.CI;
+    delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    try {
+      withTempHome(() => {
+        writeUpdateCache('9.9.9');
+        const result = checkForUpdate('1.0.0');
+        assert.ok(result !== null, 'expected an update to be detected');
+        assert.strictEqual(result.latestVersion, '9.9.9');
+      });
+    } finally {
+      if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
+      if (savedNo === undefined) delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+      else process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = savedNo;
+    }
+  });
+
+  it('opts out under CLAUDE_SWITCH_NO_UPDATE_CHECK=1 even with a fresh cache', () => {
+    const saved = process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = '1';
+    try {
+      withTempHome(() => {
+        writeUpdateCache('9.9.9'); // would otherwise yield an update
+        assert.strictEqual(checkForUpdate('1.0.0'), null, 'opt-out must suppress the update');
+      });
+    } finally {
+      if (saved === undefined) delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+      else process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = saved;
+    }
+  });
+
+  it('flags critical when the installed version is below the minsafe tag', () => {
+    const savedCi = process.env.CI;
+    const savedNo = process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    delete process.env.CI;
+    delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    try {
+      withTempHome((home) => {
+        const p = path.join(home, '.claude', 'accounts', '.update-check.json');
+        fs.mkdirSync(path.dirname(p), { recursive: true });
+        fs.writeFileSync(p, JSON.stringify({
+          checkedAt: Date.now(), latestVersion: '4.1.0', minSafeVersion: '4.1.0',
+        }));
+        const r = checkForUpdate('4.0.0');
+        assert.ok(r !== null);
+        assert.strictEqual(r.critical, true, '4.0.0 is below minsafe 4.1.0 → critical');
+      });
+    } finally {
+      if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
+      if (savedNo === undefined) delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+      else process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = savedNo;
+    }
+  });
+
+  it('does NOT flag critical when at/above minsafe but a newer version exists', () => {
+    const savedCi = process.env.CI;
+    const savedNo = process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    delete process.env.CI;
+    delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    try {
+      withTempHome((home) => {
+        const p = path.join(home, '.claude', 'accounts', '.update-check.json');
+        fs.mkdirSync(path.dirname(p), { recursive: true });
+        fs.writeFileSync(p, JSON.stringify({
+          checkedAt: Date.now(), latestVersion: '4.2.0', minSafeVersion: '4.1.0',
+        }));
+        const r = checkForUpdate('4.1.0');
+        assert.ok(r !== null, 'a newer version (4.2.0) still yields an update');
+        assert.strictEqual(r.critical, false, '4.1.0 is at minsafe → routine, not critical');
+      });
+    } finally {
+      if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
+      if (savedNo === undefined) delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+      else process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = savedNo;
+    }
+  });
+
+  it('fail-open: no minsafe tag in cache → never critical', () => {
+    const savedCi = process.env.CI;
+    const savedNo = process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    delete process.env.CI;
+    delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    try {
+      withTempHome(() => {
+        writeUpdateCache('9.9.9'); // legacy cache, no minSafeVersion field
+        const r = checkForUpdate('1.0.0');
+        assert.ok(r !== null);
+        assert.strictEqual(r.critical, false, 'absent minsafe must fail open to non-critical');
+      });
+    } finally {
+      if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
+      if (savedNo === undefined) delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+      else process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = savedNo;
+    }
+  });
+
+  it('opts out under CI=true', () => {
+    const saved = process.env.CI;
+    process.env.CI = 'true';
+    try {
+      withTempHome(() => {
+        writeUpdateCache('9.9.9');
+        assert.strictEqual(checkForUpdate('1.0.0'), null, 'CI must suppress the update check');
+      });
+    } finally {
+      if (saved === undefined) delete process.env.CI;
+      else process.env.CI = saved;
+    }
+  });
+});
+
+describe('formatUpdateNotice', () => {
+  const routine = { latestVersion: '4.2.0', installCommand: 'npm i -g x', critical: false };
+  const crit = { latestVersion: '4.2.0', installCommand: 'npm i -g x', critical: true };
+
+  it('routine update → quiet one-liner, no SECURITY wording', () => {
+    const s = formatUpdateNotice(routine, '4.1.0', { color: false });
+    assert.match(s, /4\.1\.0 → 4\.2\.0 available/);
+    assert.doesNotMatch(s, /SECURITY/);
+  });
+
+  it('critical update → loud SECURITY banner', () => {
+    const s = formatUpdateNotice(crit, '4.0.0', { color: false });
+    assert.match(s, /SECURITY UPDATE/);
+    assert.match(s, /4\.0\.0/);
+    assert.match(s, /4\.2\.0/);
+  });
+
+  it('color:false emits no ANSI escape codes', () => {
+    const s = formatUpdateNotice(crit, '4.0.0', { color: false });
+    // String check (not regex) so the literal ESC byte doesn't trip the
+    // noControlCharactersInRegex lint rule.
+    assert.ok(!s.includes('\x1b['), 'piped output must stay clean');
+  });
+
+  it('color:true paints the critical banner', () => {
+    const s = formatUpdateNotice(crit, '4.0.0', { color: true });
+    assert.ok(s.includes('\x1b[1;31m'), 'critical banner is bold red when colour is on');
   });
 });
 

@@ -26,7 +26,7 @@ import { fetchUsageCached } from './usage-fetch.js';
  * Returns null if the account file doesn't exist, isn't parseable, or
  * doesn't carry an accessToken.
  */
-function readAccountOauth(
+export function readAccountOauth(
   email: string,
   accountsDirPath: string,
 ): { accessToken: string; refreshToken?: string; expiresAt?: number | string } | null {
@@ -91,11 +91,15 @@ function readAccountOauth(
 
 /**
  * Persist a refreshed OAuth bundle back to the account file so the next
- * read sees the new (non-stale) tokens. Only writes the three OAuth
- * fields — the rest of the snapshot (apiKey, prefs, _keychain backup)
- * is preserved.
+ * read sees the new (non-stale) tokens. Writes the tokens to BOTH locations
+ * `readAccountOauth` probes: the top-level fields AND the
+ * `_keychain.claudeAiOauth` block. The latter is read FIRST, so writing only
+ * the top-level fields would leave the stale `_keychain` token shadowing the
+ * refreshed one and force a re-refresh on every call. Updating `_keychain`
+ * also keeps the block `load()` would restore current. Everything else in the
+ * snapshot (apiKey, prefs) is preserved.
  */
-function persistRefreshedOauth(
+export function persistRefreshedOauth(
   email: string,
   accountsDirPath: string,
   oauth: { accessToken: string; refreshToken?: string; expiresAt: number },
@@ -111,6 +115,17 @@ function persistRefreshedOauth(
   parsed.accessToken = oauth.accessToken;
   if (oauth.refreshToken) parsed.refreshToken = oauth.refreshToken;
   parsed.expiresAt = oauth.expiresAt;
+
+  // Mirror into `_keychain.claudeAiOauth` when present — readAccountOauth
+  // reads it before the top-level fields, so the refresh has to land here too
+  // or it never sticks (the macOS / snapshot-with-keychain path).
+  const keychain = parsed._keychain as { claudeAiOauth?: Record<string, unknown> } | undefined;
+  if (keychain?.claudeAiOauth && typeof keychain.claudeAiOauth === 'object') {
+    keychain.claudeAiOauth.accessToken = oauth.accessToken;
+    if (oauth.refreshToken) keychain.claudeAiOauth.refreshToken = oauth.refreshToken;
+    keychain.claudeAiOauth.expiresAt = oauth.expiresAt;
+  }
+
   try {
     writeJsonAtomic(accountFile, parsed);
   } catch {

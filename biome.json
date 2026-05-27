@@ -18,9 +18,25 @@
 			},
 			"complexity": {
 				"useLiteralKeys": "off"
+			},
+			"suspicious": {
+				"noImportCycles": "error",
+				"noEmptyBlockStatements": "error"
 			}
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["test/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noEmptyBlockStatements": "off"
+					}
+				}
+			}
+		}
+	],
 	"formatter": {
 		"enabled": false
 	},

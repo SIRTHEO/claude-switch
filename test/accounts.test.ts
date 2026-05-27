@@ -819,6 +819,46 @@ describe('syncActiveSnapshotIfStale', () => {
       'snapshot must reflect the externally-mutated claude.json');
   });
 
+  it('re-saves when .credentials.json rotated even if claude.json is untouched', () => {
+    // Phase 24 file vault: the claude binary rotates the OAuth token in
+    // `.credentials.json` during normal use WITHOUT touching `~/.claude.json`.
+    // Staleness must track the credentials file too, or the snapshot keeps a
+    // stale refresh token and a later switch-back forces a re-login. This
+    // asserts the DETECTION fires (returns true → save ran); the actual token
+    // capture from the vault is save()'s job, covered under the non-disabled
+    // path in file-credential-store.test.ts.
+    const credsDir = path.join(tmpDir, '.claude');
+    fs.mkdirSync(credsDir, { recursive: true });
+    const credsFile = path.join(credsDir, '.credentials.json');
+    fs.writeFileSync(credsFile, JSON.stringify({
+      claudeAiOauth: { accessToken: 'rotated', refreshToken: 'rt', expiresAt: Date.now() + 3_600_000 },
+    }));
+
+    const now = Date.now();
+    // claude.json OLDER than the snapshot — alone it would NOT trigger.
+    fs.utimesSync(claudeJson, (now - 5000) / 1000, (now - 5000) / 1000);
+    fs.utimesSync(path.join(accDir, `${email}.json`), (now - 3000) / 1000, (now - 3000) / 1000);
+    // credentials file NEWER than the snapshot — the only drift signal.
+    fs.utimesSync(credsFile, now / 1000, now / 1000);
+
+    assert.equal(syncActiveSnapshotIfStale(claudeJson, accDir), true,
+      'a token rotation in .credentials.json must trigger a re-save');
+  });
+
+  it('no-ops when neither claude.json nor .credentials.json is newer than the snapshot', () => {
+    // Both sources older than the snapshot → no drift, no write.
+    const credsDir = path.join(tmpDir, '.claude');
+    fs.mkdirSync(credsDir, { recursive: true });
+    const credsFile = path.join(credsDir, '.credentials.json');
+    fs.writeFileSync(credsFile, '{"claudeAiOauth":{"accessToken":"x"}}');
+    const now = Date.now();
+    fs.utimesSync(claudeJson, (now - 5000) / 1000, (now - 5000) / 1000);
+    fs.utimesSync(credsFile, (now - 5000) / 1000, (now - 5000) / 1000);
+    fs.utimesSync(path.join(accDir, `${email}.json`), now / 1000, now / 1000);
+
+    assert.equal(syncActiveSnapshotIfStale(claudeJson, accDir), false);
+  });
+
   it('returns false when no active account is set', () => {
     fs.writeFileSync(claudeJson, '{}');
     assert.equal(syncActiveSnapshotIfStale(claudeJson, accDir), false);

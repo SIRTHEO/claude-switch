@@ -1,18 +1,16 @@
 // src/apikey-keychain.ts
-// macOS Keychain storage for per-account Anthropic API keys.
+// Thin delegators for per-account Anthropic API key storage, kept under this
+// historical filename + `*Keychain` names so existing importers are unaffected.
 //
-// API keys are billing-sensitive secrets that don't expire — leaving them
-// as plaintext in `~/.claude/accounts/<email>.json` (mode 0600) was a
-// considered tradeoff in v3.x but the wrong one. On macOS we now write
-// them to the login Keychain under service "claude-switch-apikey" with
-// the account email as the entry's account field.
+// The actual I/O lives in the CredentialStore port (`credential-store.ts`).
+// Since Phase 24 the default store is the cross-platform file vault
+// (`~/.claude-switch/apikeys.json`, mode 0600) on every OS; the macOS Keychain
+// backend is selected only under CLAUDE_SWITCH_USE_KEYCHAIN=1. So despite the
+// names, these functions no longer touch the Keychain on the default path.
 //
-// Linux/Windows continue to use the JSON `_apiKey` field — same lifecycle
-// as the OAuth tokens on those platforms.
-//
-// As of Phase 20.7a the actual I/O lives in the CredentialStore port
-// (`credential-store.ts`); this module is a thin delegator that preserves the
-// historical public surface so existing importers are unaffected.
+// CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 still disables the store entirely (used by
+// the test suite and by users who explicitly opt out); the env var is read on
+// every call so tests can flip it per-suite.
 
 import { defaultCredentialStore } from './credential-store.js';
 

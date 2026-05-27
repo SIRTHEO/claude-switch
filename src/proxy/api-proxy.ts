@@ -35,11 +35,11 @@
 
 import http from 'node:http';
 import https from 'node:https';
-import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
 import { parseUsageHeadersIfPresent, updateUsageCacheFromHeaders } from '../usage/usage.js';
 import { writeProxyMode, clearProxyMode } from './proxy-mode.js';
+import { writeJsonAtomic } from '../platform/atomic-write.js';
 import {
   buildApiKeyHeaders,
   buildPassthroughHeaders,
@@ -441,14 +441,14 @@ export function startFallbackProxy(opts: StartFallbackProxyOptions): Promise<Pro
       const persistStats = (): void => {
         if (!opts.persistStatsTo) return;
         try {
-          fs.writeFileSync(opts.persistStatsTo, JSON.stringify({
+          writeJsonAtomic(opts.persistStatsTo, {
             persistedAt: now(),
             mode,
             burstActive,
             consecutiveOauthFailures,
             counters,
             lastRetryReason,
-          }, null, 2));
+          });
         } catch {
           /* best-effort — diagnostic data, not a hard requirement */
         }

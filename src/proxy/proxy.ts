@@ -70,6 +70,8 @@ export function run(
 
   // Block here so the function's `never` contract holds — the actual exit
   // is driven by the child's 'exit' handler above.
-  return new Promise<never>(() => {}) as never;
+  return new Promise<never>(() => {
+    /* intentionally never settles — see comment above */
+  }) as never;
 }
 

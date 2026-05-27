@@ -14,11 +14,21 @@ import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { fileURLToPath } from 'node:url';
-import { type ProcessPort, nodeProcessAdapter } from '../platform/process.js';
+import { writeJsonAtomic } from '../platform/atomic-write.js';
+import { PACKAGE_NAME, detectInstallCommand, type UpdateInfo } from './update-notice.js';
 
-const PACKAGE_NAME = '@sirtheo/claude-switch';
+// Re-export the user-facing notice/install helpers (split into update-notice.ts
+// to stay under the file-size gate) so existing importers keep using
+// `./update-check.js` unchanged.
+export { detectInstallCommand, performUpdate, formatUpdateNotice, type UpdateInfo } from './update-notice.js';
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
+// Lightweight dist-tags endpoint (~20 bytes vs ~2 KB for /latest). Returns
+// `{ "latest": "x.y.z", "minsafe"?: "x.y.z" }`. The `minsafe` tag is published
+// by the release pipeline on a security/data-loss release: any version BELOW
+// it carries a known-unsafe bug, so the client escalates the update notice
+// from a quiet hint to a critical banner. Absent tag → no escalation.
+const DIST_TAGS_URL = `https://registry.npmjs.org/-/package/${PACKAGE_NAME}/dist-tags`;
+const MIN_SAFE_TAG = 'minsafe';
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once per day
 
 // ---------------------------------------------------------------------------
@@ -28,6 +38,9 @@ const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once per day
 interface CheckCache {
   checkedAt: number;
   latestVersion: string;
+  /** The `minsafe` dist-tag, when published. Absent on caches written before
+   *  the critical channel existed, and whenever the tag isn't set. */
+  minSafeVersion?: string;
 }
 
 function cacheFilePath(): string {
@@ -68,7 +81,7 @@ function writeCache(cache: CheckCache): void {
   try {
     const filePath = cacheFilePath();
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(cache));
+    writeJsonAtomic(filePath, cache, 0);
   } catch { /* best-effort */ }
 }
 
@@ -100,20 +113,28 @@ export function isNewer(current: string, latest: string): boolean {
   return isPreRelease(current) && !isPreRelease(latest);
 }
 
+/** True when `v` is a string shaped like a semver version (optional `v`
+ *  prefix, optional pre-release). Sanitizer for registry-fetched dist-tags:
+ *  only version-like strings are ever written to the cache, so a
+ *  compromised/MITM registry can't persist arbitrary content. */
+function isVersionLike(v: unknown): v is string {
+  return typeof v === 'string' && /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(v);
+}
+
 // ---------------------------------------------------------------------------
 // Registry fetch — background (unref'd)
 // ---------------------------------------------------------------------------
 
 function fetchLatestVersionBackground(): void {
-  const req = https.get(REGISTRY_URL, { timeout: 5000 }, (res) => {
+  const req = https.get(DIST_TAGS_URL, { timeout: 5000 }, (res) => {
     if (res.statusCode !== 200) { res.resume(); return; }
     let body = '';
     let aborted = false;
     res.on('data', (chunk: Buffer) => {
       if (aborted) return;
       body += chunk.toString();
-      // Cap response size — npm /latest is ~2 KB, anything more is suspect
-      // (compromised registry or MITM). 64 KB is generous.
+      // Cap response size — the dist-tags doc is a handful of bytes, anything
+      // more is suspect (compromised registry or MITM). 64 KB is generous.
       if (body.length > 64 * 1024) {
         aborted = true;
         res.destroy();
@@ -121,10 +142,23 @@ function fetchLatestVersionBackground(): void {
     });
     res.on('end', () => {
       try {
-        const version = extractVersion(JSON.parse(body));
-        if (typeof version === 'string') {
-          writeCache({ checkedAt: Date.now(), latestVersion: version });
-        }
+        // dist-tags shape: { "latest": "x.y.z", "minsafe"?: "x.y.z" }.
+        const parsed: unknown = JSON.parse(body);
+        const tags = (typeof parsed === 'object' && parsed !== null)
+          ? (parsed as Record<string, unknown>)
+          : {};
+        // Validate the shape before persisting: only ever cache strings that
+        // look like a semver version. A compromised/MITM registry must not be
+        // able to write arbitrary content into our cache file, and downstream
+        // version comparison only makes sense on version-like values.
+        const latest = tags['latest'];
+        if (!isVersionLike(latest)) return;
+        const minSafe = tags[MIN_SAFE_TAG];
+        writeCache({
+          checkedAt: Date.now(),
+          latestVersion: latest,
+          ...(isVersionLike(minSafe) ? { minSafeVersion: minSafe } : {}),
+        });
       } catch { /* ignore */ }
     });
   });
@@ -159,81 +193,29 @@ export function fetchLatestVersionSync(): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Install command detection
-// ---------------------------------------------------------------------------
-
-/**
- * Returns the command array to update the package, based on how it is
- * currently installed (detected from the binary path).
- */
-export function detectInstallCommand(): string[] {
-  // Resolve the path of the currently-running CLI entry point.
-  let selfDir = '';
-  try {
-    selfDir = path.dirname(fileURLToPath(import.meta.url));
-  } catch { /* import.meta unavailable in some test contexts */ }
-
-  const binaryPath = selfDir || process.execPath;
-  // Match against path segments, not raw substring — otherwise a user
-  // whose home directory contains "volta" or whose project is in a
-  // "pnpm-workspace" folder would be misclassified.
-  const segments = binaryPath.split(path.sep);
-  const hasSeg = (...names: string[]): boolean =>
-    segments.some(s => names.includes(s));
-
-  // Volta — manages its own shims
-  if (hasSeg('.volta', 'volta')) {
-    return ['volta', 'install', PACKAGE_NAME];
-  }
-
-  // pnpm global
-  if (hasSeg('pnpm', '.pnpm', 'pnpm-global')) {
-    return ['pnpm', 'add', '-g', PACKAGE_NAME];
-  }
-
-  // yarn global (v1)
-  if (hasSeg('yarn', '.yarn')) {
-    return ['yarn', 'global', 'add', PACKAGE_NAME];
-  }
-
-  // Default: npm (covers homebrew-managed node, nvm, system node, etc.)
-  return ['npm', 'install', '-g', PACKAGE_NAME];
-}
-
-// ---------------------------------------------------------------------------
-// Perform update
-// ---------------------------------------------------------------------------
-
-/**
- * Runs the detected install command with live stdio.
- * Returns true if the process exited successfully.
- */
-export function performUpdate(deps?: { process?: ProcessPort }): boolean {
-  const [cmd, ...args] = detectInstallCommand();
-  if (!cmd) {
-    console.error('Could not detect install command for self-update.');
-    return false;
-  }
-  console.log(`Running: ${cmd} ${args.join(' ')}\n`);
-  const result = (deps?.process ?? nodeProcessAdapter).spawnSync(cmd, args, { stdio: 'inherit' });
-  return result.status === 0 && !result.error;
-}
-
-// ---------------------------------------------------------------------------
 // Startup check (called on every non-passthrough invocation)
 // ---------------------------------------------------------------------------
-
-export interface UpdateInfo {
-  latestVersion: string;
-  installCommand: string;
-}
 
 /**
  * Call once at CLI startup.
  * - Returns UpdateInfo if a newer version is cached, otherwise null.
  * - Kicks off a background registry check if the cache is stale.
  */
+/**
+ * Opt out of the update check entirely. Honoured for:
+ *   - CLAUDE_SWITCH_NO_UPDATE_CHECK=1 — explicit user/dev opt-out (e.g. a
+ *     local `npm link` build whose version is intentionally behind npm).
+ *   - CI=true — the de-facto CI marker; nagging or hitting the registry in a
+ *     pipeline is noise, and a managed/pinned install can't act on it anyway.
+ * Returning early also skips the background registry fetch, so opting out is a
+ * true no-op (no network, no banner).
+ */
+function updateCheckDisabled(): boolean {
+  return process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK === '1' || process.env.CI === 'true';
+}
+
 export function checkForUpdate(currentVersion: string): UpdateInfo | null {
+  if (updateCheckDisabled()) return null;
   const cache = readCache();
   const now = Date.now();
 
@@ -243,9 +225,15 @@ export function checkForUpdate(currentVersion: string): UpdateInfo | null {
 
   if (cache && isNewer(currentVersion, cache.latestVersion)) {
     const [cmd, ...args] = detectInstallCommand();
+    // Critical when the installed version is below the published minsafe tag.
+    // Reuses isNewer (minSafe newer than current ⇒ current is below minSafe).
+    // Fail-open: no tag in cache ⇒ not critical, routine hint only.
+    const critical = typeof cache.minSafeVersion === 'string'
+      && isNewer(currentVersion, cache.minSafeVersion);
     return {
       latestVersion: cache.latestVersion,
       installCommand: [cmd, ...args].join(' '),
+      critical,
     };
   }
 
