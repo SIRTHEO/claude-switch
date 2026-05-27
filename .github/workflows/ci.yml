@@ -56,6 +56,13 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
         run: npm run check:file-sizes
 
+      # Single-runner duplication gate (jscpd over src, 1% threshold in
+      # .jscpd.json). Source-only, so it runs before the build. Fails on
+      # regression above the recorded ~0.7% baseline.
+      - name: Duplication ratchet
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
+        run: npm run check:duplication
+
       - name: Build
         run: npm run build
 
