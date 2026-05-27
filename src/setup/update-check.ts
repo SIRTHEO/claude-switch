@@ -234,7 +234,21 @@ export interface UpdateInfo {
  * - Returns UpdateInfo if a newer version is cached, otherwise null.
  * - Kicks off a background registry check if the cache is stale.
  */
+/**
+ * Opt out of the update check entirely. Honoured for:
+ *   - CLAUDE_SWITCH_NO_UPDATE_CHECK=1 — explicit user/dev opt-out (e.g. a
+ *     local `npm link` build whose version is intentionally behind npm).
+ *   - CI=true — the de-facto CI marker; nagging or hitting the registry in a
+ *     pipeline is noise, and a managed/pinned install can't act on it anyway.
+ * Returning early also skips the background registry fetch, so opting out is a
+ * true no-op (no network, no banner).
+ */
+function updateCheckDisabled(): boolean {
+  return process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK === '1' || process.env.CI === 'true';
+}
+
 export function checkForUpdate(currentVersion: string): UpdateInfo | null {
+  if (updateCheckDisabled()) return null;
   const cache = readCache();
   const now = Date.now();
 

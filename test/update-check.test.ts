@@ -101,12 +101,53 @@ describe('checkForUpdate / writeUpdateCache — type guard coverage', () => {
   });
 
   it('writeUpdateCache + checkForUpdate round-trip (happy path)', () => {
-    withTempHome(() => {
-      writeUpdateCache('9.9.9');
-      const result = checkForUpdate('1.0.0');
-      assert.ok(result !== null, 'expected an update to be detected');
-      assert.strictEqual(result.latestVersion, '9.9.9');
-    });
+    // Clear the opt-out envs so this exercises the real update path even when
+    // the suite runs in CI (GitHub Actions sets CI=true, which now suppresses
+    // the check).
+    const savedCi = process.env.CI;
+    const savedNo = process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    delete process.env.CI;
+    delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    try {
+      withTempHome(() => {
+        writeUpdateCache('9.9.9');
+        const result = checkForUpdate('1.0.0');
+        assert.ok(result !== null, 'expected an update to be detected');
+        assert.strictEqual(result.latestVersion, '9.9.9');
+      });
+    } finally {
+      if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
+      if (savedNo === undefined) delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+      else process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = savedNo;
+    }
+  });
+
+  it('opts out under CLAUDE_SWITCH_NO_UPDATE_CHECK=1 even with a fresh cache', () => {
+    const saved = process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = '1';
+    try {
+      withTempHome(() => {
+        writeUpdateCache('9.9.9'); // would otherwise yield an update
+        assert.strictEqual(checkForUpdate('1.0.0'), null, 'opt-out must suppress the update');
+      });
+    } finally {
+      if (saved === undefined) delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+      else process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = saved;
+    }
+  });
+
+  it('opts out under CI=true', () => {
+    const saved = process.env.CI;
+    process.env.CI = 'true';
+    try {
+      withTempHome(() => {
+        writeUpdateCache('9.9.9');
+        assert.strictEqual(checkForUpdate('1.0.0'), null, 'CI must suppress the update check');
+      });
+    } finally {
+      if (saved === undefined) delete process.env.CI;
+      else process.env.CI = saved;
+    }
   });
 });
 
