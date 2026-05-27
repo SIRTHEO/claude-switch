@@ -1,28 +1,37 @@
 #!/usr/bin/env sh
-# Pre-push hook: block push if build or tests fail.
+# Pre-push hook: mirror CI's deterministic blocking gates locally so a failure
+# surfaces here, not after the push (and a round-trip through GitHub Actions).
+# Covers the same checks ci.yml fails on — lint, file-size ratchet, duplication
+# ratchet, build, tests — in cheap-first order. Network-dependent checks (knip)
+# are left to the manual `npm run verify-release`.
 # Bypass (discouraged): git push --no-verify
 set -e
 
-echo "[pre-push] running build + tests..."
+echo "[pre-push] lint..."
+npm run lint
 
+echo "[pre-push] file-size ratchet..."
+npm run check:file-sizes
+
+echo "[pre-push] duplication ratchet..."
+npm run check:duplication
+
+echo "[pre-push] build..."
 npm run build
 
+echo "[pre-push] tests..."
+# node --test can exit 0 even when individual tests fail (older Node), so we
+# also parse the summary line. Disable set -e around the capture so we can
+# report rather than die silently.
+set +e
 CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 node --test dist/test/**/*.test.js dist/test/*.test.js > /tmp/pre-push-test.log 2>&1
-EXIT=$?
-
-if [ $EXIT -ne 0 ]; then
-  echo "[pre-push] tests failed (exit $EXIT)"
-  tail -20 /tmp/pre-push-test.log
-  exit 1
-fi
-
-# node --test exits 0 even when individual tests fail in some versions;
-# double-check the summary line "ℹ fail N".
+TEST_EXIT=$?
+set -e
 FAILS=$(grep -E '^. fail' /tmp/pre-push-test.log | awk '{print $3}')
-if [ -n "$FAILS" ] && [ "$FAILS" != "0" ]; then
-  echo "[pre-push] $FAILS test(s) failed"
-  tail -20 /tmp/pre-push-test.log
+if [ "$TEST_EXIT" -ne 0 ] || { [ -n "$FAILS" ] && [ "$FAILS" != "0" ]; }; then
+  echo "[pre-push] tests failed"
+  tail -25 /tmp/pre-push-test.log
   exit 1
 fi
 
-echo "[pre-push] build + tests green"
+echo "[pre-push] all gates green (lint · file-size · duplication · build · test)"

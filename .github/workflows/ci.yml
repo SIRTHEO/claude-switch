@@ -12,6 +12,15 @@ on:
   pull_request:
     branches: [main]
 
+# A release-please PR fires BOTH the push (release-please--**) and the
+# pull_request event for the same SHA — two identical CI runs, doubling the
+# flake exposure on required checks. Group both under the branch name so the
+# superseded run is cancelled. `main` is never cancelled (cancel-in-progress
+# false there) so a post-merge run always completes for the release flow.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref_name != 'main' }}
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
