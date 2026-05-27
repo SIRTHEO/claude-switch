@@ -117,10 +117,22 @@ describe('writeUpdateCache / checkForUpdate', () => {
   });
 
   it('writeUpdateCache persists a version that checkForUpdate can read back', () => {
-    writeUpdateCache('99.0.0');
-    const result = checkForUpdate('1.0.0');
-    assert.ok(result !== null, 'expected an update notification in result');
-    assert.equal(result?.latestVersion, '99.0.0');
+    // Clear the opt-out envs so this exercises the real update path even in CI
+    // (CI=true now suppresses checkForUpdate by design).
+    const savedCi = process.env.CI;
+    const savedNo = process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    delete process.env.CI;
+    delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+    try {
+      writeUpdateCache('99.0.0');
+      const result = checkForUpdate('1.0.0');
+      assert.ok(result !== null, 'expected an update notification in result');
+      assert.equal(result?.latestVersion, '99.0.0');
+    } finally {
+      if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
+      if (savedNo === undefined) delete process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK;
+      else process.env.CLAUDE_SWITCH_NO_UPDATE_CHECK = savedNo;
+    }
   });
 
   it('checkForUpdate returns null when cached version is not newer than current', () => {
