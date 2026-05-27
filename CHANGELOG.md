@@ -7,6 +7,48 @@
 
 (empty — release-please will repopulate from conventional-commit subjects)
 
+## [4.1.0](https://github.com/SIRTHEO/claude-switch/compare/v4.0.0...v4.1.0) (2026-05-27)
+
+
+### Features
+
+* **update:** add opt-out for the update check (CLAUDE_SWITCH_NO_UPDATE_CHECK, CI) ([2590be7](https://github.com/SIRTHEO/claude-switch/commit/2590be77f0a314ee74e67877962a294915753919))
+* **update:** detect critical updates via the minsafe dist-tag ([ba1e59f](https://github.com/SIRTHEO/claude-switch/commit/ba1e59f6cb705cf8ef4a4a917bab8d1e2d1239b5))
+* **update:** escalate critical updates with a loud banner on the hot path ([c84cbc1](https://github.com/SIRTHEO/claude-switch/commit/c84cbc1b9f872267d8e7ec7bc44323d02496f35c))
+
+
+### Bug Fixes
+
+* **accounts:** keep the active snapshot fresh as the credentials file rotates ([46dad12](https://github.com/SIRTHEO/claude-switch/commit/46dad1285a646b7d660bece1d91859a4471e25d3))
+* **apikey:** guard against vault write failure before dropping legacy key ([bab33a7](https://github.com/SIRTHEO/claude-switch/commit/bab33a7c4cbc4063bafaa97c445eae1bc59db5a9))
+* **io:** make bin-pointer, proxy stats and update cache writes atomic ([8c49ab1](https://github.com/SIRTHEO/claude-switch/commit/8c49ab159263109d5cab3a12c0a7c9267f686dea))
+* **oauth:** preserve token metadata across refresh ([e0f869e](https://github.com/SIRTHEO/claude-switch/commit/e0f869eb1ae7069663e456979c8cd913919019df))
+* **passthrough:** degrade to direct spawn when the fallback proxy fails to start ([c26aac1](https://github.com/SIRTHEO/claude-switch/commit/c26aac171fc64f472a774d42060ae2b113387d96))
+* **routing:** cap match.any nesting depth to bound parser recursion ([589e070](https://github.com/SIRTHEO/claude-switch/commit/589e070064a44e724f0bedf6cb610c23650e33e4))
+* **update:** validate registry version strings before caching; drop unused import ([6e44d1e](https://github.com/SIRTHEO/claude-switch/commit/6e44d1e14cd7e4316b5f005ab5f54f364408b9ea))
+* **usage:** persist refreshed tokens to the _keychain block read first ([c984c23](https://github.com/SIRTHEO/claude-switch/commit/c984c23ef80031b5e5881801de9ec72542ec6265))
+
+
+### Refactors
+
+* **credentials:** drop dead branch in deleteOAuthForConfigDir ([6dc9ff3](https://github.com/SIRTHEO/claude-switch/commit/6dc9ff378dd77baf84f0ad478c2dbfd6c5c805a0))
+* **proxy:** collapse vacuous error branch in clearProxyMode ([18b3c49](https://github.com/SIRTHEO/claude-switch/commit/18b3c49081c55002c8f6c6922d21414854ab848f))
+* **ui:** extract SelectableList from duplicated menu renders ([ff935a8](https://github.com/SIRTHEO/claude-switch/commit/ff935a80e94b29842c13c30faf03d84889a31d0c))
+* **update:** extract notice/install helpers to keep files under the size gate ([454e675](https://github.com/SIRTHEO/claude-switch/commit/454e675cf68af2fd012172ab363882b21b16e330))
+
+
+### Documentation
+
+* **cli:** fix stale migration comment claiming macOS Keychain target ([a0ad9a0](https://github.com/SIRTHEO/claude-switch/commit/a0ad9a0e778f8b3cd87f4b9177f5d18a26730ba6))
+* **credentials:** correct stale Keychain references after file-vault default ([075c8f0](https://github.com/SIRTHEO/claude-switch/commit/075c8f0df3f041c4ed980e394951feb53d17d0bf))
+* **fallback:** fix stale .fallback-enabled reference in fallback-env ([a1ad022](https://github.com/SIRTHEO/claude-switch/commit/a1ad022cf0f66706bfe44e4677f108b0a71fe1ec))
+* **routing:** correct comment on unresolvable env override path ([19cdd34](https://github.com/SIRTHEO/claude-switch/commit/19cdd348c6766440db323bb0e1d2f4cd508a38fb))
+
+
+### Chores
+
+* **release:** coordinate v4.1.0 release ([9ab32d5](https://github.com/SIRTHEO/claude-switch/commit/9ab32d5ef078bf467163a5a9882f7962832ee02f))
+
 ## [4.0.0](https://github.com/SIRTHEO/claude-switch/compare/v3.8.0...v4.0.0) (2026-05-25)
 
 
