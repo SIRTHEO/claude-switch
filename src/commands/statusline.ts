@@ -161,7 +161,7 @@ function renderStatusline(
   // a detached background fetch. The current call returns immediately; the
   // next statusline redraw picks up the fresh value.
   if (isUsageCacheStale(readUsageCacheForAccount(accountsDirPath, email), email)) {
-    triggerBackgroundUsageRefresh();
+    triggerBackgroundUsageRefresh({ accountsDirPath });
   }
 
   const aliases = getAliasesForEmail(email, accountsDirPath);

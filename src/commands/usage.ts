@@ -12,6 +12,8 @@ import {
   getAccessTokenFromKeychain,
   fetchUsageCached,
   refreshUsageForAccount,
+  readUsageCacheForAccount,
+  isUsageCacheStale,
 } from '../usage/usage.js';
 import type { CommandContext } from './context.js';
 
@@ -68,8 +70,17 @@ export async function handleUsage(
     );
   }
 
-  // refresh-only: just hit the endpoint and update the cache, no output.
+  // refresh-only: hit the endpoint and update the cache, no output. Re-check
+  // the same staleness window the statusline uses first — a parallel session
+  // (or an earlier spawn in the same burst) may have refreshed the cache while
+  // this detached process was queueing. Skipping the redundant network call
+  // keeps a burst of statusline redraws from each hitting the rate-limited
+  // usage endpoint. force=true is still used for the genuinely-stale fetch so
+  // the 5-min freshness window is preserved (it sits below the 10-min TTL).
   if (options.refreshOnly) {
+    if (currentAccount && !isUsageCacheStale(readUsageCacheForAccount(accountsDirPath, currentAccount), currentAccount)) {
+      return;
+    }
     await fetchUsageCached(accountsDirPath, token, { force: true, account: currentAccount });
     return;
   }

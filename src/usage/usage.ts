@@ -10,6 +10,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type ProcessPort, nodeProcessAdapter } from '../platform/process.js';
+import { isRefreshSpawnDebounced, markRefreshSpawned } from './usage-cache.js';
 
 export type { UsageCache } from './usage-cache.js';
 export {
@@ -30,7 +31,13 @@ export { parseUsageHeadersIfPresent, updateUsageCacheFromHeaders } from './usage
  * immediately — Claude Code renders the line as soon as we return, and the
  * next redraw picks up the freshly-written cache.
  */
-export function triggerBackgroundUsageRefresh(deps: { process?: ProcessPort } = {}): void {
+export function triggerBackgroundUsageRefresh(
+  opts: { accountsDirPath?: string; process?: ProcessPort } = {},
+): void {
+  // Collapse a burst of statusline redraws / parallel sessions to a single
+  // spawn. Only debounces when the caller passes accountsDirPath (the marker
+  // lives there); call sites without it keep the previous always-spawn shape.
+  if (opts.accountsDirPath && isRefreshSpawnDebounced(opts.accountsDirPath)) return;
   let selfPath: string;
   try {
     selfPath = fileURLToPath(import.meta.url);
@@ -40,8 +47,9 @@ export function triggerBackgroundUsageRefresh(deps: { process?: ProcessPort } = 
   // selfPath is .../dist/src/usage/usage.js; the CLI entry sits at .../dist/bin/cli.js
   // (two levels up from src/usage/ → dist/, then bin/cli.js).
   const cliPath = path.resolve(path.dirname(selfPath), '..', '..', 'bin', 'cli.js');
-  const proc = deps.process ?? nodeProcessAdapter;
+  const proc = opts.process ?? nodeProcessAdapter;
   try {
+    if (opts.accountsDirPath) markRefreshSpawned(opts.accountsDirPath);
     // Detached background process MUST NOT raise a Keychain password
     // dialog. There is no user attached to consent. A stalled prompt
     // here holds an accountsDir lock indefinitely and cascades into the

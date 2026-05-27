@@ -57,7 +57,7 @@ export function switchTo(targetEmail: string, claudeJsonPath: string, accountsDi
     // Cheap detached spawn; only fires when the target account's per-account
     // cache is missing or stale.
     if (shouldTriggerUsageRefreshAfterSwitch(accountsDirPath, targetEmail)) {
-      triggerBackgroundUsageRefresh();
+      triggerBackgroundUsageRefresh({ accountsDirPath });
     }
 
     const warning = keychainRestored
@@ -139,7 +139,7 @@ export function switchToAndSyncFallback(
     // back-to-back switches between two fresh-cached accounts don't waste
     // network calls.
     if (shouldTriggerUsageRefreshAfterSwitch(accountsDirPath, targetEmail)) {
-      triggerBackgroundUsageRefresh();
+      triggerBackgroundUsageRefresh({ accountsDirPath });
     }
 
     const warning = keychainRestored
