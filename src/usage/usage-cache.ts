@@ -14,6 +14,34 @@ import { writeJsonAtomic } from '../platform/atomic-write.js';
 // dropped to 5 min for the same reasons as above.
 const STATUSLINE_REFRESH_AFTER_MS = 5 * 60 * 1000;
 
+// Debounce window for the detached statusline refresh spawn. Several
+// statusline redraws in quick succession — or multiple parallel claude
+// sessions — would otherwise each fork a `usage --refresh-only` process that
+// hits the aggressively rate-limited usage endpoint. A short cross-process
+// marker collapses such a burst to a single spawn; the 5-min staleness gate
+// still drives the legitimate periodic refresh.
+const REFRESH_SPAWN_DEBOUNCE_MS = 8 * 1000;
+
+function refreshMarkerPath(accountsDirPath: string): string {
+  return path.join(accountsDirPath, '.usage-refresh.inflight');
+}
+
+/** True when a background refresh was spawned within the debounce window. */
+export function isRefreshSpawnDebounced(accountsDirPath: string): boolean {
+  try {
+    const { mtimeMs } = fs.statSync(refreshMarkerPath(accountsDirPath));
+    return Date.now() - mtimeMs < REFRESH_SPAWN_DEBOUNCE_MS;
+  } catch { return false; } // no marker → not debounced
+}
+
+/** Record that a background refresh is being spawned now (best-effort). */
+export function markRefreshSpawned(accountsDirPath: string): void {
+  try {
+    fs.mkdirSync(accountsDirPath, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(refreshMarkerPath(accountsDirPath), String(Date.now()));
+  } catch { /* best-effort: debounce is an optimisation, not correctness */ }
+}
+
 interface UsageWindow {
   utilization: number;
   resets_at?: string; // ISO 8601 timestamp

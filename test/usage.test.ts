@@ -324,6 +324,37 @@ describe('triggerBackgroundUsageRefresh', () => {
   });
 });
 
+describe('triggerBackgroundUsageRefresh — spawn debounce', () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-usage-deb-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  const counter = (): { proc: { spawn: () => import('node:child_process').ChildProcess; spawnSync: () => never }; count: () => number } => {
+    let n = 0;
+    return {
+      proc: {
+        spawn: () => { n++; return { unref: () => {} } as unknown as import('node:child_process').ChildProcess; },
+        spawnSync: () => { throw new Error('spawnSync not expected'); },
+      },
+      count: () => n,
+    };
+  };
+
+  it('spawns once, then debounces a second call within the window', () => {
+    const { proc, count } = counter();
+    triggerBackgroundUsageRefresh({ accountsDirPath: dir, process: proc });
+    triggerBackgroundUsageRefresh({ accountsDirPath: dir, process: proc });
+    assert.strictEqual(count(), 1, 'second call within the debounce window must not spawn');
+  });
+
+  it('does not debounce legacy callers that omit accountsDirPath', () => {
+    const { proc, count } = counter();
+    triggerBackgroundUsageRefresh({ process: proc });
+    triggerBackgroundUsageRefresh({ process: proc });
+    assert.strictEqual(count(), 2);
+  });
+});
+
 // ----- Phase 13.2 — per-account usage cache -----
 
 describe('readUsageCacheForAccount — per-account hashed path', () => {
