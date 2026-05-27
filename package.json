@@ -23,6 +23,7 @@
     "gen:gui-contract": "node scripts/gen-gui-contract.mjs",
     "check:gui-contract": "node scripts/gen-gui-contract.mjs --check",
     "check:file-sizes": "node scripts/check-file-sizes.mjs",
+    "check:duplication": "jscpd src",
     "prepublishOnly": "npm test"
   },
   "keywords": [
@@ -99,6 +100,7 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "ink-testing-library": "^4.0.0",
+    "jscpd": "^4.2.4",
     "typescript": "^6.0.2"
   },
   "dependencies": {
