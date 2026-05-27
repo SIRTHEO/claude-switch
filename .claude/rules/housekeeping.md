@@ -52,9 +52,12 @@ specifically — knip sometimes misses bin/ entry points.
 
 ## Duplication policy (jscpd)
 
-Threshold: 0.51% in jscpd is the current baseline (6 clones, 79 lines).
-Future PRs should not raise this number. Concrete clones still in the
-repo are tracked in Plans 20.13 as "minor / not worth extracting now":
+Enforced by gate: `npm run check:duplication` (jscpd over `src`, config in
+`.jscpd.json`, threshold **1%**). Current measured baseline: **0.7%** total
+(13 clones, 122 duplicated lines; typescript 0.55%, tsx 1.54%). Future PRs
+should not raise this number — the 1% threshold is the hard ceiling, but treat
+0.7% as the ratchet target. Concrete clones still in the repo are tracked in
+Plans 20.13 as "minor / not worth extracting now":
 
 - 3× Ink UI screen headers (`manage-account`, `profiles`,
   `auto-fallback`, `setup-wizard`) — extract `<ScreenHeader>` when the
