@@ -559,10 +559,8 @@ async function main(): Promise<void> {
       // Interactive terminal: surface the notice (loud for a critical/security
       // update, quiet otherwise) and offer to update now.
       process.stderr.write('\n' + formatUpdateNotice(updateInfo, VERSION, { color: true }));
-      // askYN is default-N (Enter ≠ yes); keep the prompt honest. The critical
-      // escalation is carried by the loud banner above, not by flipping the
-      // default — auto-applying an install on Enter is the wrong default for a
-      // credential tool.
+      // Default-N even for critical (the banner carries the urgency) — never
+      // auto-install on Enter for a credential tool.
       const answer = await askYN('  Update now? [y/N] ');
       if (answer) {
         const ok = performUpdate();
