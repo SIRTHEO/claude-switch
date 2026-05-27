@@ -17,7 +17,7 @@
 // passthrough-prewarm); the public surface is re-exported here.
 
 import { withLock } from '../platform/lock.js';
-import { ExitError } from '../platform/errors.js';
+import { ExitError, errMessage } from '../platform/errors.js';
 import { VERSION } from '../setup/version.js';
 import { getCurrent, save, list as listAccounts } from '../accounts/accounts.js';
 import { checkPendingRestore } from '../switching/switcher.js';
@@ -46,8 +46,11 @@ export type { RoutingForPassthroughInput } from './passthrough-routing.js';
 export async function handlePassthrough(
   ctx: CommandContext,
   passthroughArgs: string[],
+  deps: { startProxy?: typeof startFallbackProxy; runClaude?: typeof proxyRun } = {},
 ): Promise<void> {
   const { claudeJsonPath, accountsDirPath, updateInfo } = ctx;
+  const startProxy = deps.startProxy ?? startFallbackProxy;
+  const runClaude = deps.runClaude ?? proxyRun;
 
   const restored = checkPendingRestore(claudeJsonPath, accountsDirPath);
   if (restored) {
@@ -217,23 +220,39 @@ export async function handlePassthrough(
     // `oauth-only` and `error` mean "don't use the API key" — handled
     // below by falling through to the no-key branch.
     if (effective === 'oauth-first' || effective === 'api-first') {
-      const proxy = await startFallbackProxy({
-        apiKey: activeApiKey,
-        mode: effective,
-        // Persist final counters next to the accounts dir so the next
-        // `claude switch status` can render the previous session's
-        // proxy stats. Lets the user verify the proxy actually saw
-        // traffic / fired retries instead of guessing from a banner.
-        persistStatsTo: `${accountsDirPath}/.proxy-stats.json`,
-        // Enable realtime usage push from upstream response headers AND
-        // runtime-mode marker for the statusline. Both wired together:
-        // the marker tells the statusline what mode the proxy is in
-        // (oauth-first / oauth-burst / api-first);
-        // the header push keeps the per-account usage cache fresh
-        // without polling /api/oauth/usage.
-        accountsDirPath,
-        account: email,
-      });
+      let proxy: Awaited<ReturnType<typeof startFallbackProxy>>;
+      try {
+        proxy = await startProxy({
+          apiKey: activeApiKey,
+          mode: effective,
+          // Persist final counters next to the accounts dir so the next
+          // `claude switch status` can render the previous session's
+          // proxy stats. Lets the user verify the proxy actually saw
+          // traffic / fired retries instead of guessing from a banner.
+          persistStatsTo: `${accountsDirPath}/.proxy-stats.json`,
+          // Enable realtime usage push from upstream response headers AND
+          // runtime-mode marker for the statusline. Both wired together:
+          // the marker tells the statusline what mode the proxy is in
+          // (oauth-first / oauth-burst / api-first);
+          // the header push keeps the per-account usage cache fresh
+          // without polling /api/oauth/usage.
+          accountsDirPath,
+          account: email,
+        });
+      } catch (e) {
+        // The loopback proxy failed to bind/start (port exhaustion, a broken
+        // network stack, sandbox without loopback). Degrade gracefully: a
+        // wrapper must keep `claude` usable. Fall through to a direct OAuth
+        // spawn — the live API-key fallback won't be available this run, so
+        // say so instead of silently dropping the capability or hard-failing
+        // the whole invocation.
+        process.stderr.write(
+          `⚠ claude-switch: could not start the fallback proxy (${errMessage(e)}) — ` +
+          `running claude on OAuth directly; live API-key fallback is off this session.\n`,
+        );
+        runClaude(claudeBin, passthroughArgs, extraEnv);
+        return;
+      }
       process.on('exit', () => proxy.close());
 
       // Visible confirmation that the live-fallback proxy is in front of
@@ -250,12 +269,12 @@ export async function handlePassthrough(
 
       // Clear any inherited ANTHROPIC_API_KEY so the binary uses the proxy
       // and cannot bypass ANTHROPIC_BASE_URL.
-      proxyRun(claudeBin, passthroughArgs, {
+      runClaude(claudeBin, passthroughArgs, {
         ANTHROPIC_BASE_URL: `http://127.0.0.1:${proxy.port}`,
         ANTHROPIC_API_KEY: '',
       });
       return;
     }
   }
-  proxyRun(claudeBin, passthroughArgs, extraEnv);
+  runClaude(claudeBin, passthroughArgs, extraEnv);
 }
