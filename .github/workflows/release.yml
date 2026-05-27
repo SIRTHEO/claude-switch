@@ -72,7 +72,12 @@ jobs:
       contents: read
       id-token: write
     steps:
+      # fetch-depth: 0 — the minsafe step below scans commit bodies since the
+      # previous release tag for the `Bumps-Min-Safe: true` opt-in footer, so
+      # it needs full history + tags (the default shallow clone has neither).
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: '22.x'
@@ -95,5 +100,32 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           npm deprecate "@sirtheo/claude-switch@<${VERSION}" \
             "Please upgrade: npm install -g @sirtheo/claude-switch — ${VERSION} is the latest stable release." || true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # The `minsafe` dist-tag marks the lowest SAFE version: any version below
+      # it carries a known security/data-loss bug, and the client escalates the
+      # update notice to a loud banner (see src/setup/update-check.ts). Only
+      # bump it when a commit in THIS release explicitly opts in with a
+      # `Bumps-Min-Safe: true` footer — auto-classifying from commit type is too
+      # coarse (a plain `fix:` can be data-loss; most aren't). Best-effort: a
+      # tag failure warns but never fails an already-published release.
+      - name: Tag minsafe on security/data-loss releases
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          # Previous release tag (newest semver tag that isn't this release),
+          # so we scan only the commits introduced by this release.
+          PREV_TAG=$(git tag --sort=-v:refname \
+            | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -vxF "v${VERSION}" | grep -vxF "${VERSION}" | head -1)
+          RANGE="${PREV_TAG:+${PREV_TAG}..}HEAD"
+          echo "Scanning ${RANGE} for the Bumps-Min-Safe opt-in footer"
+          if git log ${RANGE} --format='%B' | grep -qiE '^Bumps-Min-Safe:[[:space:]]*true[[:space:]]*$'; then
+            echo "Security/data-loss release — setting minsafe → ${VERSION}"
+            npm dist-tag add "@sirtheo/claude-switch@${VERSION}" minsafe \
+              || echo "::warning::failed to set minsafe dist-tag — set it manually: npm dist-tag add @sirtheo/claude-switch@${VERSION} minsafe"
+          else
+            echo "Routine release — minsafe dist-tag unchanged"
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
