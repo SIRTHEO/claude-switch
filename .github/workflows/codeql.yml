@@ -23,6 +23,11 @@ on:
     # "everyone scheduled for :00" GitHub-side queue.
     - cron: '17 4 * * 1'
 
+# Dedupe the push-vs-PR double run for the same ref; main is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref_name != 'main' }}
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
