@@ -3,6 +3,7 @@ import { withLock } from '../platform/lock.js';
 import { errnoCode } from '../platform/errors.js';
 import { isSafeEmail, resolvedAccountFile } from './account-paths.js';
 import { type AccountRepository, fsAccountRepo } from './account-repository.js';
+import path from 'node:path';
 import { save } from './accounts-save.js';
 
 // Re-exported so existing importers (apikey.ts, profiles.ts, usage.ts,
@@ -134,10 +135,26 @@ export function syncActiveSnapshotIfStale(
   // create a snapshot for an account that was never explicitly added.
   if (!snapshotStat) return false;
 
+  // The live OAuth token lives in `.credentials.json` (Phase 24 file vault),
+  // and the claude binary rotates it there during normal use WITHOUT touching
+  // `~/.claude.json`. Keying staleness off claude.json alone misses those
+  // rotations, so the snapshot kept a stale access/refresh token — and a later
+  // `switch` back restored it over the fresh live creds, forcing a re-login.
+  // Track the NEWEST of the two sources so a token rotation also triggers a
+  // re-save. Missing credentials file → fall back to the claude.json mtime.
+  // Derived from claudeJsonPath (home: `~/.claude.json` → `~/.claude/.credentials.json`)
+  // rather than a hardcoded home path, so tests stay isolated to their tmp dir.
+  const credentialsFile = path.join(path.dirname(claudeJsonPath), '.claude', '.credentials.json');
+  const credsStat = fs.statSync(credentialsFile, { throwIfNoEntry: false });
+  const newestSourceMtime = Math.max(
+    claudeJsonStat.mtimeMs,
+    credsStat?.mtimeMs ?? 0,
+  );
+
   // Allow a 1-second skew — file systems and test fixtures sometimes
   // write the same mtime for two near-simultaneous writes, and we'd
   // rather no-op than re-save unnecessarily on every invocation.
-  if (claudeJsonStat.mtimeMs <= snapshotStat.mtimeMs + 1000) return false;
+  if (newestSourceMtime <= snapshotStat.mtimeMs + 1000) return false;
 
   try {
     save(activeEmail, claudeJsonPath, accountsDirPath);
