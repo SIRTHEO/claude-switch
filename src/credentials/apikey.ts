@@ -1,19 +1,18 @@
 // src/apikey.ts
 // Per-account Anthropic API key storage.
 //
-// Backend selection:
-//   macOS  → login Keychain entry (service `claude-switch-apikey`,
-//            account = email). Encrypted at rest, locked behind the
-//            user login.
-//   Other  → `_apiKey` field inside the account JSON file (mode 0600).
-//            Same lifecycle as Claude Code's own OAuth tokens on these
-//            platforms (no system keyring).
+// Backend selection (Phase 24): keys flow through the CredentialStore port.
+// The default store is the cross-platform file vault
+// (`~/.claude-switch/apikeys.json`, mode 0600) on EVERY OS; the macOS Keychain
+// backend is selected only under CLAUDE_SWITCH_USE_KEYCHAIN=1. The legacy
+// `_apiKey` field inside the account JSON file (mode 0600) survives as a
+// READ-ONLY fallback for keys written by pre-Phase-24 versions.
 //
-// Migration (since v3.5): on the first read after upgrade on macOS, if
-// the Keychain entry is missing but the legacy `_apiKey` JSON field is
-// present, copy to Keychain. The JSON field stays as a fallback for one
-// major release — a manual Keychain wipe (or deleting an entry by
-// mistake) shouldn't lose the key. v4 will retire the JSON fallback.
+// Migration (migrateApiKeysToKeychain): copies any legacy plaintext `_apiKey`
+// into the active vault. It runs on every platform now — the vault is
+// available everywhere, not just macOS. The JSON field is intentionally left
+// in place as a one-major fallback so losing the vault entry doesn't lose the
+// key; v4 will retire it.
 
 import fs from 'node:fs';
 import { isSafeEmail, resolvedAccountFile } from '../accounts/accounts.js';
@@ -134,16 +133,17 @@ export function removeApiKey(email: string, accountsDirPath: string): boolean {
 
 /**
  * One-shot migration: walks the accounts dir, copies any plaintext
- * `_apiKey` field into the macOS Keychain. Idempotent — running it
- * twice is harmless. Called from the CLI entry-point on macOS so the
- * upgrade path is silent.
+ * `_apiKey` field into the active credential vault. Idempotent — running it
+ * twice is harmless. Called from the CLI entry-point on every platform so the
+ * upgrade path is silent (the name is historical; the default vault is the
+ * file store, not the Keychain).
  *
  * The JSON `_apiKey` field is intentionally NOT removed by this pass —
- * it stays as a one-major fallback in case the user wipes their
- * Keychain. Removal happens in v4.
+ * it stays as a one-major fallback in case the vault entry is lost.
+ * Removal happens in v4.
  *
  * Returns the count of accounts migrated. Errors per-account are
- * swallowed so a single locked Keychain doesn't break the whole pass.
+ * swallowed so a single failed write doesn't break the whole pass.
  */
 export function migrateApiKeysToKeychain(accountsDirPath: string): number {
   if (!keychainAvailable()) return 0;
