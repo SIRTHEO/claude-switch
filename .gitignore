@@ -28,9 +28,9 @@ Thumbs.db
 *.swp
 
 # AI assistant tool configs — local-only, never product surface.
-# Exception: .claude/rules/ is tracked (project conventions, propagated to all clones).
+# This includes .claude/rules/: development conventions for this maintainer's
+# workflow, kept out of the published tree (they reference internal process).
 .claude/*
-!.claude/rules/
 .claude-*
 .harness*
 .understand-*
