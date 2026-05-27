@@ -172,10 +172,9 @@ export class FileCredentialStore implements CredentialStore {
     try {
       fs.unlinkSync(file);
       return true;
-    } catch (e) {
-      // ENOENT = nothing to delete = success-shaped. Anything else (EACCES,
-      // EISDIR) propagates as "did not delete" so callers can surface it.
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    } catch {
+      // Absent (ENOENT) or unremovable (EACCES/EISDIR) → nothing deleted.
+      // Best-effort delete: callers read false as "no active credential here".
       return false;
     }
   }
