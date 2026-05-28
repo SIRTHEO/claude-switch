@@ -7,6 +7,24 @@
 
 (empty — release-please will repopulate from conventional-commit subjects)
 
+## [4.1.1](https://github.com/SIRTHEO/claude-switch/compare/v4.1.0...v4.1.1) (2026-05-28)
+
+
+### Bug Fixes
+
+* **credentials:** mirror rotated OAuth token to active vault on refresh ([#52](https://github.com/SIRTHEO/claude-switch/issues/52)) ([36b7366](https://github.com/SIRTHEO/claude-switch/commit/36b7366ba8715a1ce21f98c5983ef30ac2c605e5))
+* **terminals:** pass profile env into the Windows launch ([#51](https://github.com/SIRTHEO/claude-switch/issues/51)) ([d7d0208](https://github.com/SIRTHEO/claude-switch/commit/d7d020889fb8e9043804402c38b5565baa3dad77))
+
+
+### Performance Improvements
+
+* **usage:** debounce statusline refresh and dedup concurrent fetches ([#49](https://github.com/SIRTHEO/claude-switch/issues/49)) ([1ccdd21](https://github.com/SIRTHEO/claude-switch/commit/1ccdd219dbb37e9742a7756be50a0ba3ba127f3d))
+
+
+### Chores
+
+* **release:** coordinate v4.1.1 release ([#53](https://github.com/SIRTHEO/claude-switch/issues/53)) ([44bd214](https://github.com/SIRTHEO/claude-switch/commit/44bd214cc2461c10662feab8efc9f9ebf7bfa699))
+
 ## [4.1.0](https://github.com/SIRTHEO/claude-switch/compare/v4.0.0...v4.1.0) (2026-05-27)
 
 
