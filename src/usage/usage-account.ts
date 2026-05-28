@@ -10,8 +10,16 @@ import { isSafeEmail } from '../accounts/accounts.js';
 import type { AccountSnapshot } from '../accounts/account-snapshot.js';
 import { writeJsonAtomic } from '../platform/atomic-write.js';
 import { readKeychain } from '../credentials/keychain.js';
+import type { CredentialStore } from '../credentials/credential-store.js';
+import type { HttpPort } from '../platform/http.js';
+import { mirrorActiveOauthVaultIfApplicable } from './active-vault-mirror.js';
 import type { UsageCache } from './usage-cache.js';
 import { fetchUsageCached } from './usage-fetch.js';
+
+// Re-export the mirror helper from the path tests have always imported the
+// usage-account surface from. Production callers reach it via
+// `refreshUsageForAccount` so the re-export is mostly a test-ergonomics seam.
+export { mirrorActiveOauthVaultIfApplicable };
 
 /**
  * Read the OAuth tokens (accessToken / refreshToken / expiresAt) for a
@@ -147,6 +155,11 @@ export function persistRefreshedOauth(
 export async function refreshUsageForAccount(
   email: string,
   accountsDirPath: string,
+  deps?: {
+    credentials?: CredentialStore;
+    claudeJsonPath?: string;
+    http?: HttpPort;
+  },
 ): Promise<UsageCache> {
   const tokens = readAccountOauth(email, accountsDirPath);
   if (!tokens) {
@@ -155,11 +168,14 @@ export async function refreshUsageForAccount(
     );
   }
   const { refreshIfStale } = await import('../credentials/oauth-refresh.js');
-  const refreshed = await refreshIfStale({
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken ?? '',
-    expiresAt: tokens.expiresAt ?? 0,
-  });
+  const refreshed = await refreshIfStale(
+    {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken ?? '',
+      expiresAt: tokens.expiresAt ?? 0,
+    },
+    { http: deps?.http },
+  );
   if (!refreshed) {
     throw new Error(
       `Could not refresh OAuth token for ${email}. Sign in again: claude switch ${email} then claude (browser flow).`,
@@ -174,6 +190,12 @@ export async function refreshUsageForAccount(
         ? refreshed.expiresAt
         : Number(refreshed.expiresAt),
     });
+    // Phase-24 regression fix: when `email` is the active account, the
+    // rotation we just did at Anthropic also invalidated the refresh_token
+    // sitting in the file vault that Claude Code reads. Mirror the refreshed
+    // block there too so the binary's next internal refresh sees the new
+    // token instead of the rotated-away one (which would 401 → /login).
+    mirrorActiveOauthVaultIfApplicable(email, refreshed, deps);
   }
   return fetchUsageCached(accountsDirPath, refreshed.accessToken, {
     force: true,
