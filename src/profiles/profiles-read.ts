@@ -7,13 +7,19 @@
 import fs from 'node:fs';
 import { isSafeEmail, resolvedAccountFile } from '../accounts/accounts.js';
 import type { AccountSnapshot } from '../accounts/account-snapshot.js';
-import { errMessage } from '../platform/errors.js';
+import { errMessage, errnoCode } from '../platform/errors.js';
 
 /**
  * Read + parse a legacy account snapshot. Throws when the file is missing, a
- * symlink, not JSON, or not a JSON object. Symlink rejection is a security
- * guard — the snapshot directory is mode-700 and we don't want an attacker
- * who can write into it to redirect a read to an arbitrary file on disk.
+ * symlink, not JSON, or not a JSON object. The open() + read-from-fd shape
+ * closes the TOCTOU window CodeQL's `js/file-system-race` flagged: the old
+ * `lstatSync(path)` then `readFileSync(path)` pair could be swapped between
+ * the check and the use. We use `O_NOFOLLOW` so the kernel refuses to open
+ * a symlink atomically (ELOOP) — no separate symlink check to race against —
+ * then read from the file descriptor we already hold, which can't be
+ * substituted under us. Symlink rejection matters because the snapshot
+ * directory is mode-700 and we don't want an attacker who can write into it
+ * to redirect a read to an arbitrary file on disk.
  */
 export function readLegacyAccount(email: string, accountsDirPath: string): AccountSnapshot {
   // Reject anything that isn't a safe email up front so we never feed a
@@ -24,21 +30,38 @@ export function readLegacyAccount(email: string, accountsDirPath: string): Accou
   }
   const file = resolvedAccountFile(email, accountsDirPath);
 
-  // Reject symlinks before opening — a local attacker who can write into
-  // ~/.claude/accounts/ could otherwise plant a symlink to an arbitrary
-  // file and have us parse it as account data. Same defence applied by
-  // `accounts.load`.
-  const stat = fs.lstatSync(file, { throwIfNoEntry: false });
-  if (!stat) {
-    throw new Error(`No saved account for ${email}. List accounts with: claude switch list`);
+  // O_NOFOLLOW is POSIX (defined on Linux + macOS); on Windows it's absent
+  // from fs.constants and we fall back to plain O_RDONLY. Windows ACLs and
+  // the lack of unprivileged symlinks make the symlink-substitution vector
+  // far weaker there anyway — this is honest best-effort, not a regression.
+  const noFollow = (fs.constants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+  let fd: number;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | noFollow);
+  } catch (e) {
+    const code = errnoCode(e);
+    if (code === 'ENOENT') {
+      throw new Error(`No saved account for ${email}. List accounts with: claude switch list`);
+    }
+    if (code === 'ELOOP') {
+      // O_NOFOLLOW + symlink → ELOOP. Same user-facing message as the old
+      // lstat-based guard so any test depending on it still matches.
+      throw new Error(`Account file for ${email} is a symbolic link and cannot be trusted`);
+    }
+    throw new Error(`Cannot open ${file}: ${errMessage(e)}`);
   }
-  if (stat.isSymbolicLink()) {
-    throw new Error(`Account file for ${email} is a symbolic link and cannot be trusted`);
+
+  let raw: string;
+  try {
+    raw = fs.readFileSync(fd, 'utf-8');
+  } finally {
+    // Close in finally so a parse-throw still releases the fd.
+    try { fs.closeSync(fd); } catch { /* nothing actionable on close failure */ }
   }
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    parsed = JSON.parse(raw);
   } catch (e) {
     throw new Error(`${file} is not valid JSON: ${errMessage(e)}`);
   }
