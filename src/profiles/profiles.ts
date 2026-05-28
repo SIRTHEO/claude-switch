@@ -23,11 +23,17 @@ import {
   readKeychainForConfigDir,
   writeKeychainForConfigDir,
 } from '../credentials/keychain.js';
-import { getCurrent, isSafeEmail, resolvedAccountFile, save, syncActiveSnapshotIfStale } from '../accounts/accounts.js';
+import { getCurrent, resolvedAccountFile, save } from '../accounts/accounts.js';
 import { claudeJsonPath } from '../platform/paths.js';
 import { errMessage, debugProfiles } from '../platform/errors.js';
-import type { AccountSnapshot } from '../accounts/account-snapshot.js';
 import { findClaudeBinary } from '../setup/find-claude.js';
+import { readLegacyAccount } from './profiles-read.js';
+import { refreshLegacySnapshotIfStale } from './refresh-legacy-snapshot.js';
+
+// Public re-export so commands/profile.ts keeps importing from the same path.
+// `readLegacyAccount` stays profiles-internal (imported via ./profiles-read.js
+// where needed); only this one helper is part of the cross-folder surface.
+export { refreshLegacySnapshotIfStale } from './refresh-legacy-snapshot.js';
 
 /**
  * Trusted-bins list passed to `security -T` when writing a profile
@@ -217,99 +223,11 @@ function freshUserID(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-function readLegacyAccount(email: string, accountsDirPath: string): AccountSnapshot {
-  // Reject anything that isn't a safe email up front so we never feed a
-  // raw `../../etc/passwd` into `path.join`. Mirrors the guard that
-  // `accounts.ts` applies on its read/write paths.
-  if (!email || !isSafeEmail(email)) {
-    throw new Error(`Email contains characters unsafe for filenames: ${email}`);
-  }
-  const file = resolvedAccountFile(email, accountsDirPath);
-
-  // Reject symlinks before opening — a local attacker who can write into
-  // ~/.claude/accounts/ could otherwise plant a symlink to an arbitrary
-  // file and have us parse it as account data. Same defence applied by
-  // `accounts.load`.
-  const stat = fs.lstatSync(file, { throwIfNoEntry: false });
-  if (!stat) {
-    throw new Error(`No saved account for ${email}. List accounts with: claude switch list`);
-  }
-  if (stat.isSymbolicLink()) {
-    throw new Error(`Account file for ${email} is a symbolic link and cannot be trusted`);
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
-  } catch (e) {
-    throw new Error(`${file} is not valid JSON: ${errMessage(e)}`);
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`${file} does not contain an object.`);
-  }
-  return parsed as AccountSnapshot;
-}
-
-/**
- * If the legacy account's `_keychain.claudeAiOauth` access token is
- * expired (or about to expire), call the Anthropic OAuth refresh
- * endpoint and rewrite the snapshot in-place. Returns true when a
- * refresh actually happened, false otherwise (no _keychain, no
- * refresh_token, fresh tokens, or refresh failed).
- *
- * Called internally by `ensureProfileForAccount` before the sync
- * `importProfileFromAccount` flow, so the snapshot landing in the
- * Keychain / per-profile JSON is fresh by construction. Without this
- * pre-step, profiles dormant for hours/days would carry expired
- * access tokens straight to claude, which then 401s instead of
- * auto-refreshing (it doesn't auto-refresh in --print mode against
- * a non-default config dir).
- *
- * Failure is silent: we log nothing, return false, and let the caller
- * fall through to its existing "needsLogin" handling. Better UX than
- * surfacing a transient network error in the Open-Account-Isolated
- * hot path.
- */
-export async function refreshLegacySnapshotIfStale(
-  email: string,
-  accountsDirPath: string,
-): Promise<boolean> {
-  // If the legacy snapshot is for the currently-active account AND
-  // claude.json was mutated externally (e.g. /login from inside a
-  // running claude session), capture the live state first — otherwise
-  // we'd refresh stale tokens and re-store them, losing whatever
-  // claude already rotated.
-  syncActiveSnapshotIfStale(claudeJsonPath(), accountsDirPath);
-
-  let legacy: AccountSnapshot;
-  try {
-    legacy = readLegacyAccount(email, accountsDirPath);
-  } catch { // no readable legacy account → nothing to migrate
-    return false;
-  }
-  const oauth = legacy._keychain?.claudeAiOauth;
-  if (!oauth) return false;
-
-  const { isAccessTokenStale, refreshAccessToken } = await import('../credentials/oauth-refresh.js');
-  if (!isAccessTokenStale(oauth)) return false;
-  if (!oauth.refreshToken) return false;
-
-  const refreshed = await refreshAccessToken(oauth.refreshToken);
-  if (!refreshed) return false;
-
-  // Atomic-rewrite preserving every other field — only `_keychain.claudeAiOauth`
-  // changes, and there we MERGE refreshed onto prior so metadata the token
-  // endpoint omits (subscriptionType, rateLimitTier, scopes) survives.
-  const next: AccountSnapshot = {
-    ...legacy,
-    _keychain: {
-      ...legacy._keychain,
-      claudeAiOauth: { ...oauth, ...refreshed, scopes: refreshed.scopes ?? oauth.scopes },
-    },
-  };
-  writeJsonAtomic(resolvedAccountFile(email, accountsDirPath), next);
-  return true;
-}
+// readLegacyAccount + refreshLegacySnapshotIfStale moved to
+// profiles-read.ts + refresh-legacy-snapshot.ts (re-exported at the top
+// of this file). The split keeps profiles.ts under the file-size baseline
+// while letting refresh-legacy-snapshot.ts own its own deps without
+// inflating profiles.ts's import surface.
 
 interface ImportResult {
   profileName: string;

@@ -13,7 +13,13 @@ import {
   removeProfile,
   importProfileFromAccount,
   ensureProfileForAccount,
+  refreshLegacySnapshotIfStale,
 } from '../src/profiles/profiles.js';
+import type {
+  CredentialStore,
+  KeychainData,
+  KeychainItemRef,
+} from '../src/credentials/credential-store.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 // All tests redirect HOME so the profiles dir is sandboxed in /tmp.
@@ -560,6 +566,129 @@ describe('ensureProfileForAccount — built-in refresh (Phase 12.3)', () => {
     const unchanged = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
     assert.strictEqual(unchanged._keychain.claudeAiOauth.accessToken, 'valid-token',
       'account file access token should remain unchanged');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// refreshLegacySnapshotIfStale — Phase-24 vault mirror for the active account
+//
+// Companion of the usage-account fix (PR #52). When the user opens their
+// CURRENTLY-active account isolated, refreshLegacySnapshotIfStale rotates
+// the OAuth refresh_token at Anthropic. Without mirroring the result into
+// the file vault Claude Code reads, the running non-isolated `claude`
+// would hit 401 → /login on its next internal refresh.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('refreshLegacySnapshotIfStale — mirrors rotation into active vault', () => {
+  let accountsDir: string;
+  let origFetch: typeof globalThis.fetch;
+  let origDisableKc: string | undefined;
+
+  beforeEach(() => {
+    accountsDir = path.join(tmpHome, '.claude', 'accounts');
+    fs.mkdirSync(accountsDir, { recursive: true });
+    origFetch = globalThis.fetch;
+    origDisableKc = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = '1';
+  });
+
+  afterEach(() => {
+    globalThis.fetch = origFetch;
+    if (origDisableKc === undefined) delete process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    else process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = origDisableKc;
+  });
+
+  /** In-memory CredentialStore stub (same shape used in usage-account.test). */
+  function makeFakeStore(initial: KeychainData | null = null): {
+    store: CredentialStore;
+    writes: KeychainData[];
+  } {
+    const writes: KeychainData[] = [];
+    let current: KeychainData | null = initial;
+    const store: CredentialStore = {
+      readOAuth: () => current,
+      writeOAuth: (data) => { writes.push(JSON.parse(JSON.stringify(data))); current = data; },
+      readOAuthForConfigDir: () => null,
+      writeOAuthForConfigDir: () => {},
+      deleteOAuthForConfigDir: () => false,
+      available: () => true,
+      readApiKey: () => null,
+      writeApiKey: () => true,
+      deleteApiKey: () => true,
+      listOAuthKeychainItems: (): KeychainItemRef[] => [],
+      setPartitionList: () => true,
+    };
+    return { store, writes };
+  }
+
+  it('mirrors rotated tokens into the active vault when email is the active account', async () => {
+    const email = 'sirtheo.personal@example.com';
+    const accountFile = path.join(accountsDir, `${email}.json`);
+    fs.writeFileSync(accountFile, JSON.stringify({
+      emailAddress: email,
+      _keychain: {
+        claudeAiOauth: {
+          accessToken: 'old',
+          refreshToken: 'old-rt',
+          expiresAt: Date.now() - 10_000,
+          subscriptionType: 'pro',
+        },
+      },
+    }));
+    // Fake claude.json marking `email` as the active account.
+    const claudeJson = path.join(tmpHome, 'claude.json');
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: email } }));
+
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      access_token: 'new', refresh_token: 'new-rt', expires_in: 3600,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+
+    const { store, writes } = makeFakeStore({
+      claudeAiOauth: { accessToken: 'old', refreshToken: 'old-rt', expiresAt: 1, subscriptionType: 'pro' },
+    });
+
+    const did = await refreshLegacySnapshotIfStale(email, accountsDir, {
+      credentials: store, claudeJsonPath: claudeJson,
+    });
+
+    assert.equal(did, true, 'refresh should have run on a stale snapshot');
+    assert.equal(writes.length, 1, 'one vault write expected');
+    const written = writes[0]!.claudeAiOauth;
+    assert.equal(written?.accessToken, 'new');
+    assert.equal(written?.refreshToken, 'new-rt');
+    // subscriptionType comes from the prior block via refreshIfStale's merge.
+    assert.equal(written?.subscriptionType, 'pro');
+  });
+
+  it('does NOT mirror when email is not the active account (different account)', async () => {
+    const email = 'sirtheo.personal@example.com';
+    const accountFile = path.join(accountsDir, `${email}.json`);
+    fs.writeFileSync(accountFile, JSON.stringify({
+      emailAddress: email,
+      _keychain: { claudeAiOauth: {
+        accessToken: 'old', refreshToken: 'old-rt', expiresAt: Date.now() - 10_000,
+      } },
+    }));
+    // claude.json marks a different account as active.
+    const claudeJson = path.join(tmpHome, 'claude.json');
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'sirtheo.work@example.com' },
+    }));
+
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      access_token: 'new', refresh_token: 'new-rt', expires_in: 3600,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+
+    const { store, writes } = makeFakeStore(null);
+
+    await refreshLegacySnapshotIfStale(email, accountsDir, {
+      credentials: store, claudeJsonPath: claudeJson,
+    });
+
+    assert.equal(writes.length, 0, 'no mirror — refreshing a non-active account must not touch the live vault');
+    // The snapshot itself still got refreshed though.
+    const snapshot = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
+    assert.equal(snapshot._keychain.claudeAiOauth.accessToken, 'new');
   });
 });
 
