@@ -332,11 +332,11 @@ export async function handleProfileRemove(name: string): Promise<void> {
   }
   console.log(`Removed profile dir: ${result.dir}`);
   if (process.platform === 'darwin') {
-    const { claudeKeychainServiceFor, claudeKeychainAccount, deleteKeychainForConfigDir } =
+    const { claudeKeychainServiceFor, claudeKeychainAccount, deleteProfileCredentials } =
       await import('../credentials/keychain.js');
     const service = claudeKeychainServiceFor(result.dir);
     const account = claudeKeychainAccount();
-    const removed = deleteKeychainForConfigDir(result.dir);
+    const removed = deleteProfileCredentials(result.dir);
     if (removed) {
       console.log(`Removed Keychain entry: service="${service}" account="${account}"`);
     } else {

@@ -9,7 +9,7 @@ import path from 'node:path';
 import { isSafeEmail } from '../accounts/accounts.js';
 import type { AccountSnapshot } from '../accounts/account-snapshot.js';
 import { writeJsonAtomic } from '../platform/atomic-write.js';
-import { readKeychain } from '../credentials/keychain.js';
+import { readActiveCredentials } from '../credentials/keychain.js';
 import type { CredentialStore } from '../credentials/credential-store.js';
 import type { HttpPort } from '../platform/http.js';
 import { mirrorActiveOauthVaultIfApplicable } from './active-vault-mirror.js';
@@ -209,7 +209,7 @@ export async function refreshUsageForAccount(
  * (Claude Code does not use a system credential store there).
  */
 export function getAccessTokenFromKeychain(claudeJsonPathStr?: string): string | null {
-  const data = readKeychain();
+  const data = readActiveCredentials();
   const token = data?.claudeAiOauth?.accessToken;
   if (typeof token === 'string' && token) return token;
 

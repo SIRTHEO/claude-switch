@@ -19,9 +19,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { writeJsonAtomic } from '../platform/atomic-write.js';
 import {
-  readKeychain,
-  readKeychainForConfigDir,
-  writeKeychainForConfigDir,
+  readActiveCredentials,
+  readProfileCredentials,
+  writeProfileCredentials,
 } from '../credentials/keychain.js';
 import { getCurrent, resolvedAccountFile, save } from '../accounts/accounts.js';
 import { claudeJsonPath } from '../platform/paths.js';
@@ -173,7 +173,7 @@ export function readProfile(name: string): ProfileInfo {
     process.platform === 'darwin' &&
     process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1'
   ) {
-    if (!readKeychainForConfigDir(p)) hasLogin = false;
+    if (!readProfileCredentials(p)) hasLogin = false;
   }
   return { name, path: p, userID, emailAddress, hasLogin };
 }
@@ -320,7 +320,7 @@ export function importProfileFromAccount(
   if (_keychain) {
     if (useKeychain) {
       try {
-        writeKeychainForConfigDir(dir, _keychain, profileKeychainTrustedBins());
+        writeProfileCredentials(dir, _keychain, profileKeychainTrustedBins());
         wroteToKeychain = true;
         debugProfiles(`keychainWrite=success service=per-config-dir account=${dir} (import from snapshot)`);
       } catch (writeErr) {
@@ -441,20 +441,20 @@ function captureLiveCredentialsForActiveAccount(
   debugProfiles(`captureLive emailMatchActive=${emailMatchActive} profileDir=${profileDir}`);
   if (!emailMatchActive) return false;
 
-  const live = readKeychain();
+  const live = readActiveCredentials();
   if (!live?.claudeAiOauth?.accessToken) return false;
 
   // Skip the write if the profile's entry already matches the live blob —
   // avoids a fork+exec to `security` on every isolated open. Comparing by
   // accessToken is sufficient: rotation always changes it.
-  const existing = readKeychainForConfigDir(profileDir);
+  const existing = readProfileCredentials(profileDir);
   if (existing?.claudeAiOauth?.accessToken === live.claudeAiOauth.accessToken) {
     debugProfiles(`keychainWrite=skipped service=per-config-dir account=${profileDir} (already in sync)`);
     return true;
   }
 
   try {
-    writeKeychainForConfigDir(profileDir, live, profileKeychainTrustedBins());
+    writeProfileCredentials(profileDir, live, profileKeychainTrustedBins());
     debugProfiles(`keychainWrite=success service=per-config-dir account=${profileDir} (live capture)`);
     return true;
   } catch (writeErr) {
@@ -530,7 +530,7 @@ export async function ensureProfileForAccount(
       debugProfiles(`recoveryAttempted=true legacyKeychain=${hasKeychain} reason=${hasLoginReason} profileDir=${profileDir}`);
       if (!legacy._keychain) return false;
       try {
-        writeKeychainForConfigDir(profileDir, legacy._keychain, profileKeychainTrustedBins());
+        writeProfileCredentials(profileDir, legacy._keychain, profileKeychainTrustedBins());
         debugProfiles(`keychainWrite=success service=per-config-dir account=${profileDir}`);
         return true;
       } catch (writeErr) {
