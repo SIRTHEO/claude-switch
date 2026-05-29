@@ -332,7 +332,15 @@ If/when [#24963](https://github.com/anthropics/claude-code/issues/24963) ships, 
 <details>
 <summary><b>How do I check what versions I have installed?</b></summary>
 
-`claude switch versions` prints a short table with the installed and latest version for each piece (the real `claude`, `claude-switch` itself, and the optional GUI). `--json` emits a machine-readable line for the GUI to consume; `--force` bypasses the 6-hour lookup cache. Read-only — install actions still go through `claude switch update` (claude-switch) or your usual `npm i -g` / `brew upgrade --cask claude-code` for the others.
+`claude switch versions` prints a short table with the installed and latest version for each piece (the real `claude`, `claude-switch` itself, and the optional GUI). `--json` emits a machine-readable line for the GUI to consume; `--force` bypasses the 6-hour lookup cache.
+
+To upgrade one of them, `claude switch update <target>`:
+
+- `claude switch update claude` — runs `brew upgrade --cask claude-code` if your `claude` lives under the brew prefix, else `npm i -g @anthropic-ai/claude-code@latest`.
+- `claude switch update switch` — `npm i -g @sirtheo/claude-switch@latest`. (Same effect as bare `claude switch update`, which keeps the interactive prompt for backwards compatibility.)
+- `claude switch update gui` — prints the GitHub Releases URL (the desktop app has no automated installer yet).
+
+Add `--check` to dry-run (prints the command without executing) and `--json` for a machine-readable result.
 </details>
 
 ---

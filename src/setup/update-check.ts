@@ -89,29 +89,13 @@ function writeCache(cache: CheckCache): void {
 // Version comparison
 // ---------------------------------------------------------------------------
 
-/**
- * Returns true if `latest` is strictly newer than `current`.
- *
- * We never propose pre-release versions (`x.y.z-rc.1`, `x.y.z-beta`) as updates
- * — users running stable should not be auto-bumped to a pre-release.
- */
-export function isNewer(current: string, latest: string): boolean {
-  const stripped = (v: string): string => v.replace(/^v/, '').split('-')[0] ?? '';
-  const isPreRelease = (v: string): boolean => v.replace(/^v/, '').includes('-');
-  if (isPreRelease(latest)) return false;
-  const parse = (v: string): number[] =>
-    stripped(v).split('.').map(n => parseInt(n, 10) || 0);
-  // Default each component to 0 so `2.3` compares as `2.3.0`.
-  const [ca = 0, cb = 0, cc = 0] = parse(current);
-  const [la = 0, lb = 0, lc = 0] = parse(latest);
-  if (la !== ca) return la > ca;
-  if (lb !== cb) return lb > cb;
-  if (lc !== cc) return lc > cc;
-  // Same base version — but per semver, a pre-release is "less than" its
-  // matching stable release (1.0.0-rc.1 < 1.0.0), so users on rc.1 should
-  // be notified when the stable lands.
-  return isPreRelease(current) && !isPreRelease(latest);
-}
+// isNewer used to live here; it now lives in setup/semver.ts so the
+// multi-target versions code can share the same rule (see SH-UPD-2
+// consolidation). Re-exported for back-compat with existing importers
+// (commands/update.ts + the test files); the local references in
+// `checkForUpdate` below use the same import.
+import { isNewer } from './semver.js';
+export { isNewer };
 
 /** True when `v` is a string shaped like a semver version (optional `v`
  *  prefix, optional pre-release). Sanitizer for registry-fetched dist-tags:

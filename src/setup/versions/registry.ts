@@ -12,6 +12,9 @@
 
 import type { HttpPort } from '../../platform/http.js';
 import { fetchHttpAdapter, readBodyCapped } from '../../platform/http.js';
+import { isNewer } from '../semver.js';
+
+export { isNewer };
 
 /** Strip a leading `v` so `"v1.2.3"` and `"1.2.3"` both normalise to `1.2.3`.
  *  The shape gate below already accepts both. */
@@ -92,19 +95,5 @@ export async function fetchGitHubReleaseLatest(
   }
 }
 
-/** Strictly-newer semver compare, ignoring pre-releases as upgrade targets
- *  (matches setup/update-check.ts isNewer; duplicated here to keep
- *  module-import graphs tidy — the older copy stays scoped to the banner). */
-export function isNewer(current: string, latest: string): boolean {
-  const isPre = (v: string): boolean => v.replace(/^v/, '').includes('-');
-  if (isPre(latest)) return false;
-  const parse = (v: string): number[] =>
-    (v.replace(/^v/, '').split('-')[0] ?? '').split('.').map((n) => parseInt(n, 10) || 0);
-  const [ca = 0, cb = 0, cc = 0] = parse(current);
-  const [la = 0, lb = 0, lc = 0] = parse(latest);
-  if (la !== ca) return la > ca;
-  if (lb !== cb) return lb > cb;
-  if (lc !== cc) return lc > cc;
-  // Same base — pre-release current is "less than" a matching stable.
-  return isPre(current) && !isPre(latest);
-}
+// isNewer lives in ../semver.ts (SH-UPD-2 consolidation). Re-exported at
+// the top of this file for callers that already import it from here.

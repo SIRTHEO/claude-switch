@@ -14,12 +14,7 @@ import { handleVersion } from '../src/commands/version.js';
 import { handleCompletions } from '../src/commands/completions.js';
 import { handleList } from '../src/commands/list.js';
 import { handleProfileMcpAdd, handleProfileMcpList, handleProfileMcpRemove, type McpAddSpec } from '../src/commands/mcp.js';
-import {
-  handleProfileSkillsLink,
-  handleProfileSkillsList,
-  handleProfileSkillsUnlink,
-  handleSkillsList,
-} from '../src/commands/skills.js';
+import { handleProfileSkillsLink, handleProfileSkillsList, handleProfileSkillsUnlink, handleSkillsList } from '../src/commands/skills.js';
 import { handleStatus } from '../src/commands/status.js';
 import { handleAliasSet, handleAliasList, handleAliasRemove } from '../src/commands/alias.js';
 import { handleApikeySet, handleApikeyShow, handleApikeyRemove } from '../src/commands/apikey.js';
@@ -30,6 +25,7 @@ import { handleUsageSnapshot } from '../src/commands/usage-snapshot.js';
 import { handleAdd, handleRemove } from '../src/commands/account.js';
 import { handleSetup } from '../src/commands/setup.js';
 import { handleUpdate } from '../src/commands/update.js';
+import { handleUpdateTarget } from '../src/commands/update-target.js';
 import { handleVersions } from '../src/commands/versions.js';
 import { handleTemporarySwitch } from '../src/commands/temporary-switch.js';
 import { handleSwitchInteractive, handleSwitchTo } from '../src/commands/switch.js';
@@ -49,12 +45,7 @@ import {
   handleProfileImport,
   handleProfileRemove,
 } from '../src/commands/profile.js';
-import {
-  handleRouteAdd,
-  handleRouteList,
-  handleRouteRemove,
-  handleRouteTest,
-} from '../src/commands/route.js';
+import { handleRouteAdd, handleRouteList, handleRouteRemove, handleRouteTest } from '../src/commands/route.js';
 import { handlePassthrough } from '../src/commands/passthrough.js';
 import { handleCacheHealth } from '../src/commands/cache-health.js';
 import { handleDoctor } from '../src/commands/doctor.js';
@@ -78,6 +69,7 @@ export type Command =
   | { action: 'temporary-switch'; target: string | undefined; args: string[] }
   | { action: 'setup' }
   | { action: 'update' }
+  | { action: 'update-target'; target: 'claude' | 'switch' | 'gui'; check: boolean; json: boolean }
   | { action: 'versions'; json: boolean; force: boolean }
   | { action: 'apikey-set'; target: string | undefined }
   | { action: 'apikey-remove'; target: string | undefined }
@@ -219,7 +211,13 @@ export function parseCommand(args: string[]): Command {
     case '-v': return { action: 'version' };
     case '--completions': return { action: 'completions', shell: args[2] };
     case 'setup': return { action: 'setup' };
-    case 'update': return { action: 'update' };
+    case 'update': {
+      // No target → legacy self-update (interactive). Target → new SH-UPD-2 install.
+      const t = args[2];
+      if (!t || t.startsWith('-')) return { action: 'update' };
+      if (t !== 'claude' && t !== 'switch' && t !== 'gui') throw new ExitError('Usage: claude switch update [claude|switch|gui] [--check] [--json]');
+      return { action: 'update-target', target: t, check: args.includes('--check'), json: args.includes('--json') };
+    }
     case 'versions': return { action: 'versions', json: args.includes('--json'), force: args.includes('--force') };
     case 'apikey': {
       const sub2 = args[2];
@@ -694,10 +692,8 @@ async function main(): Promise<void> {
       await handleSetup(ctx);
       break;
 
-    case 'update':
-      await handleUpdate();
-      break;
-
+    case 'update': await handleUpdate(); break;
+    case 'update-target': { const code = await handleUpdateTarget({ target: cmd.target, check: cmd.check, json: cmd.json }); if (code !== 0) process.exitCode = code; break; }
     case 'versions': await handleVersions({ json: cmd.json, force: cmd.force }); break;
 
     case 'cache-health':
