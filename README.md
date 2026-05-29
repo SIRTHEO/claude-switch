@@ -336,7 +336,7 @@ If/when [#24963](https://github.com/anthropics/claude-code/issues/24963) ships, 
 
 To upgrade one of them, `claude switch update <target>`:
 
-- `claude switch update claude` — runs `brew upgrade --cask claude-code` if your `claude` lives under the brew prefix, else `npm i -g @anthropic-ai/claude-code@latest`.
+- `claude switch update claude` — runs `claude update` (Anthropic's built-in self-updater), which handles every install path internally (brew cask, npm global, standalone binary). The detected source is shown as a label only.
 - `claude switch update switch` — `npm i -g @sirtheo/claude-switch@latest`. (Same effect as bare `claude switch update`, which keeps the interactive prompt for backwards compatibility.)
 - `claude switch update gui` — prints the GitHub Releases URL (the desktop app has no automated installer yet).
 
