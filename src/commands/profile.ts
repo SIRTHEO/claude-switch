@@ -24,6 +24,7 @@ export async function handleProfileList(
   opts: ProfileListOptions = { json: false },
 ): Promise<void> {
   const { listProfiles, readProfile } = await import('../profiles/profiles.js');
+  const { isOverlayProfile } = await import('../profiles/overlay.js');
   const profiles = listProfiles();
 
   if (opts.json) {
@@ -34,6 +35,7 @@ export async function handleProfileList(
         account: info.hasLogin ? info.emailAddress ?? null : null,
         hasLogin: info.hasLogin,
         path: info.path,
+        overlay: isOverlayProfile(name),
       };
     });
     process.stdout.write(`${JSON.stringify(payload)}\n`);

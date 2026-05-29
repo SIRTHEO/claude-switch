@@ -92,6 +92,10 @@ export interface ProfileEntry {
    *  Consumers spawn an isolated `claude` by setting `CLAUDE_CONFIG_DIR` to
    *  this path. */
   path: string;
+  /** True for an overlay ("as-global") profile: isolates only credentials and
+   *  shares the global skills + session history via symlink. False for a
+   *  classic fully-isolated profile. */
+  overlay: boolean;
 }
 
 /** `claude switch skills list --json` — one entry per globally installed skill. */

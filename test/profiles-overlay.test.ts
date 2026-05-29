@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { handleProfileCreate } from '../src/commands/profile.js';
+import { handleProfileCreate, handleProfileList } from '../src/commands/profile.js';
 import { createOverlayProfile, isOverlayProfile } from '../src/profiles/overlay.js';
 import { createProfile } from '../src/profiles/profiles.js';
 import { restoreFakeHome, setFakeHome, type SavedHome } from './_helpers/fake-home.js';
@@ -113,5 +113,46 @@ describe('handleProfileCreate --as-global', () => {
   it('creates a classic (non-overlay) profile by default', async () => {
     await handleProfileCreate('classic');
     assert.equal(isOverlayProfile('classic'), false);
+  });
+});
+
+describe('profile list --json exposes overlay', () => {
+  let saved: SavedHome;
+  let home: string;
+  let origLog: typeof console.log;
+  let origWrite: typeof process.stdout.write;
+  let out: string[];
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-overlay-list-'));
+    saved = setFakeHome(home);
+    fs.mkdirSync(path.join(home, '.claude', 'skills'), { recursive: true });
+    out = [];
+    origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((c: string | Uint8Array): boolean => {
+      out.push(typeof c === 'string' ? c : Buffer.from(c).toString());
+      return true;
+    }) as typeof process.stdout.write;
+    origLog = console.log;
+    console.log = () => {}; // silence create banners
+  });
+
+  afterEach(() => {
+    process.stdout.write = origWrite;
+    console.log = origLog;
+    restoreFakeHome(saved);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('marks overlay profiles overlay:true and classic overlay:false', async () => {
+    await handleProfileCreate('work', { overlay: true });
+    await handleProfileCreate('classic');
+    out.length = 0; // discard anything emitted during creation
+    await handleProfileList({ json: true });
+    const line = out.join('').split('\n').find((l) => l.trim().startsWith('['));
+    assert.ok(line, 'expected a JSON array line on stdout');
+    const entries = JSON.parse(line) as Array<{ name: string; overlay: boolean }>;
+    assert.equal(entries.find((e) => e.name === 'work')?.overlay, true);
+    assert.equal(entries.find((e) => e.name === 'classic')?.overlay, false);
   });
 });
