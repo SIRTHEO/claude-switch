@@ -5,6 +5,7 @@
     "moduleResolution": "NodeNext",
     "outDir": "dist",
     "rootDir": ".",
+    "removeComments": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
