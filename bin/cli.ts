@@ -102,7 +102,7 @@ export type Command =
   | { action: 'profile-mcp-add'; name: string; server: string; spec: McpAddSpec }
   | { action: 'profile-mcp-remove'; name: string; server: string }
   | { action: 'profile-list'; json: boolean }
-  | { action: 'profile-create'; name: string }
+  | { action: 'profile-create'; name: string; overlay: boolean }
   | { action: 'profile-use'; name: string; args: string[] }
   | { action: 'profile-login'; name: string }
   | { action: 'profile-remove'; name: string }
@@ -395,8 +395,14 @@ export function parseCommand(args: string[]): Command {
         return { action: 'profile-list', json: args.includes('--json') };
       }
       if (sub2 === 'create') {
-        if (!args[3]) throw new ExitError('Usage: claude switch profile create <name>');
-        return { action: 'profile-create', name: args[3] };
+        const createName = args[3];
+        if (!createName || createName.startsWith('--')) {
+          throw new ExitError('Usage: claude switch profile create <name> [--as-global]');
+        }
+        // --as-global (alias --overlay): overlay profile — isolate only the
+        // identity, share global skills + session history via symlink.
+        const overlay = args.includes('--as-global') || args.includes('--overlay');
+        return { action: 'profile-create', name: createName, overlay };
       }
       if (sub2 === 'use') {
         if (!args[3]) throw new ExitError('Usage: claude switch profile use <name> [extra claude args]');
@@ -523,7 +529,7 @@ async function main(): Promise<void> {
   if (cmd.action === 'profile-mcp-add')    { await handleProfileMcpAdd(cmd.name, cmd.server, cmd.spec); return; }
   if (cmd.action === 'profile-mcp-remove') { await handleProfileMcpRemove(cmd.name, cmd.server); return; }
   if (cmd.action === 'profile-list')   { await handleProfileList({ json: cmd.json }); return; }
-  if (cmd.action === 'profile-create') { await handleProfileCreate(cmd.name); return; }
+  if (cmd.action === 'profile-create') { await handleProfileCreate(cmd.name, { overlay: cmd.overlay }); return; }
   if (cmd.action === 'profile-status') { await handleProfileStatus(cmd.name); return; }
   if (cmd.action === 'profile-login')  { await handleProfileLogin(statuslineCtx, cmd.name); return; }
   if (cmd.action === 'profile-use')    { await handleProfileUse(statuslineCtx, cmd.name, cmd.args); /* never returns */ }

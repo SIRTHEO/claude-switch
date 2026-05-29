@@ -54,15 +54,26 @@ export async function handleProfileList(
   }
 }
 
-export async function handleProfileCreate(name: string): Promise<void> {
-  const { createProfile } = await import('../profiles/profiles.js');
+export async function handleProfileCreate(
+  name: string,
+  opts: { overlay?: boolean } = {},
+): Promise<void> {
   let dir: string;
   try {
-    dir = createProfile(name);
+    if (opts.overlay) {
+      const { createOverlayProfile } = await import('../profiles/overlay.js');
+      dir = createOverlayProfile(name);
+    } else {
+      const { createProfile } = await import('../profiles/profiles.js');
+      dir = createProfile(name);
+    }
   } catch (e) {
     throw new ExitError(errMessage(e));
   }
-  console.log(`Created profile "${name}" at ${dir}`);
+  console.log(`Created ${opts.overlay ? 'overlay (as-global) profile' : 'profile'} "${name}" at ${dir}`);
+  if (opts.overlay) {
+    console.log('  Shares global skills + session history; isolates only credentials.');
+  }
   console.log('');
   console.log('Next steps:');
   console.log(`  1. claude switch profile login ${name}    # browser opens, sign in`);

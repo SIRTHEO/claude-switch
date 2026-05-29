@@ -280,4 +280,35 @@ describe('parseCommand', () => {
       /Usage: claude switch route/,
     );
   });
+
+  it('parses profile create without overlay', () => {
+    assert.deepEqual(parseCommand(['switch', 'profile', 'create', 'work']), {
+      action: 'profile-create',
+      name: 'work',
+      overlay: false,
+    });
+  });
+
+  it('parses profile create --as-global as an overlay', () => {
+    assert.deepEqual(parseCommand(['switch', 'profile', 'create', 'work', '--as-global']), {
+      action: 'profile-create',
+      name: 'work',
+      overlay: true,
+    });
+  });
+
+  it('accepts --overlay as an alias for --as-global', () => {
+    assert.deepEqual(parseCommand(['switch', 'profile', 'create', 'work', '--overlay']), {
+      action: 'profile-create',
+      name: 'work',
+      overlay: true,
+    });
+  });
+
+  it('rejects a flag in the profile-create name slot', () => {
+    assert.throws(
+      () => parseCommand(['switch', 'profile', 'create', '--as-global']),
+      /Usage: claude switch profile create/,
+    );
+  });
 });

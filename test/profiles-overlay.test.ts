@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { handleProfileCreate } from '../src/commands/profile.js';
 import { createOverlayProfile, isOverlayProfile } from '../src/profiles/overlay.js';
 import { createProfile } from '../src/profiles/profiles.js';
 import { restoreFakeHome, setFakeHome, type SavedHome } from './_helpers/fake-home.js';
@@ -82,5 +83,35 @@ describe('createOverlayProfile', () => {
 
   it('rejects an invalid profile name (path escape)', () => {
     assert.throws(() => createOverlayProfile('../escape'), /Invalid profile name|resolves outside/);
+  });
+});
+
+describe('handleProfileCreate --as-global', () => {
+  let saved: SavedHome;
+  let home: string;
+  let origLog: typeof console.log;
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-overlay-cmd-'));
+    saved = setFakeHome(home);
+    fs.mkdirSync(path.join(home, '.claude', 'skills'), { recursive: true });
+    origLog = console.log;
+    console.log = () => {}; // silence the handler's "Next steps" banner
+  });
+
+  afterEach(() => {
+    console.log = origLog;
+    restoreFakeHome(saved);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('creates an overlay profile when opts.overlay is true', async () => {
+    await handleProfileCreate('work', { overlay: true });
+    assert.equal(isOverlayProfile('work'), true);
+  });
+
+  it('creates a classic (non-overlay) profile by default', async () => {
+    await handleProfileCreate('classic');
+    assert.equal(isOverlayProfile('classic'), false);
   });
 });
