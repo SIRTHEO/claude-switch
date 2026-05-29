@@ -80,6 +80,11 @@ function fakeProcess(): ProcessPort {
       if (cmd === 'which' && args[0] === 'claude') return ok('/opt/homebrew/bin/claude\n');
       if (cmd === 'brew' && args[0] === '--prefix') return ok('/opt/homebrew\n');
       if (cmd === 'claude' && args[0] === '--version') return ok('2.1.150 (Claude Code)\n');
+      // Inferred install method: brew cask installed (status 0) →
+      // detect-claude.ts:isBrewCaskInstalled returns true → source = 'brew'.
+      if (cmd === 'brew' && args[0] === 'list' && args[2] === 'claude-code') {
+        return ok('claude-code');
+      }
       // anything else → exit 1, empty output
       return ({ pid: 0, output: [], stdout: Buffer.from(''), stderr: Buffer.from(''), status: 1, signal: null } as SpawnSyncReturns<Buffer>);
     },

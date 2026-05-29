@@ -87,8 +87,13 @@ describe('buildInstallCommand', () => {
     assert.equal(buildInstallCommand('gui', 'manual'), null);
   });
 
-  it('returns null for unsupported claude sources', () => {
-    assert.equal(buildInstallCommand('claude', 'manual'), null);
+  it('delegates to `claude update` for manual standalone installs', () => {
+    const c = buildInstallCommand('claude', 'manual');
+    assert.equal(c?.cmd, 'claude');
+    assert.deepEqual(c?.args, ['update']);
+  });
+
+  it('returns null for truly unknown claude sources', () => {
     assert.equal(buildInstallCommand('claude', 'unknown'), null);
   });
 });

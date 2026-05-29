@@ -49,7 +49,21 @@ export function buildInstallCommand(
         label: 'npm i -g @anthropic-ai/claude-code@latest',
       };
     }
-    return null; // manual / unknown — no automated path for `claude` here
+    if (source === 'manual') {
+      // Standalone-binary install (the claude.ai/download path lands the
+      // user here: a Mach-O at ~/.local/share/claude/versions/X). Claude
+      // Code ships its OWN `claude update` self-updater for exactly this
+      // case — delegate instead of inventing brew/npm invocations that
+      // would fail (the cask isn't installed, the npm package isn't
+      // global). The runner spawns the wrapper `claude` which forwards
+      // to the real binary, which then knows how to self-update.
+      return {
+        cmd: 'claude',
+        args: ['update'],
+        label: 'claude update',
+      };
+    }
+    return null; // unknown — no automated path
   }
   // target === 'switch'
   if (source === 'npm') {
