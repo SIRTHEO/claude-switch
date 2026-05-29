@@ -147,15 +147,22 @@ async function handleRun(
   // flagged in memory `sh-upd-followups`.
   const after = await getVersionsReport({ force: true, ...deps });
   const afterRow = pickRow(after, opts.target);
+  // The `switch` target can't observe its own upgrade in-process: detectSwitch
+  // reads the compile-time VERSION of THIS still-running binary, so
+  // afterRow.current === row.current even after npm installed the new global.
+  // Report the pre-fetched `latest` (what npm just installed) as the truthful
+  // `to`. `claude` is an external binary, so its afterRow.current does reflect
+  // the real post-install version.
+  const to = opts.target === 'switch' ? row.latest : afterRow.current;
   if (opts.json) {
     emitJson({
       ok: true,
       target: opts.target,
       from: row.current,
-      to: afterRow.current,
+      to,
     });
   } else {
-    process.stdout.write(`\n${opts.target} upgraded ${row.current ?? '—'} → ${afterRow.current ?? '?'}.\n`);
+    process.stdout.write(`\n${opts.target} upgraded ${row.current ?? '—'} → ${to ?? '?'}.\n`);
   }
   return 0;
 }

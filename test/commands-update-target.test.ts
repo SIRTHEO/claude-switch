@@ -178,3 +178,54 @@ describe('handleUpdateTarget — gui (manual exit 0)', () => {
     assert.equal(typeof parsed.manualUrl, 'string');
   });
 });
+
+describe('handleUpdateTarget — switch reports the installed (latest) version', () => {
+  let h: Harness;
+  beforeEach(() => { h = captureOutput(); });
+  afterEach(() => h.restore());
+
+  it('reports to=latest, not the unchanged in-process current, after a switch self-update', async () => {
+    const fakeHttp = async (url: string): Promise<Response> => {
+      const reply = (body: object): Response => new Response(JSON.stringify(body), { status: 200 });
+      if (url.includes('api.github.com')) return reply({ tag_name: 'v0.5.0' });
+      if (url.includes('claude-code')) return reply({ latest: '2.1.156' });
+      // Strictly newer than any real VERSION the build carries.
+      if (url.includes('claude-switch')) return reply({ latest: '99.0.0' });
+      return new Response('', { status: 404 });
+    };
+    const fakeProc: ProcessPort = {
+      // install (`npm i -g`) succeeds
+      spawn: () => {
+        const child = new EventEmitter() as EventEmitter & { stderr: EventEmitter };
+        child.stderr = new EventEmitter();
+        setImmediate(() => child.emit('close', 0));
+        return child as unknown as ChildProcess;
+      },
+      // claude detection (`claude --version`) — irrelevant to the switch row
+      spawnSync: () => ({ pid: 0, output: [], stdout: Buffer.from(''), stderr: Buffer.from(''), status: 1, signal: null } as SpawnSyncReturns<Buffer>),
+    };
+
+    const { handleUpdateTarget } = await import('../src/commands/update-target.js');
+    const code = await handleUpdateTarget(
+      { target: 'switch', check: false, json: true },
+      { http: fakeHttp, process: fakeProc },
+    );
+    assert.equal(code, 0);
+    // The install path awaits an async child-close, so the runner's reporter
+    // can interleave a write into the globally-patched stdout. The result is a
+    // single flat JSON object (no nested braces), so slice it out by its
+    // `{"ok"`…`}` span rather than trusting the whole capture to be clean.
+    const all = h.stdout.join('');
+    const start = all.indexOf('{"ok"');
+    const end = all.indexOf('}', start);
+    assert.ok(start >= 0 && end > start, 'expected a JSON result on stdout');
+    const parsed = JSON.parse(all.slice(start, end + 1));
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.target, 'switch');
+    // The bug this guards: `to` used afterRow.current, which for switch is the
+    // compile-time VERSION of THIS process (unchanged post-install) — so it
+    // equalled `from`. The fix reports `latest` (what npm installed).
+    assert.equal(parsed.to, '99.0.0');
+    assert.notEqual(parsed.to, parsed.from);
+  });
+});
