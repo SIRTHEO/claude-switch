@@ -77,14 +77,12 @@ function fakeProcess(): ProcessPort {
       throw new Error('unexpected spawn() in versions test');
     },
     spawnSync: (cmd, args) => {
+      // detect-claude is install-method-agnostic: it only asks `which`
+      // and `claude --version`. The earlier brew probes were removed
+      // when install-commands.ts pivoted to always-delegate-to-self-update
+      // for the claude target.
       if (cmd === 'which' && args[0] === 'claude') return ok('/opt/homebrew/bin/claude\n');
-      if (cmd === 'brew' && args[0] === '--prefix') return ok('/opt/homebrew\n');
       if (cmd === 'claude' && args[0] === '--version') return ok('2.1.150 (Claude Code)\n');
-      // Inferred install method: brew cask installed (status 0) →
-      // detect-claude.ts:isBrewCaskInstalled returns true → source = 'brew'.
-      if (cmd === 'brew' && args[0] === 'list' && args[2] === 'claude-code') {
-        return ok('claude-code');
-      }
       // anything else → exit 1, empty output
       return ({ pid: 0, output: [], stdout: Buffer.from(''), stderr: Buffer.from(''), status: 1, signal: null } as SpawnSyncReturns<Buffer>);
     },
@@ -143,7 +141,11 @@ describe('handleVersions — JSON contract', () => {
     }
     assert.equal(parsed.claude.current, '2.1.150');
     assert.equal(parsed.claude.latest, '2.1.156');
-    assert.equal(parsed.claude.source, 'brew');
+    // Detection is agnostic: source is always 'manual' for claude so the
+    // install-commands path delegates to `claude update` regardless of
+    // how the user installed (brew cask, npm global, standalone bin,
+    // future Anthropic installer). See detect-claude.ts top comment.
+    assert.equal(parsed.claude.source, 'manual');
     assert.equal(parsed.claude.upgradable, true);
     assert.equal(parsed.gui.current, null);
     assert.equal(parsed.gui.source, 'manual');
@@ -188,7 +190,7 @@ describe('handleVersions — human mode', () => {
       { process: fakeProcess(), http: fakeHttp({}), now: () => 1 },
     );
     const out = h.stdout.join('');
-    assert.match(out, /claude\s+2\.1\.150\s+\(latest 2\.1\.156\) \[brew\] → upgrade available/);
+    assert.match(out, /claude\s+2\.1\.150\s+\(latest 2\.1\.156\) \[manual\] → upgrade available/);
     assert.match(out, /claude-switch\s+4\.1\.1/);
     assert.match(out, /claude-switch-gui/);
     assert.match(out, /Last checked:/);
