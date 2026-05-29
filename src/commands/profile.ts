@@ -104,21 +104,15 @@ export async function handleProfileStatus(name: string | undefined): Promise<voi
       }
     })();
 
-    let keychainLine = '(not applicable on this platform)';
-    if (process.platform === 'darwin') {
-      const { claudeKeychainServiceFor, claudeKeychainAccount } = await import('../credentials/keychain.js');
-      // Keychain probe — stays on raw spawnSync until CredentialStore lands
-      // (this `security` call belongs to that port, not ProcessPort).
-      const { spawnSync } = await import('node:child_process');
-      const service = claudeKeychainServiceFor(info.path);
-      const account = claudeKeychainAccount();
-      const r = spawnSync('security', [
-        'find-generic-password', '-s', service, '-a', account,
-      ], { stdio: 'pipe' });
-      keychainLine = r.status === 0
-        ? `present (service=${service}, account=${account})`
-        : `absent (would be at service=${service}, account=${account})`;
-    }
+    // Credentials backend status: read through the CredentialStore port (the
+    // file vault by default on every platform; the macOS Keychain only under
+    // CLAUDE_SWITCH_USE_KEYCHAIN=1) instead of probing the deprecated Keychain
+    // directly — so the line reflects where the tokens actually live.
+    const { readProfileCredentials } = await import('../credentials/keychain.js');
+    const credsBackend = process.env.CLAUDE_SWITCH_USE_KEYCHAIN === '1' ? 'macOS Keychain' : 'file vault';
+    const credsLine = readProfileCredentials(info.path)?.claudeAiOauth
+      ? `present (${credsBackend})`
+      : `absent — run: claude switch profile login ${info.name}`;
 
     let lastUsed = '(never)';
     try {
@@ -132,7 +126,7 @@ export async function handleProfileStatus(name: string | undefined): Promise<voi
     console.log(`Path:    ${info.path}`);
     console.log(`Email:   ${info.emailAddress ?? '(not logged in yet)'}`);
     console.log(`Token:   ${tokenLine}`);
-    console.log(`Keychain: ${keychainLine}`);
+    console.log(`Creds:    ${credsLine}`);
     console.log(`Last run: ${lastUsed}`);
     console.log(`User ID: ${info.userID ?? '(not yet assigned — run claude once in this profile)'}`);
     return;
