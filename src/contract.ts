@@ -228,3 +228,44 @@ export interface DoctorReport {
    *  present (reconcile will drain it on the next foreground command). */
   keychainItemPresent: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Versions / update-availability surface (claude switch versions)
+// ---------------------------------------------------------------------------
+
+/** How the binary was installed on this machine. Drives both the latest-version
+ *  lookup channel and the eventual update command (SH-UPD-2). */
+export type VersionSource = 'npm' | 'brew' | 'manual' | 'unknown';
+
+/** One row in the versions report — same shape for all three targets so the
+ *  GUI table renders uniformly. */
+export interface VersionTarget {
+  /** Installed version (no leading `v`), or null when not installed / not
+   *  detected. The `gui` target is always null here — the GUI overrides it
+   *  with its own `package.json` version in the hook layer (the CLI has no
+   *  reliable way to know which GUI build the user is running). */
+  current: string | null;
+  /** Latest known version from the source registry (no leading `v`), or null
+   *  when the registry was unreachable / not applicable. */
+  latest: string | null;
+  /** Where the binary lives — drives the upgrade channel. `unknown` means
+   *  the install method couldn't be sniffed; `manual` means it was sniffed
+   *  but we don't automate updates for that channel in v1. */
+  source: VersionSource;
+  /** True when `current` and `latest` are both set and `latest` is strictly
+   *  semver-greater than `current`. Pre-releases never count as upgrades. */
+  upgradable: boolean;
+  /** ISO timestamp of the last successful registry lookup feeding `latest`.
+   *  Lets the GUI render "checked 12 min ago". */
+  lastCheckedAt: string;
+  /** Human-readable URL to consult when `source === 'manual'` (or when
+   *  automated upgrade is otherwise unavailable). Omitted otherwise. */
+  manualUrl?: string;
+}
+
+/** Shape of `claude switch versions --json`. */
+export interface VersionsReport {
+  claude: VersionTarget;
+  switch: VersionTarget;
+  gui: VersionTarget;
+}

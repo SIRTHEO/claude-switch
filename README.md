@@ -329,6 +329,12 @@ The switch to your API key is set up at the moment `claude` starts. A session th
 If/when [#24963](https://github.com/anthropics/claude-code/issues/24963) ships, claude-switch is still useful for everything beyond multi-account: API-key fallback, project-aware routing and cache-health. If the built-in support makes account-swapping unnecessary, we'll retire that one piece and keep the rest.
 </details>
 
+<details>
+<summary><b>How do I check what versions I have installed?</b></summary>
+
+`claude switch versions` prints a short table with the installed and latest version for each piece (the real `claude`, `claude-switch` itself, and the optional GUI). `--json` emits a machine-readable line for the GUI to consume; `--force` bypasses the 6-hour lookup cache. Read-only — install actions still go through `claude switch update` (claude-switch) or your usual `npm i -g` / `brew upgrade --cask claude-code` for the others.
+</details>
+
 ---
 
 ## 📦 What's new
