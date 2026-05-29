@@ -56,26 +56,53 @@ function probeClaudeVersion(proc: ProcessPort): string | null {
   return /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(first) ? stripV(first) : null;
 }
 
-// Install-method detection for `claude` is intentionally agnostic.
-// Claude Code ships its own `claude update` self-updater (verified with
-// `claude update --help`). That command knows its own install path
-// (standalone Mach-O at ~/.local/share/claude/versions, brew cask, npm
-// global, future Anthropic-blessed installers we don't know about yet).
+// Install-method detection for `claude`. Split intent:
 //
-// Trying to detect the install method ourselves and emit
-// brew/npm/whatever commands is:
-//   1. Fragile — symlinks lie (a binary at /opt/homebrew/bin/claude
-//      can be a brew cask, an npm-link of an unrelated package — like
-//      claude-switch itself! — or a manual relocation).
-//   2. Brittle to Anthropic adding new install paths.
-//   3. Risky — running `brew upgrade --cask claude-code` on a user who
-//      installed manually fails with "Cask is not installed".
+//   - DETECTION is informative — we want the GUI row to read
+//     "Claude Code · [brew]" / "[npm]" / "[manual]" so the user knows
+//     where the binary actually lives. Probed by asking the relevant
+//     package manager directly (NOT by sniffing the path prefix, which
+//     lies when /opt/homebrew/bin/claude is a symlink to something
+//     unrelated — e.g. our own claude-switch).
 //
-// So we just delegate. The source label is 'manual' because that's the
-// VersionSource enum value that maps to "we don't drive npm/brew
-// directly" — install-commands.ts picks up source='manual' for target
-// 'claude' and emits ['claude', 'update']. If Anthropic ever changes the
-// self-update command, that's the one line that has to change.
+//   - EXECUTION is delegated — every install of Claude Code ships
+//     `claude update`, and Anthropic knows their own matrix better
+//     than we ever will (standalone Mach-O, brew cask, npm global,
+//     future Windows Store / apt repo / whatever). install-commands.ts
+//     therefore emits ['claude', 'update'] for the claude target
+//     regardless of detected source. The detected source feeds the
+//     label only, not the action.
+//
+// Net: smart UI + one-click reliable update.
+
+/** Display-only install-method probe: which package manager (if any)
+ *  knows about Claude Code on this machine. Drives the chip label on
+ *  the GUI row; the upgrade action itself always goes through
+ *  `claude update` (Anthropic's self-updater). See file header. */
+function detectInstallMethod(proc: ProcessPort): VersionTarget['source'] {
+  // brew cask: `brew list --cask claude-code` exits 0 only when the cask
+  // is genuinely installed (different from "the binary lives under the
+  // brew prefix", which is a symlink-aware false positive).
+  const brew = proc.spawnSync('brew', ['list', '--cask', 'claude-code'], {
+    stdio: ['ignore', 'ignore', 'ignore'],
+  });
+  if (brew.status === 0) return 'brew';
+  // npm global: parseable mode prints the install path; empty stdout
+  // means the package isn't actually globally installed even if the
+  // command exits 0 (newer npm behaviour).
+  const npmLs = proc.spawnSync(
+    'npm',
+    ['ls', '-g', '--depth=0', '--parseable', NPM_PACKAGE],
+    { stdio: ['ignore', 'pipe', 'ignore'] },
+  );
+  if (npmLs.status === 0 && npmLs.stdout.toString('utf8').includes(NPM_PACKAGE)) {
+    return 'npm';
+  }
+  // Anything else (standalone binary, Anthropic native installer, etc.)
+  // is labelled 'manual'. The Update button still works — it delegates
+  // to `claude update` which knows how to upgrade itself.
+  return 'manual';
+}
 
 export async function detectClaude(deps: DetectDeps = {}): Promise<VersionTarget> {
   const proc = deps.process ?? nodeProcessAdapter;
@@ -98,17 +125,16 @@ export async function detectClaude(deps: DetectDeps = {}): Promise<VersionTarget
   }
 
   const current = probeClaudeVersion(proc);
+  const source = detectInstallMethod(proc);
   const latest = await fetchNpmLatest(NPM_PACKAGE, { http: deps.http });
-  // source: 'manual' is the agnostic-delegation label. install-commands.ts
-  // maps target='claude' + source='manual' to ['claude', 'update'] so the
-  // Anthropic-shipped self-updater handles whatever install path the user
-  // actually has. See the long comment block at the top of this file.
   return {
     current,
     latest,
-    source: 'manual',
+    source,
     upgradable: current !== null && latest !== null && isNewer(current, latest),
     lastCheckedAt,
+    // The doc URL is the fallback when even `claude update` doesn't
+    // exist (very old install) — UI surfaces it as a manual link.
     manualUrl: MANUAL_URL,
   };
 }

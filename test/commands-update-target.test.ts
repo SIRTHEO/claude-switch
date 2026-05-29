@@ -65,16 +65,19 @@ function captureOutput(): Harness {
 // ---------------------------------------------------------------------------
 
 describe('buildInstallCommand', () => {
-  it('picks brew upgrade for claude on brew', () => {
-    const c = buildInstallCommand('claude', 'brew');
-    assert.equal(c?.cmd, 'brew');
-    assert.deepEqual(c?.args, ['upgrade', '--cask', 'claude-code']);
-  });
-
-  it('picks npm global for claude on npm', () => {
-    const c = buildInstallCommand('claude', 'npm');
-    assert.equal(c?.cmd, 'npm');
-    assert.match(c?.label ?? '', /@anthropic-ai\/claude-code@latest/);
+  // For the claude target the install command is intentionally
+  // independent of source: Anthropic's `claude update` self-updater
+  // handles every install path internally, and emitting brew/npm
+  // commands directly fails when the user's actual install doesn't
+  // match (real bug: brew upgrade --cask claude-code → "Cask is not
+  // installed" on machines where the binary lives elsewhere). The
+  // detected source feeds the GUI label only.
+  it('delegates claude update for any installed claude source', () => {
+    for (const src of ['brew', 'npm', 'manual'] as const) {
+      const c = buildInstallCommand('claude', src);
+      assert.equal(c?.cmd, 'claude', `${src} should delegate`);
+      assert.deepEqual(c?.args, ['update']);
+    }
   });
 
   it('picks npm global for switch (npm-only in v1)', () => {
@@ -87,13 +90,7 @@ describe('buildInstallCommand', () => {
     assert.equal(buildInstallCommand('gui', 'manual'), null);
   });
 
-  it('delegates to `claude update` for manual standalone installs', () => {
-    const c = buildInstallCommand('claude', 'manual');
-    assert.equal(c?.cmd, 'claude');
-    assert.deepEqual(c?.args, ['update']);
-  });
-
-  it('returns null for truly unknown claude sources', () => {
+  it('returns null when claude is not installed (source=unknown)', () => {
     assert.equal(buildInstallCommand('claude', 'unknown'), null);
   });
 });

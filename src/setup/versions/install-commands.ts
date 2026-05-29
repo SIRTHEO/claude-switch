@@ -35,35 +35,22 @@ export function buildInstallCommand(
 ): InstallCommand | null {
   if (target === 'gui') return null; // manual download, no install channel
   if (target === 'claude') {
-    if (source === 'brew') {
-      return {
-        cmd: 'brew',
-        args: ['upgrade', '--cask', 'claude-code'],
-        label: 'brew upgrade --cask claude-code',
-      };
-    }
-    if (source === 'npm') {
-      return {
-        cmd: 'npm',
-        args: ['i', '-g', '@anthropic-ai/claude-code@latest'],
-        label: 'npm i -g @anthropic-ai/claude-code@latest',
-      };
-    }
-    if (source === 'manual') {
-      // Standalone-binary install (the claude.ai/download path lands the
-      // user here: a Mach-O at ~/.local/share/claude/versions/X). Claude
-      // Code ships its OWN `claude update` self-updater for exactly this
-      // case — delegate instead of inventing brew/npm invocations that
-      // would fail (the cask isn't installed, the npm package isn't
-      // global). The runner spawns the wrapper `claude` which forwards
-      // to the real binary, which then knows how to self-update.
+    // For ANY known Claude Code install, delegate to `claude update` —
+    // Anthropic ships the self-updater specifically because every
+    // install path (brew cask, npm global, standalone Mach-O, future
+    // installers) needs different upgrade logic that they handle
+    // internally. The detected `source` ('brew' | 'npm' | 'manual')
+    // feeds the GUI label only, not the action; running e.g. `brew
+    // upgrade --cask` directly would fail when the user installed via
+    // some other path (real bug observed when the cask wasn't installed).
+    if (source === 'brew' || source === 'npm' || source === 'manual') {
       return {
         cmd: 'claude',
         args: ['update'],
         label: 'claude update',
       };
     }
-    return null; // unknown — no automated path
+    return null; // 'unknown' — claude isn't installed at all
   }
   // target === 'switch'
   if (source === 'npm') {
