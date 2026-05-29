@@ -18,13 +18,9 @@
 //   2  — target unsupported (e.g. `update gui` or claude on manual source)
 
 import { getVersionsReport, type VersionsOptions } from '../setup/versions/index.js';
-import {
-  type InstallCommand,
-  type UpdateTarget,
-  buildInstallCommand,
-} from '../setup/versions/install-commands.js';
+import { type InstallCommand, buildInstallCommand } from '../setup/versions/install-commands.js';
 import { runInstall } from '../setup/versions/install.js';
-import type { VersionTarget, VersionsReport } from '../contract.js';
+import type { UpdateResult, UpdateTarget, VersionTarget, VersionsReport } from '../contract.js';
 
 interface UpdateTargetOptions {
   target: UpdateTarget;
@@ -59,7 +55,7 @@ function pickRow(report: VersionsReport, target: UpdateTarget): VersionTarget {
   return target === 'claude' ? report.claude : target === 'switch' ? report.switch : report.gui;
 }
 
-function emitJson(payload: Record<string, unknown>): void {
+function emitJson(payload: UpdateResult): void {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 

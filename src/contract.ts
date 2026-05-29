@@ -269,3 +269,17 @@ export interface VersionsReport {
   switch: VersionTarget;
   gui: VersionTarget;
 }
+
+/** The three things `claude switch update <target>` can act on. */
+export type UpdateTarget = 'claude' | 'switch' | 'gui';
+
+/** Shape of `claude switch update <target> --json` — one line the GUI consumes.
+ *  A discriminated union over the five emit paths so a field rename in the
+ *  command handler breaks the compiler instead of silently drifting from the
+ *  GUI parser. `from`/`to` are versions (no leading `v`), null when unknown. */
+export type UpdateResult =
+  | { ok: true; target: UpdateTarget; from: string | null; to: string | null }
+  | { ok: true; target: UpdateTarget; check: true; command: string; from: string | null; to: string | null }
+  | { ok: true; target: UpdateTarget; manualUrl: string; from: string | null; to: string | null }
+  | { ok: false; target: UpdateTarget; error: string; exitCode: number | null }
+  | { ok: false; target: UpdateTarget; error: string; source: VersionSource; manualUrl: string; exitCode: number };
