@@ -24,6 +24,7 @@ export async function handleProfileList(
   opts: ProfileListOptions = { json: false },
 ): Promise<void> {
   const { listProfiles, readProfile } = await import('../profiles/profiles.js');
+  const { isOverlayProfile } = await import('../profiles/overlay.js');
   const profiles = listProfiles();
 
   if (opts.json) {
@@ -34,6 +35,7 @@ export async function handleProfileList(
         account: info.hasLogin ? info.emailAddress ?? null : null,
         hasLogin: info.hasLogin,
         path: info.path,
+        overlay: isOverlayProfile(name),
       };
     });
     process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -54,15 +56,26 @@ export async function handleProfileList(
   }
 }
 
-export async function handleProfileCreate(name: string): Promise<void> {
-  const { createProfile } = await import('../profiles/profiles.js');
+export async function handleProfileCreate(
+  name: string,
+  opts: { overlay?: boolean } = {},
+): Promise<void> {
   let dir: string;
   try {
-    dir = createProfile(name);
+    if (opts.overlay) {
+      const { createOverlayProfile } = await import('../profiles/overlay.js');
+      dir = createOverlayProfile(name);
+    } else {
+      const { createProfile } = await import('../profiles/profiles.js');
+      dir = createProfile(name);
+    }
   } catch (e) {
     throw new ExitError(errMessage(e));
   }
-  console.log(`Created profile "${name}" at ${dir}`);
+  console.log(`Created ${opts.overlay ? 'overlay (as-global) profile' : 'profile'} "${name}" at ${dir}`);
+  if (opts.overlay) {
+    console.log('  Shares global skills + session history; isolates only credentials.');
+  }
   console.log('');
   console.log('Next steps:');
   console.log(`  1. claude switch profile login ${name}    # browser opens, sign in`);
@@ -91,21 +104,15 @@ export async function handleProfileStatus(name: string | undefined): Promise<voi
       }
     })();
 
-    let keychainLine = '(not applicable on this platform)';
-    if (process.platform === 'darwin') {
-      const { claudeKeychainServiceFor, claudeKeychainAccount } = await import('../credentials/keychain.js');
-      // Keychain probe — stays on raw spawnSync until CredentialStore lands
-      // (this `security` call belongs to that port, not ProcessPort).
-      const { spawnSync } = await import('node:child_process');
-      const service = claudeKeychainServiceFor(info.path);
-      const account = claudeKeychainAccount();
-      const r = spawnSync('security', [
-        'find-generic-password', '-s', service, '-a', account,
-      ], { stdio: 'pipe' });
-      keychainLine = r.status === 0
-        ? `present (service=${service}, account=${account})`
-        : `absent (would be at service=${service}, account=${account})`;
-    }
+    // Credentials backend status: read through the CredentialStore port (the
+    // file vault by default on every platform; the macOS Keychain only under
+    // CLAUDE_SWITCH_USE_KEYCHAIN=1) instead of probing the deprecated Keychain
+    // directly — so the line reflects where the tokens actually live.
+    const { readProfileCredentials } = await import('../credentials/keychain.js');
+    const credsBackend = process.env.CLAUDE_SWITCH_USE_KEYCHAIN === '1' ? 'macOS Keychain' : 'file vault';
+    const credsLine = readProfileCredentials(info.path)?.claudeAiOauth
+      ? `present (${credsBackend})`
+      : `absent — run: claude switch profile login ${info.name}`;
 
     let lastUsed = '(never)';
     try {
@@ -119,7 +126,7 @@ export async function handleProfileStatus(name: string | undefined): Promise<voi
     console.log(`Path:    ${info.path}`);
     console.log(`Email:   ${info.emailAddress ?? '(not logged in yet)'}`);
     console.log(`Token:   ${tokenLine}`);
-    console.log(`Keychain: ${keychainLine}`);
+    console.log(`Creds:    ${credsLine}`);
     console.log(`Last run: ${lastUsed}`);
     console.log(`User ID: ${info.userID ?? '(not yet assigned — run claude once in this profile)'}`);
     return;
@@ -255,6 +262,7 @@ export async function handleProfileImport(
   ctx: CommandContext,
   email: string,
   profileName: string | undefined,
+  overlay = false,
 ): Promise<void> {
   const { importProfileFromAccount, refreshLegacySnapshotIfStale } = await import('../profiles/profiles.js');
 
@@ -265,17 +273,35 @@ export async function handleProfileImport(
     await refreshLegacySnapshotIfStale(email, ctx.accountsDirPath);
   } catch { /* network failure → fall through, importProfileFromAccount may still be useful */ }
 
+  // --as-global: build the profile as an overlay (shared global skills +
+  // session history, isolated identity) instead of a classic empty one.
+  // Injected so profiles.ts doesn't import overlay.ts (cycle-free).
+  const createDir = overlay
+    ? (await import('../profiles/overlay.js')).createOverlayProfile
+    : undefined;
+
   let result: ReturnType<typeof importProfileFromAccount>;
   try {
-    result = importProfileFromAccount(email, ctx.accountsDirPath, profileName);
+    result = importProfileFromAccount(email, ctx.accountsDirPath, profileName, { createDir });
   } catch (e) {
     throw new ExitError(errMessage(e));
+  }
+  if (overlay) {
+    console.log('  (overlay: shares global skills + session history; isolates only credentials)');
   }
   console.log(`✔ Imported "${result.emailAddress}" into profile "${result.profileName}"`);
   console.log(`  Path:    ${result.profilePath}`);
   console.log(`  User ID: ${result.userID.slice(0, 16)}…`);
   if (result.wroteToKeychain) {
-    console.log(`  Tokens:  written to macOS Keychain (account=${result.userID.slice(0, 16)}…)`);
+    // `wroteToKeychain` is legacy naming: the credentials went through the
+    // CredentialStore port, which since v4.0.0 is the file vault by default —
+    // the macOS Keychain is used only under CLAUDE_SWITCH_USE_KEYCHAIN=1.
+    // Report the backend that actually received the tokens, not "Keychain".
+    const backend =
+      process.env.CLAUDE_SWITCH_USE_KEYCHAIN === '1'
+        ? `macOS Keychain (account=${result.userID.slice(0, 16)}…)`
+        : `the file vault (${result.profilePath}/.credentials.json)`;
+    console.log(`  Tokens:  written to ${backend}`);
   } else if (result.needsLogin) {
     console.log('');
     console.log('⚠ This account predates v2.2 (no _keychain snapshot saved).');
@@ -300,11 +326,11 @@ export async function handleProfileRemove(name: string): Promise<void> {
   }
   console.log(`Removed profile dir: ${result.dir}`);
   if (process.platform === 'darwin') {
-    const { claudeKeychainServiceFor, claudeKeychainAccount, deleteKeychainForConfigDir } =
+    const { claudeKeychainServiceFor, claudeKeychainAccount, deleteProfileCredentials } =
       await import('../credentials/keychain.js');
     const service = claudeKeychainServiceFor(result.dir);
     const account = claudeKeychainAccount();
-    const removed = deleteKeychainForConfigDir(result.dir);
+    const removed = deleteProfileCredentials(result.dir);
     if (removed) {
       console.log(`Removed Keychain entry: service="${service}" account="${account}"`);
     } else {

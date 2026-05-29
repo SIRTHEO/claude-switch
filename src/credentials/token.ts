@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { readKeychain } from './keychain.js';
+import { readActiveCredentials } from './keychain.js';
 
 interface TokenHealth {
   status: 'valid' | 'expired' | 'present' | 'missing';
@@ -49,7 +49,7 @@ function healthFromExpiry(accessToken: string | undefined, rawExpiry: unknown): 
 
 export function getTokenHealth(
   claudeJsonPath: string,
-  keychainReader: () => ReturnType<typeof readKeychain> = readKeychain,
+  keychainReader: () => ReturnType<typeof readActiveCredentials> = readActiveCredentials,
 ): TokenHealth {
   // On macOS, tokens live in the Keychain — not in ~/.claude.json.
   const keychainData = keychainReader();
