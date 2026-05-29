@@ -299,7 +299,15 @@ export async function handleProfileImport(
   console.log(`  Path:    ${result.profilePath}`);
   console.log(`  User ID: ${result.userID.slice(0, 16)}…`);
   if (result.wroteToKeychain) {
-    console.log(`  Tokens:  written to macOS Keychain (account=${result.userID.slice(0, 16)}…)`);
+    // `wroteToKeychain` is legacy naming: the credentials went through the
+    // CredentialStore port, which since v4.0.0 is the file vault by default —
+    // the macOS Keychain is used only under CLAUDE_SWITCH_USE_KEYCHAIN=1.
+    // Report the backend that actually received the tokens, not "Keychain".
+    const backend =
+      process.env.CLAUDE_SWITCH_USE_KEYCHAIN === '1'
+        ? `macOS Keychain (account=${result.userID.slice(0, 16)}…)`
+        : `the file vault (${result.profilePath}/.credentials.json)`;
+    console.log(`  Tokens:  written to ${backend}`);
   } else if (result.needsLogin) {
     console.log('');
     console.log('⚠ This account predates v2.2 (no _keychain snapshot saved).');
