@@ -1,7 +1,7 @@
 // src/commands/skills.ts
 // `claude switch skills …` — inspect globally installed skills. For now just
-// `list` (+ `--json` for the GUI contract). Composing a profile's skills lands
-// in Phase 22.2 (`profile skills link/unlink`).
+// `list` (+ `--json` for the GUI contract). Composing a profile's skills is
+// handled by `profile skills link/unlink`.
 
 import { ExitError } from '../platform/errors.js';
 import type { ProfileSkillEntry, SkillEntry } from '../contract.js';

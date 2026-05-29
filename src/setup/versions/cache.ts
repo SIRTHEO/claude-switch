@@ -4,7 +4,7 @@
 //
 // File: ~/.claude/switch/update-cache.json. Independent from the legacy
 // single-target cache at ~/.claude/accounts/.update-check.json (the latter
-// still drives the startup banner via setup/update-check.ts). SH-UPD-2 will
+// still drives the startup banner via setup/update-check.ts). A later change will
 // reconcile the two — for now they coexist so this slice ships read-only and
 // doesn't touch the banner code path.
 //

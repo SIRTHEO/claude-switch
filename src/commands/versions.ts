@@ -2,7 +2,7 @@
 //
 // `claude switch versions` — multi-target update-availability report.
 // Read-only: emits the report, never installs (the install action lives in
-// SH-UPD-2 as `claude switch update <target>`).
+// `claude switch update <target>`).
 //
 // JSON contract (`--json`): a single line on stdout matching the
 // VersionsReport interface in src/contract.ts; clean stderr; exit 0 even

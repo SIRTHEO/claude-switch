@@ -1,9 +1,9 @@
 // src/file-credential-store.ts
-// FileCredentialStore — Phase 24 file vault backend.
+// FileCredentialStore — file vault backend (v4.0.0).
 //
 // macOS Keychain integration produced structural UX friction:
 //   - per-item partition-list dialogs (read AND write)
-//   - per-item ACL classic dialogs that 23.5–23.9 could not fully suppress
+//   - per-item ACL classic dialogs that earlier mitigations could not fully suppress
 //   - iCloud-sync notifications cascade
 //   - Claude Code 2.x resetting our partition-list on /login
 //
@@ -116,7 +116,7 @@ export class FileCredentialStore implements CredentialStore {
   /**
    * Test-mode kill switch. The historical flag CLAUDE_SWITCH_DISABLE_KEYCHAIN=1
    * was set by the test runner to keep `npm test` from touching the developer's
-   * real Keychain. Under Phase 24 file storage, the equivalent risk is writing
+   * real Keychain. Under v4.0.0 file storage, the equivalent risk is writing
    * into the developer's real `~/.claude/.credentials.json` or
    * `~/.claude-switch/apikeys.json` during a test. Same flag, broader meaning:
    * "the store is disabled — behave as if nothing is persistent".
@@ -220,7 +220,7 @@ export class FileCredentialStore implements CredentialStore {
 
   /** No-op under file storage — the Keychain item enumeration is meaningless
    * here. Kept on the port so the legacy `setup-keychain` command (deprecated
-   * by Phase 24) still type-checks for the migration window. */
+   * by the file vault) still type-checks for the migration window. */
   listOAuthKeychainItems(): KeychainItemRef[] {
     return [];
   }

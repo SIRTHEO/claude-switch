@@ -95,5 +95,5 @@ export async function fetchGitHubReleaseLatest(
   }
 }
 
-// isNewer lives in ../semver.ts (SH-UPD-2 consolidation). Re-exported at
+// isNewer lives in ../semver.ts (a later consolidation). Re-exported at
 // the top of this file for callers that already import it from here.

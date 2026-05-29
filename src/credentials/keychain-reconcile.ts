@@ -1,5 +1,5 @@
 // src/keychain-reconcile.ts
-// Phase 24 (macOS) — drain Claude Code's Keychain item into the file vault.
+// macOS — drain Claude Code's Keychain item into the file vault (v4.0.0).
 //
 // The problem this solves: on macOS, Claude Code 2.x writes fresh OAuth tokens
 // into the system Keychain (`Claude Code-credentials`) on every `/login` and

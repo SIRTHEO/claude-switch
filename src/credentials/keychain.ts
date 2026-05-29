@@ -6,7 +6,7 @@
 //   - Profile config (any other CLAUDE_CONFIG_DIR): service =
 //     `Claude Code-credentials-<sha256(configDir).hex.slice(0,8)>`
 //
-// As of Phase 20.7a the actual I/O lives in the CredentialStore port
+// As of an earlier refactor the actual I/O lives in the CredentialStore port
 // (`credential-store.ts`); this module is a thin delegator that preserves the
 // historical public surface so existing importers are unaffected. The pure
 // naming helpers and credential types are defined in the port module and

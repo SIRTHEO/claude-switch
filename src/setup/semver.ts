@@ -3,7 +3,7 @@
 // Tiny semver helpers shared by the update-banner code path
 // (setup/update-check.ts) and the multi-target versions report
 // (setup/versions/registry.ts). Both used to keep their own copy of
-// `isNewer` — the duplication was flagged in the SH-UPD review and
+// `isNewer` — the duplication was flagged in review and
 // consolidated here so a fix in one place propagates to all callers.
 //
 // The GUI's hook layer keeps a parallel copy by necessity (cross-repo,

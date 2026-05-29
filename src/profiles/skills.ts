@@ -4,7 +4,7 @@
 // A skill is a directory containing a SKILL.md whose YAML frontmatter carries
 // `name` and `description`. We only read the inventory here; composing a
 // profile's skills (symlinking selected ones into a profile) is a separate
-// concern (Phase 22.2). ~/.claude/skills is often a symlink to a real dir —
+// concern. ~/.claude/skills is often a symlink to a real dir —
 // readdir/stat follow it transparently.
 
 import fs from 'node:fs';

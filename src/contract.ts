@@ -234,7 +234,7 @@ export interface DoctorReport {
 // ---------------------------------------------------------------------------
 
 /** How the binary was installed on this machine. Drives both the latest-version
- *  lookup channel and the eventual update command (SH-UPD-2). */
+ *  lookup channel and the eventual update command. */
 export type VersionSource = 'npm' | 'brew' | 'manual' | 'unknown';
 
 /** One row in the versions report — same shape for all three targets so the

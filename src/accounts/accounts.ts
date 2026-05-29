@@ -135,7 +135,7 @@ export function syncActiveSnapshotIfStale(
   // create a snapshot for an account that was never explicitly added.
   if (!snapshotStat) return false;
 
-  // The live OAuth token lives in `.credentials.json` (Phase 24 file vault),
+  // The live OAuth token lives in `.credentials.json` (file vault, v4.0.0),
   // and the claude binary rotates it there during normal use WITHOUT touching
   // `~/.claude.json`. Keying staleness off claude.json alone misses those
   // rotations, so the snapshot kept a stale access/refresh token — and a later

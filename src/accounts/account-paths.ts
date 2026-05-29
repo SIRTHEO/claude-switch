@@ -1,6 +1,6 @@
 // src/account-paths.ts
 // Pure naming + path-safety helpers for account snapshot files. Extracted from
-// accounts.ts (Phase 20.8) so both the domain (accounts.ts) and the
+// accounts.ts (in an earlier refactor) so both the domain (accounts.ts) and the
 // AccountRepository adapter can depend on them without a circular import. No
 // I/O lives here. accounts.ts re-exports both names, so existing importers are
 // unaffected.

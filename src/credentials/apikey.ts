@@ -1,12 +1,12 @@
 // src/apikey.ts
 // Per-account Anthropic API key storage.
 //
-// Backend selection (Phase 24): keys flow through the CredentialStore port.
+// Backend selection (v4.0.0): keys flow through the CredentialStore port.
 // The default store is the cross-platform file vault
 // (`~/.claude-switch/apikeys.json`, mode 0600) on EVERY OS; the macOS Keychain
 // backend is selected only under CLAUDE_SWITCH_USE_KEYCHAIN=1. The legacy
 // `_apiKey` field inside the account JSON file (mode 0600) survives as a
-// READ-ONLY fallback for keys written by pre-Phase-24 versions.
+// READ-ONLY fallback for keys written by pre-v4.0.0 versions.
 //
 // Migration (migrateApiKeysToKeychain): copies any legacy plaintext `_apiKey`
 // into the active vault. It runs on every platform now — the vault is

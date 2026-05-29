@@ -62,7 +62,7 @@ function emitJson(payload: UpdateResult): void {
 function handleManualOrUnsupported(opts: UpdateTargetOptions, row: VersionTarget): number {
   const url = row.manualUrl ?? '(no URL on file)';
   if (opts.target === 'gui') {
-    // `gui` is manual-by-design until SH-UPD-5. Exit 0 — printing the URL
+    // `gui` is manual-by-design until a later change. Exit 0 — printing the URL
     // is the documented "install action" for this target in v1.
     if (opts.json) {
       emitJson({ ok: true, target: opts.target, manualUrl: url, from: row.current, to: row.latest });
@@ -139,8 +139,8 @@ async function handleRun(
   }
 
   // Force a fresh report so the on-disk cache reflects the new installed
-  // version on the next `versions` call — closes the dual-cache drift
-  // flagged in memory `sh-upd-followups`.
+  // version on the next `versions` call — closes a previously-flagged
+  // dual-cache drift.
   const after = await getVersionsReport({ force: true, ...deps });
   const afterRow = pickRow(after, opts.target);
   // The `switch` target can't observe its own upgrade in-process: detectSwitch

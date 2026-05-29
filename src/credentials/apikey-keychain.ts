@@ -3,7 +3,7 @@
 // historical filename + `*Keychain` names so existing importers are unaffected.
 //
 // The actual I/O lives in the CredentialStore port (`credential-store.ts`).
-// Since Phase 24 the default store is the cross-platform file vault
+// Since v4.0.0 the default store is the cross-platform file vault
 // (`~/.claude-switch/apikeys.json`, mode 0600) on every OS; the macOS Keychain
 // backend is selected only under CLAUDE_SWITCH_USE_KEYCHAIN=1. So despite the
 // names, these functions no longer touch the Keychain on the default path.

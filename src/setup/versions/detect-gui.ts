@@ -9,7 +9,7 @@
 // per IP — the 6h cache makes this a non-issue per user).
 //
 // `source` is always `'manual'` in v1: there's no automated install path
-// from CLI for the GUI bundle. SH-UPD-5 introduces tauri-plugin-updater
+// from CLI for the GUI bundle. A later change introduces tauri-plugin-updater
 // inside the app itself, at which point this target's source becomes
 // `'manual'` or `'tauri-updater'` depending on platform.
 

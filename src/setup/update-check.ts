@@ -90,7 +90,7 @@ function writeCache(cache: CheckCache): void {
 // ---------------------------------------------------------------------------
 
 // isNewer used to live here; it now lives in setup/semver.ts so the
-// multi-target versions code can share the same rule (see SH-UPD-2
+// multi-target versions code can share the same rule (a later
 // consolidation). Re-exported for back-compat with existing importers
 // (commands/update.ts + the test files); the local references in
 // `checkForUpdate` below use the same import.

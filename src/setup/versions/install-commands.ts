@@ -7,7 +7,7 @@
 // anything — the install runner in install.ts handles execution and
 // stdout/stderr streaming.
 //
-// Channel matrix (mirrors the SH-UPD shape brief §3):
+// Channel matrix:
 //
 //   target=claude  source=brew    → ['brew', ['upgrade', '--cask', 'claude-code']]
 //   target=claude  source=npm     → ['npm',  ['i', '-g', '@anthropic-ai/claude-code@latest']]

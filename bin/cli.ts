@@ -212,7 +212,7 @@ export function parseCommand(args: string[]): Command {
     case '--completions': return { action: 'completions', shell: args[2] };
     case 'setup': return { action: 'setup' };
     case 'update': {
-      // No target → legacy self-update (interactive). Target → new SH-UPD-2 install.
+      // No target → legacy self-update (interactive). Target → new per-target install.
       const t = args[2];
       if (!t || t.startsWith('-')) return { action: 'update' };
       if (t !== 'claude' && t !== 'switch' && t !== 'gui') throw new ExitError('Usage: claude switch update [claude|switch|gui] [--check] [--json]');
@@ -478,7 +478,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Phase 24 (macOS): drain Claude Code's Keychain OAuth item into the file
+  // macOS file-vault (v4.0.0): drain Claude Code's Keychain OAuth item into the file
   // vault, then delete it, so Claude Code reads our file and subsequent swaps
   // touch only files (zero dialogs). Idempotent — a no-op cheap probe when no
   // item exists (the steady state). Runs after the statusline early-return
