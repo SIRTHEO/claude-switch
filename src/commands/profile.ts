@@ -268,6 +268,7 @@ export async function handleProfileImport(
   ctx: CommandContext,
   email: string,
   profileName: string | undefined,
+  overlay = false,
 ): Promise<void> {
   const { importProfileFromAccount, refreshLegacySnapshotIfStale } = await import('../profiles/profiles.js');
 
@@ -278,11 +279,21 @@ export async function handleProfileImport(
     await refreshLegacySnapshotIfStale(email, ctx.accountsDirPath);
   } catch { /* network failure → fall through, importProfileFromAccount may still be useful */ }
 
+  // --as-global: build the profile as an overlay (shared global skills +
+  // session history, isolated identity) instead of a classic empty one.
+  // Injected so profiles.ts doesn't import overlay.ts (cycle-free).
+  const createDir = overlay
+    ? (await import('../profiles/overlay.js')).createOverlayProfile
+    : undefined;
+
   let result: ReturnType<typeof importProfileFromAccount>;
   try {
-    result = importProfileFromAccount(email, ctx.accountsDirPath, profileName);
+    result = importProfileFromAccount(email, ctx.accountsDirPath, profileName, { createDir });
   } catch (e) {
     throw new ExitError(errMessage(e));
+  }
+  if (overlay) {
+    console.log('  (overlay: shares global skills + session history; isolates only credentials)');
   }
   console.log(`✔ Imported "${result.emailAddress}" into profile "${result.profileName}"`);
   console.log(`  Path:    ${result.profilePath}`);

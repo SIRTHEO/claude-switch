@@ -254,6 +254,12 @@ export function importProfileFromAccount(
   email: string,
   accountsDirPath: string,
   profileName?: string,
+  // Injection seam: how to create the profile directory. Defaults to a classic
+  // profile; the import handler passes `createOverlayProfile` for `--as-global`
+  // so importing an account into an overlay is one command. Kept as a callback
+  // (not an import of overlay.ts) so this module stays free of the
+  // profiles<->overlay import cycle.
+  opts: { createDir?: (name: string) => string } = {},
 ): ImportResult {
   const account = readLegacyAccount(email, accountsDirPath);
   const finalName = profileName ?? (email.split('@')[0] ?? email).replace(/[^A-Za-z0-9_-]/g, '_');
@@ -263,7 +269,7 @@ export function importProfileFromAccount(
     );
   }
 
-  const dir = createProfile(finalName); // throws if exists
+  const dir = (opts.createDir ?? createProfile)(finalName); // throws if exists
   const userID = freshUserID();
 
   // Strip our internal _keychain key from the snapshot before persisting.

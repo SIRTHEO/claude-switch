@@ -311,4 +311,31 @@ describe('parseCommand', () => {
       /Usage: claude switch profile create/,
     );
   });
+
+  it('parses profile import with --as and --as-global', () => {
+    assert.deepEqual(parseCommand(['switch', 'profile', 'import', 'me@x.com', '--as', 'work', '--as-global']), {
+      action: 'profile-import',
+      email: 'me@x.com',
+      profileName: 'work',
+      overlay: true,
+    });
+  });
+
+  it('parses profile import without overlay', () => {
+    assert.deepEqual(parseCommand(['switch', 'profile', 'import', 'me@x.com', '--as', 'work']), {
+      action: 'profile-import',
+      email: 'me@x.com',
+      profileName: 'work',
+      overlay: false,
+    });
+  });
+
+  it('does not treat --as-global as the --as value', () => {
+    assert.deepEqual(parseCommand(['switch', 'profile', 'import', 'me@x.com', '--as-global']), {
+      action: 'profile-import',
+      email: 'me@x.com',
+      profileName: undefined,
+      overlay: true,
+    });
+  });
 });

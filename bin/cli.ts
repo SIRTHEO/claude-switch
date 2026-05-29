@@ -107,7 +107,7 @@ export type Command =
   | { action: 'profile-login'; name: string }
   | { action: 'profile-remove'; name: string }
   | { action: 'profile-status'; name: string | undefined }
-  | { action: 'profile-import'; email: string; profileName?: string }
+  | { action: 'profile-import'; email: string; profileName?: string; overlay: boolean }
   | { action: 'route-add'; pattern: string | undefined; target: string | undefined }
   | { action: 'route-list'; json: boolean }
   | { action: 'route-remove'; pattern: string | undefined }
@@ -427,10 +427,14 @@ export function parseCommand(args: string[]): Command {
         return { action: 'profile-launch', name: args[3], terminal };
       }
       if (sub2 === 'import' || sub2 === 'import-from-account') {
-        if (!args[3]) throw new ExitError('Usage: claude switch profile import <email> [--as <profile-name>]');
+        if (!args[3]) throw new ExitError('Usage: claude switch profile import <email> [--as <profile-name>] [--as-global]');
         const asIdx = args.indexOf('--as');
-        const profileName = asIdx >= 4 && args[asIdx + 1] ? args[asIdx + 1] : undefined;
-        return { action: 'profile-import', email: args[3], profileName };
+        const asVal = asIdx >= 4 ? args[asIdx + 1] : undefined;
+        const profileName = asVal && !asVal.startsWith('--') ? asVal : undefined;
+        // --as-global (alias --overlay): import the account INTO an overlay
+        // profile (shared global skills + sessions, isolated identity).
+        const overlay = args.includes('--as-global') || args.includes('--overlay');
+        return { action: 'profile-import', email: args[3], profileName, overlay };
       }
       throw new ExitError('Usage: claude switch profile <list|create|use|login|launch|import|remove|status> [name]');
     }
@@ -539,7 +543,7 @@ async function main(): Promise<void> {
     handleTerminals({ json: cmd.json });
     return;
   }
-  if (cmd.action === 'profile-import') { await handleProfileImport(statuslineCtx, cmd.email, cmd.profileName); return; }
+  if (cmd.action === 'profile-import') { await handleProfileImport(statuslineCtx, cmd.email, cmd.profileName, cmd.overlay); return; }
   if (cmd.action === 'profile-remove') { await handleProfileRemove(cmd.name); return; }
 
   // Route subcommands — manage the per-machine global routing rules

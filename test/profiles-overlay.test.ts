@@ -12,7 +12,7 @@ import path from 'node:path';
 
 import { handleProfileCreate, handleProfileList } from '../src/commands/profile.js';
 import { createOverlayProfile, isOverlayProfile } from '../src/profiles/overlay.js';
-import { createProfile } from '../src/profiles/profiles.js';
+import { createProfile, importProfileFromAccount } from '../src/profiles/profiles.js';
 import { restoreFakeHome, setFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 describe('createOverlayProfile', () => {
@@ -154,5 +154,52 @@ describe('profile list --json exposes overlay', () => {
     const entries = JSON.parse(line) as Array<{ name: string; overlay: boolean }>;
     assert.equal(entries.find((e) => e.name === 'work')?.overlay, true);
     assert.equal(entries.find((e) => e.name === 'classic')?.overlay, false);
+  });
+});
+
+describe('importProfileFromAccount --as-global (overlay)', () => {
+  let saved: SavedHome;
+  let home: string;
+  let accountsDir: string;
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-overlay-import-'));
+    saved = setFakeHome(home);
+    fs.mkdirSync(path.join(home, '.claude', 'skills'), { recursive: true });
+    accountsDir = path.join(home, '.claude', 'accounts');
+    fs.mkdirSync(accountsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(accountsDir, 'me@x.com.json'),
+      JSON.stringify({
+        emailAddress: 'me@x.com',
+        _keychain: {
+          claudeAiOauth: { accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 3_600_000 },
+        },
+      }),
+    );
+  });
+
+  afterEach(() => {
+    restoreFakeHome(saved);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('imports the account into an overlay and keeps the symlinks intact', () => {
+    const res = importProfileFromAccount('me@x.com', accountsDir, 'work', {
+      createDir: createOverlayProfile,
+    });
+    assert.equal(res.emailAddress, 'me@x.com');
+    assert.equal(isOverlayProfile('work'), true);
+    const profDir = path.join(home, '.claude', 'profiles', 'work');
+    // The import writes .claude.json / creds (separate files) — the shared
+    // skills/ and projects/ symlinks must survive untouched.
+    assert.ok(fs.lstatSync(path.join(profDir, 'skills')).isSymbolicLink());
+    assert.ok(fs.lstatSync(path.join(profDir, 'projects')).isSymbolicLink());
+    assert.ok(fs.existsSync(path.join(profDir, '.claude.json')));
+  });
+
+  it('default createDir makes a classic, non-overlay profile', () => {
+    importProfileFromAccount('me@x.com', accountsDir, 'classic');
+    assert.equal(isOverlayProfile('classic'), false);
   });
 });
