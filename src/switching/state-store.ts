@@ -25,6 +25,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { z } from 'zod';
 import { writeJsonAtomic } from '../platform/atomic-write.js';
 import { withLock } from '../platform/lock.js';
 
@@ -33,23 +34,37 @@ const LEGACY_FALLBACK_ENABLED = '.fallback-enabled';
 const LEGACY_FALLBACK_AUTO_ENGAGED = '.fallback-auto-engaged';
 const LEGACY_PENDING_RESTORE = '.pending-restore';
 
-export interface State {
-  version: 1;
-  fallback: {
-    enabled: boolean;
-    autoEngaged: boolean;
-  };
-  /** Email pending restore from an interrupted `--as` session, or
-   *  undefined when no restore is queued. */
-  pendingRestore?: string;
-  /** Snapshot of "last account routed to per emailDomain". Used by
-   *  project-aware routing to pick deterministically when a
-   *  `.claude-switch` constraint matches multiple saved accounts. Keyed
-   *  by the lower-cased domain (`acme.com`), value is the chosen email.
-   *  Optional — older state files predate the field; resolver tolerates
-   *  an empty object. */
-  lastUsedByDomain?: Record<string, string>;
-}
+const FallbackSchema = z
+  .object({
+    enabled: z.coerce.boolean().catch(false),
+    autoEngaged: z.coerce.boolean().catch(false),
+  })
+  .catch({ enabled: false, autoEngaged: false });
+
+/**
+ * Canonical shape of `<accountsDir>/.claude-switch-state.json`, and the single
+ * source of truth for the `State` type (via z.infer). The `.catch()`/`.optional()`
+ * make the parse tolerate partial / older files exactly the way the previous
+ * hand-rolled typeof checks did: a missing/bad `fallback` collapses to off, a
+ * bad optional drops to absent — a malformed field never throws on the hot path.
+ * A wrong `version` makes the whole parse fail, which readState treats as
+ * "fall through to legacy migration".
+ */
+const StateSchema = z.object({
+  version: z.literal(1),
+  fallback: FallbackSchema,
+  /** Email pending restore from an interrupted `--as` session, or absent when
+   *  no restore is queued. */
+  pendingRestore: z.string().optional().catch(undefined),
+  /** "last account routed to per emailDomain", keyed by lower-cased domain
+   *  (`acme.com` → chosen email). Declared here for the type; readState
+   *  normalises the value through sanitizeLastUsed (lowercasing + dropping
+   *  empty/partial entries). Older state files predate the field; the resolver
+   *  tolerates an empty object. */
+  lastUsedByDomain: z.record(z.string(), z.string()).optional().catch(undefined),
+});
+
+export type State = z.infer<typeof StateSchema>;
 
 const EMPTY_STATE: State = {
   version: 1,
@@ -65,23 +80,22 @@ function statePath(accountsDirPath: string): string {
  *  files are ignored even if they reappear (a stray marker can't override
  *  the state we already trust). */
 export function readState(accountsDirPath: string): State {
-  // Fast path: state.json present, parse it.
+  // Fast path: state.json present, parse it through the schema. The schema's
+  // .catch()/.optional() tolerate partial / older files the way the previous
+  // hand-rolled typeof checks did — a bad field is dropped, never thrown.
   try {
-    const raw = JSON.parse(fs.readFileSync(statePath(accountsDirPath), 'utf-8'));
-    if (raw && typeof raw === 'object' && raw.version === 1) {
-      // Tolerate partial files (older builds may have written a subset).
-      const fallback = (raw.fallback && typeof raw.fallback === 'object')
-        ? {
-            enabled: !!raw.fallback.enabled,
-            autoEngaged: !!raw.fallback.autoEngaged,
-          }
-        : EMPTY_STATE.fallback;
-      const pending = typeof raw.pendingRestore === 'string' ? raw.pendingRestore : undefined;
-      const lastUsed = sanitizeLastUsed(raw.lastUsedByDomain);
+    const raw: unknown = JSON.parse(fs.readFileSync(statePath(accountsDirPath), 'utf-8'));
+    const parsed = StateSchema.safeParse(raw);
+    if (parsed.success) {
+      const { fallback, pendingRestore } = parsed.data;
+      // lastUsedByDomain keeps its dedicated normaliser (lowercasing + dropping
+      // empty/partial entries) applied to the RAW value, so a mixed map keeps
+      // its valid entries instead of being dropped wholesale.
+      const lastUsed = sanitizeLastUsed((raw as { lastUsedByDomain?: unknown }).lastUsedByDomain);
       return {
         version: 1,
         fallback,
-        ...(pending ? { pendingRestore: pending } : {}),
+        ...(pendingRestore ? { pendingRestore } : {}),
         ...(lastUsed ? { lastUsedByDomain: lastUsed } : {}),
       };
     }
