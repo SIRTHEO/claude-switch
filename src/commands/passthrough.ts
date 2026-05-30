@@ -12,14 +12,13 @@
 //    - spawn claude directly with `extraEnv` (legacy ANTHROPIC_API_KEY
 //      injection for accounts without saved keys).
 //
-// The untracked-key warning, project-aware routing swap, and usage pre-warm
-// live in sibling modules (passthrough-warn / passthrough-routing /
-// passthrough-prewarm); the public surface is re-exported here.
+// The untracked-key warning, project-aware routing swap, usage pre-warm,
+// live-session recording, and transition banners live in sibling modules
+// (passthrough-warn / passthrough-routing / passthrough-prewarm /
+// passthrough-session / passthrough-banners); the public surface is re-exported here.
 
 import { withLock } from '../platform/lock.js';
 import { ExitError, errMessage } from '../platform/errors.js';
-import { VERSION } from '../setup/version.js';
-import { formatUpdateNotice } from '../setup/update-check.js';
 import { getCurrent, save, list as listAccounts, syncActiveSnapshotIfStale } from '../accounts/accounts.js';
 import { checkPendingRestore } from '../switching/switcher.js';
 import { run as proxyRun } from '../proxy/proxy.js';
@@ -31,7 +30,6 @@ import {
   maybeAutoEngageFallback,
   maybeInitSmartFallback,
 } from '../fallback/auto-fallback.js';
-import { readUsageCacheForAccount } from '../usage/usage.js';
 import { recordPassthroughSession, runIsolatedOrRefuse } from './passthrough-session.js';
 import { startFallbackProxy } from '../proxy/api-proxy.js';
 import { resolveAccountPrefs, resolveEffectiveAuthMode } from '../switching/preferences.js';
@@ -39,6 +37,7 @@ import { findClaude } from './_helpers.js';
 import { warnUntrackedApiKeyIfNeeded } from './passthrough-warn.js';
 import { resolveRoutingForPassthrough } from './passthrough-routing.js';
 import { preWarmUsageForAutoEngage } from './passthrough-prewarm.js';
+import { emitPassthroughBanners } from './passthrough-banners.js';
 import type { CommandContext } from './context.js';
 
 export { __resetWarnedOnceForTests, warnUntrackedApiKeyIfNeeded } from './passthrough-warn.js';
@@ -167,63 +166,7 @@ export async function handlePassthrough(
   // swap detect a global-bound clash, and `claude switch sessions` show it.
   recordPassthroughSession(accountsDirPath, email, process.env.CLAUDE_CONFIG_DIR ?? null);
 
-  // Routing banners — emitted BEFORE the standard "🔑 <email>" banner so
-  // the user sees the cause-and-effect chain.
-  if (routing.flipped && routing.decision?.banner) {
-    process.stderr.write(`${routing.decision.banner}\n\n`);
-  } else if (routing.isolatedHint) {
-    process.stderr.write(`${routing.isolatedHint}\n\n`);
-  }
-  if (routing.decision?.warning) {
-    process.stderr.write(`${routing.decision.warning}\n\n`);
-  }
-
-  if (wasUnsaved) {
-    process.stderr.write(`Detected account: ${email} (saved automatically)\n\n`);
-  }
-  if (auto.disabled) {
-    const sevenStr = auto.sevenPct !== undefined ? `, 7d:${auto.sevenPct.toFixed(0)}%` : '';
-    process.stderr.write(
-      `📈 Subscription back online (5h:${auto.fivePct!.toFixed(0)}%${sevenStr}, ` +
-      `threshold ${auto.threshold}%) — switched back to OAuth\n\n`,
-    );
-  }
-  if (engage.engaged) {
-    const win = engage.reason === '5h'
-      ? `5h:${engage.fivePct!.toFixed(0)}%`
-      : `7d:${engage.sevenPct!.toFixed(0)}%`;
-    process.stderr.write(
-      `📉 Subscription near cap (${win}, threshold ${engage.threshold}%) — ` +
-      `switched to API key fallback\n\n`,
-    );
-  } else if (engage.blocked) {
-    process.stderr.write(`⚠ auto-engage wanted to switch to API key but ${engage.blocked}\n\n`);
-  }
-  if (updateInfo) {
-    // Critical updates render a loud banner even on this hot path; routine ones
-    // stay a one-liner. Never blocks — claude still launches.
-    process.stderr.write(
-      formatUpdateNotice(updateInfo, VERSION, { color: process.stderr.isTTY === true }) + '\n',
-    );
-  }
-  // Banner on stderr so we don't pollute structured stdout (e.g. when
-  // claude is piped into jq with --output-format json).
-  process.stderr.write(`🔑 ${email}\n\n`);
-  if (extraEnv) {
-    process.stderr.write('(fallback on — using saved API key)\n\n');
-  } else {
-    // Read-only check: if a recent usage snapshot says we're near the
-    // limit and smart fallback isn't enabled (no config + key exists),
-    // remind the user to save an API key to unlock auto-switching.
-    // Never fetches — only consults whatever the user already cached.
-    const cache = readUsageCacheForAccount(accountsDirPath, email);
-    if (cache?.payload && cache.payload.five_hour.utilization >= 85 && getApiKey(email, accountsDirPath)) {
-      process.stderr.write(
-        `⚠ subscription 5h window at ${cache.payload.five_hour.utilization.toFixed(0)}%. ` +
-        `Smart fallback will switch to your API key automatically.\n\n`,
-      );
-    }
-  }
+  emitPassthroughBanners({ accountsDirPath, email, wasUnsaved, auto, engage, routing, extraEnv, updateInfo });
 
   // If the active account has an API key, start the local proxy so the
   // session can transition between OAuth and API live, in BOTH directions.
