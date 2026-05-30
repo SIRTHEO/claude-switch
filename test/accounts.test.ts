@@ -870,3 +870,124 @@ describe('syncActiveSnapshotIfStale', () => {
       'never silently create a snapshot for an account that was never explicitly added');
   });
 });
+
+describe('save / load — token tier guard (defence in depth)', () => {
+  let tmpDir: string;
+  let claudeJson: string;
+  let accDir: string;
+  let originalDisableKeychain: string | undefined;
+  let originalStderrWrite: typeof process.stderr.write;
+  let stderrBuf: string;
+
+  const fakeCreds = (rateLimitTier?: string): CredentialStore => ({
+    readOAuth: () => ({
+      claudeAiOauth: {
+        accessToken: 'tok',
+        refreshToken: 'r',
+        expiresAt: 1,
+        ...(rateLimitTier ? { rateLimitTier } : {}),
+      },
+    }),
+    writeOAuth: () => {},
+    readOAuthForConfigDir: () => null,
+    writeOAuthForConfigDir: () => {},
+    deleteOAuthForConfigDir: () => false,
+    available: () => true,
+    readApiKey: () => null,
+    writeApiKey: () => false,
+    deleteApiKey: () => false,
+    listOAuthKeychainItems: () => [],
+    setPartitionList: () => false,
+  });
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-test-'));
+    claudeJson = path.join(tmpDir, '.claude.json');
+    accDir = path.join(tmpDir, 'accounts');
+    fs.mkdirSync(accDir, { recursive: true });
+    // The guard only reads live creds when Keychain is NOT disabled, so the
+    // capture path must run with the global test flag lifted (a fake store is
+    // injected so no real Keychain is touched).
+    originalDisableKeychain = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    delete process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    stderrBuf = '';
+    originalStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      stderrBuf += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
+      return true;
+    }) as typeof process.stderr.write;
+  });
+
+  afterEach(() => {
+    process.stderr.write = originalStderrWrite;
+    if (originalDisableKeychain === undefined) delete process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN;
+    else process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN = originalDisableKeychain;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('save() refuses when the live token tier differs from the active account tier', () => {
+    // Active account is 5x; the live token the store hands back is 20x — it
+    // belongs to a different account. Capturing would seed the corruption.
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'a@example.com', accountUuid: 'uuid-A', organizationRateLimitTier: 'default_claude_max_5x' },
+    }));
+    assert.throws(
+      () => save('a@example.com', claudeJson, accDir, { credentials: fakeCreds('default_claude_max_20x') }),
+      /belongs to a different account/,
+    );
+    assert.equal(fs.existsSync(path.join(accDir, 'a@example.com.json')), false, 'nothing written on refusal');
+  });
+
+  it('save() proceeds when the live token tier matches the account tier', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'a@example.com', accountUuid: 'uuid-A', organizationRateLimitTier: 'default_claude_max_20x' },
+    }));
+    save('a@example.com', claudeJson, accDir, { credentials: fakeCreds('default_claude_max_20x') });
+    assert.ok(fs.existsSync(path.join(accDir, 'a@example.com.json')));
+  });
+
+  it('save() proceeds for a legacy login missing a tier field (never blocks a real switch)', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({
+      oauthAccount: { emailAddress: 'a@example.com', accountUuid: 'uuid-A' /* no org tier */ },
+    }));
+    save('a@example.com', claudeJson, accDir, { credentials: fakeCreds('default_claude_max_20x') });
+    assert.ok(fs.existsSync(path.join(accDir, 'a@example.com.json')));
+  });
+
+  it('load() skips the Keychain restore when the snapshot token tier differs from its account tier', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({}));
+    fs.writeFileSync(path.join(accDir, 'a@example.com.json'), JSON.stringify({
+      emailAddress: 'a@example.com',
+      accountUuid: 'uuid-A',
+      organizationRateLimitTier: 'default_claude_max_5x',
+      _keychain: { claudeAiOauth: { accessToken: 'tok-A', refreshToken: 'r-A', expiresAt: 1, rateLimitTier: 'default_claude_max_20x' } },
+    }));
+    const result = load('a@example.com', claudeJson, accDir, { credentials: fakeCreds() });
+    assert.equal(result.keychainRestored, false);
+    assert.match(stderrBuf, /belongs to a different account/);
+    assert.match(stderrBuf, /Skipping Keychain restore/);
+  });
+
+  it('load() restores when the snapshot token tier matches its account tier', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({}));
+    fs.writeFileSync(path.join(accDir, 'a@example.com.json'), JSON.stringify({
+      emailAddress: 'a@example.com',
+      accountUuid: 'uuid-A',
+      organizationRateLimitTier: 'default_claude_max_20x',
+      _keychain: { claudeAiOauth: { accessToken: 'tok-A', refreshToken: 'r-A', expiresAt: 1, rateLimitTier: 'default_claude_max_20x' } },
+    }));
+    const result = load('a@example.com', claudeJson, accDir, { credentials: fakeCreds() });
+    assert.equal(result.keychainRestored, true);
+  });
+
+  it('load() restores a legacy snapshot missing a tier field', () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({}));
+    fs.writeFileSync(path.join(accDir, 'a@example.com.json'), JSON.stringify({
+      emailAddress: 'a@example.com',
+      accountUuid: 'uuid-A', // no org tier
+      _keychain: { claudeAiOauth: { accessToken: 'tok-A', refreshToken: 'r-A', expiresAt: 1 /* no token tier */ } },
+    }));
+    const result = load('a@example.com', claudeJson, accDir, { credentials: fakeCreds() });
+    assert.equal(result.keychainRestored, true);
+  });
+});

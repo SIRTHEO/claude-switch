@@ -79,6 +79,38 @@ export function save(
 
   // Include Keychain credentials so they can be restored when switching back.
   const keychainData = keychainDisabled ? null : credentials.readOAuth();
+
+  // Tier guard — defence in depth against the snapshot-token-tier-mismatch
+  // class. Anthropic stamps the plan tier into BOTH the active account identity
+  // (oauthAccount.organizationRateLimitTier) and the live token (rateLimitTier).
+  // If they disagree, ~/.claude.json's label and the live credentials belong to
+  // different accounts, so capturing now would file the wrong account's token
+  // under `email` — the exact seed of the bug the label guard above can't see
+  // (it compares two labels, not a label against the actual token). Refuse
+  // loudly instead of baking in the corruption. Both tiers must be present and
+  // unambiguously differ; a legacy login missing either field falls through to
+  // the existing behaviour so a genuine switch is never blocked. Tier separates
+  // plans (5x / 20x / pro), not same-tier accounts — a same-tier mix-up still
+  // passes here (the token carries no account id; only a network check could).
+  if (keychainData) {
+    const liveTokenTier = keychainData.claudeAiOauth?.rateLimitTier;
+    const activeAccountTier = (data.oauthAccount as { organizationRateLimitTier?: unknown } | undefined)
+      ?.organizationRateLimitTier;
+    if (
+      typeof liveTokenTier === 'string' && liveTokenTier &&
+      typeof activeAccountTier === 'string' && activeAccountTier &&
+      liveTokenTier !== activeAccountTier
+    ) {
+      throw new Error(
+        `Refusing to save snapshot for ${email}: the live login token is a ` +
+        `'${liveTokenTier}' plan but the active account is '${activeAccountTier}' — ` +
+        `the token belongs to a different account. Re-authenticate ${email} ` +
+        `(switch to it and log in again) before saving (see ` +
+        `\`claude switch doctor\`: active-token-tier-mismatch).`,
+      );
+    }
+  }
+
   const accountPayload: AccountSnapshot = { ...(data.oauthAccount || {}) };
   if (keychainData) {
     accountPayload._keychain = keychainData;

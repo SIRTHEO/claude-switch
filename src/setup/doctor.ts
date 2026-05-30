@@ -27,6 +27,15 @@ export interface DoctorSnapshotView {
   accessToken?: string;
   /** _capturedFrom.accountUuid (provenance stamp), when present. */
   capturedFromAccountUuid?: string;
+  /** organizationRateLimitTier from the snapshot identity — the account's own
+   *  plan tier (e.g. 'default_claude_max_5x'), as issued by Anthropic. */
+  accountTier?: string;
+  /** _keychain.claudeAiOauth.rateLimitTier — the plan tier embedded in the
+   *  SAVED token. Must equal accountTier; a mismatch means the snapshot holds a
+   *  different account's token. Label-independent (neither value is chosen by
+   *  claude-switch — both are issued by Anthropic), so it catches corruption
+   *  that the accountUuid/_capturedFrom fields agree on but are wrong about. */
+  tokenTier?: string;
 }
 
 /** Per-account usage-cache view doctor needs. */
@@ -44,6 +53,14 @@ export interface DoctorInput {
   keychainItemPresent: boolean;
   /** Clock injection for the rate-limit check. */
   now: number;
+  /** organizationRateLimitTier of the ACTIVE account (from ~/.claude.json
+   *  oauthAccount) — the plan the live label claims to be. */
+  activeAccountTier?: string;
+  /** rateLimitTier embedded in the LIVE credential token (.credentials.json /
+   *  Keychain). Must equal activeAccountTier; a mismatch means the running
+   *  session is authenticated as (and billing) a different account than the
+   *  label shows. */
+  liveTokenTier?: string;
 }
 
 const SEVERITY_RANK: Record<DoctorSeverity, number> = { ok: 0, warn: 1, error: 2 };
@@ -53,6 +70,12 @@ function worst(findings: DoctorFinding[]): DoctorSeverity {
     (acc, f) => (SEVERITY_RANK[f.severity] > SEVERITY_RANK[acc] ? f.severity : acc),
     'ok',
   );
+}
+
+/** Human-readable plan label from an Anthropic tier id
+ *  (e.g. 'default_claude_max_5x' → 'max 5x'). */
+function planLabel(tier: string): string {
+  return tier.replace(/^default_claude_/, '').replace(/_/g, ' ') || tier;
 }
 
 /**
@@ -84,7 +107,7 @@ export function diagnose(input: DoctorInput): DoctorReport {
     }
   }
 
-  // --- snapshot-provenance-mismatch -----------------------------------------
+  // --- snapshot-provenance-mismatch + snapshot-token-tier-mismatch ----------
   for (const s of input.snapshots) {
     if (
       s.accountUuid &&
@@ -98,6 +121,48 @@ export function diagnose(input: DoctorInput): DoctorReport {
         fixable: true,
       });
     }
+
+    // The plan tier is issued by Anthropic into BOTH the account identity
+    // (organizationRateLimitTier) and the OAuth token (rateLimitTier). If the
+    // saved token's tier disagrees with the snapshot's own account tier, the
+    // snapshot holds a different account's token — even when accountUuid and
+    // _capturedFrom are internally consistent (the exact hole that let a 5x
+    // account file a 20x token undetected). Both fields must be present to
+    // compare: a legacy snapshot lacking either is left untouched.
+    if (s.accountTier && s.tokenTier && s.accountTier !== s.tokenTier) {
+      findings.push({
+        code: 'snapshot-token-tier-mismatch',
+        severity: 'error',
+        message: `Saved login for ${s.email} holds a token from a different plan (token=${planLabel(s.tokenTier)}, account=${planLabel(s.accountTier)}) — it belongs to another account. Run with --fix to clear it, then re-login ${s.email}.`,
+        fixable: true,
+      });
+    }
+  }
+
+  // --- active-token-tier-mismatch -------------------------------------------
+  // Same tier invariant applied to the LIVE session: if the active account's
+  // tier disagrees with the live token's tier, the running session is signed
+  // in as (and billing) a different account than the label shows. This is the
+  // loudest, most user-facing signal — it fires even when every snapshot is
+  // internally consistent.
+  //
+  // Caveat: tier distinguishes plans (5x / 20x / pro), NOT same-tier accounts.
+  // Two same-tier accounts mislabelled would pass every local check — the token
+  // is opaque and carries no account id, so a same-tier swap can only be caught
+  // by a network identity check. NOT auto-fixable: doctor must never clear a
+  // live session's credentials; the user re-authenticates the account.
+  if (
+    input.activeAccountTier &&
+    input.liveTokenTier &&
+    input.activeAccountTier !== input.liveTokenTier
+  ) {
+    const who = input.activeAccount ?? 'the active account';
+    findings.push({
+      code: 'active-token-tier-mismatch',
+      severity: 'error',
+      message: `Active session is mislabelled: ${who} is a ${planLabel(input.activeAccountTier)} plan, but the live login token is a ${planLabel(input.liveTokenTier)} plan — you are signed in (and billing) a DIFFERENT account than the label shows. Re-authenticate ${who}: switch to it and log in again. (--fix cannot touch a live session.)`,
+      fixable: false,
+    });
   }
 
   // --- usage-rate-limited ---------------------------------------------------

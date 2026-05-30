@@ -126,3 +126,62 @@ describe('diagnose', () => {
     assert.ok(r.findings.length >= 3);
   });
 });
+
+describe('diagnose — tier mismatch (token plan vs account plan)', () => {
+  it('flags a snapshot whose token tier differs from its account tier', () => {
+    const r = diagnose(base({
+      snapshots: [
+        // 5x account holding a 20x token = a different account's token.
+        { email: 'a@x.com', accountTier: 'default_claude_max_5x', tokenTier: 'default_claude_max_20x' },
+      ],
+    }));
+    const f = r.findings.find(x => x.code === 'snapshot-token-tier-mismatch');
+    assert.ok(f);
+    assert.equal(f.severity, 'error');
+    assert.equal(f.fixable, true);
+    assert.match(f.message, /max 20x/);
+    assert.match(f.message, /max 5x/);
+    assert.equal(r.status, 'error');
+  });
+
+  it('does NOT flag a snapshot whose token tier matches its account tier', () => {
+    const r = diagnose(base({
+      snapshots: [
+        { email: 'a@x.com', accountTier: 'default_claude_max_20x', tokenTier: 'default_claude_max_20x' },
+      ],
+    }));
+    assert.equal(r.findings.filter(f => f.code === 'snapshot-token-tier-mismatch').length, 0);
+  });
+
+  it('does NOT flag a legacy snapshot missing either tier field', () => {
+    const r = diagnose(base({
+      snapshots: [
+        { email: 'a@x.com', tokenTier: 'default_claude_max_20x' }, // no accountTier
+        { email: 'b@x.com', accountTier: 'default_claude_max_5x' }, // no tokenTier
+        { email: 'c@x.com' }, // neither
+      ],
+    }));
+    assert.equal(r.findings.filter(f => f.code === 'snapshot-token-tier-mismatch').length, 0);
+  });
+
+  it('flags an active session whose live token tier differs from the account tier (not fixable)', () => {
+    const r = diagnose(base({
+      activeAccount: 'a@x.com',
+      activeAccountTier: 'default_claude_max_5x',
+      liveTokenTier: 'default_claude_max_20x',
+    }));
+    const f = r.findings.find(x => x.code === 'active-token-tier-mismatch');
+    assert.ok(f);
+    assert.equal(f.severity, 'error');
+    assert.equal(f.fixable, false); // doctor must never clear a live session
+    assert.match(f.message, /a@x\.com/);
+    assert.match(f.message, /DIFFERENT account/);
+  });
+
+  it('does NOT flag the active session when tiers match or either is missing', () => {
+    const match = diagnose(base({ activeAccountTier: 'default_claude_max_20x', liveTokenTier: 'default_claude_max_20x' }));
+    assert.equal(match.findings.filter(f => f.code === 'active-token-tier-mismatch').length, 0);
+    const partial = diagnose(base({ activeAccountTier: 'default_claude_max_5x' /* no liveTokenTier */ }));
+    assert.equal(partial.findings.filter(f => f.code === 'active-token-tier-mismatch').length, 0);
+  });
+});

@@ -8,52 +8,7 @@ import type { KeychainData } from '../credentials/keychain.js';
 import { writeJsonAtomic } from '../platform/atomic-write.js';
 import { type AccountRepository, fsAccountRepo } from './account-repository.js';
 import { type CredentialStore, defaultCredentialStore } from '../credentials/credential-store.js';
-
-/**
- * Scan every other snapshot in `accountsDirPath` for one whose
- * `_keychain.claudeAiOauth.accessToken` matches `accessToken`. Returns the
- * list of colliding emails (empty when healthy). OAuth access tokens are
- * server-issued and account-bound, so a non-empty result is always a sign
- * of snapshot corruption — see the 2026-05-22 report.
- *
- * Reads via `repo.list` + `repo.read` to keep the dependency surface narrow
- * (no fs touch beyond the repository) and to bypass `list()`'s
- * legacy-email stderr warning. Read failures on a single sibling are
- * tolerated: we treat the file as "no recognisable token" rather than
- * abort the whole collision check.
- */
-function findSnapshotsSharingAccessToken(
-  email: string,
-  accountsDirPath: string,
-  accessToken: string,
-  repo: AccountRepository,
-): string[] {
-  let files: string[];
-  try {
-    files = repo.list(accountsDirPath);
-  } catch { // accounts dir absent/unreadable → no other accounts
-    return [];
-  }
-  const out: string[] = [];
-  for (const file of files) {
-    if (!file.endsWith('.json') || file.startsWith('.') || file === 'aliases.json') continue;
-    const otherEmail = file.replace(/\.json$/, '');
-    if (otherEmail === email) continue;
-    let other: unknown;
-    try {
-      other = repo.read(otherEmail, accountsDirPath);
-    } catch { // unreadable/corrupt sibling account → skip it
-      continue;
-    }
-    const otherToken = (
-      other as { _keychain?: { claudeAiOauth?: { accessToken?: unknown } } } | null
-    )?._keychain?.claudeAiOauth?.accessToken;
-    if (typeof otherToken === 'string' && otherToken === accessToken) {
-      out.push(otherEmail);
-    }
-  }
-  return out;
-}
+import { findSnapshotsSharingAccessToken } from './accounts-snapshot-integrity.js';
 
 export function load(
   email: string,
@@ -137,9 +92,36 @@ export function load(
       `corruption will clear on the next swap.\n`,
     );
   }
+  // Tier guard — load-side defence in depth. Anthropic stamps the plan tier
+  // into both the snapshot's account identity (organizationRateLimitTier) and
+  // its saved token (rateLimitTier). If they disagree the snapshot holds a
+  // different account's token (the snapshot-token-tier-mismatch class), and
+  // restoring it would put a wrong-account token live under this email —
+  // silently billing the other account. Skip the restore so the user logs in
+  // once and save() re-captures the correct token. Both tiers must be present
+  // and differ; a legacy snapshot missing either falls through (never blocks a
+  // real swap). Tier separates plans, not same-tier accounts.
+  const snapshotTier = (oauthAccount as { organizationRateLimitTier?: unknown }).organizationRateLimitTier;
+  const tokenTier = (
+    _keychain as { claudeAiOauth?: { rateLimitTier?: unknown } } | null | undefined
+  )?.claudeAiOauth?.rateLimitTier;
+  const tierPoisoned = typeof snapshotTier === 'string'
+    && typeof tokenTier === 'string'
+    && snapshotTier !== ''
+    && tokenTier !== ''
+    && snapshotTier !== tokenTier;
+  if (tierPoisoned) {
+    process.stderr.write(
+      `claude-switch: snapshot for ${email} holds a '${tokenTier as string}' token but ` +
+      `the account is '${snapshotTier as string}' — the token belongs to a different ` +
+      `account. Skipping Keychain restore; you will be asked to log in once and the ` +
+      `corruption will clear on the next save.\n`,
+    );
+  }
   const keychainRestored = !!(_keychain && typeof _keychain === 'object')
     && collisionEmails.length === 0
-    && !provenancePoisoned;
+    && !provenancePoisoned
+    && !tierPoisoned;
 
   // Silent-billing leak prevention.
   //

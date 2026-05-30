@@ -24,15 +24,18 @@ interface DoctorOptions {
 
 /** Pull the doctor-relevant fields out of a parsed snapshot. */
 function snapshotView(email: string, raw: Record<string, unknown> | null): DoctorSnapshotView {
-  const kc = (raw?._keychain as { claudeAiOauth?: { accessToken?: unknown } } | undefined)
-    ?.claudeAiOauth?.accessToken;
+  const oauth = (raw?._keychain as { claudeAiOauth?: { accessToken?: unknown; rateLimitTier?: unknown } } | undefined)
+    ?.claudeAiOauth;
   const accountUuid = raw?.accountUuid;
   const capturedFrom = (raw?._capturedFrom as { accountUuid?: unknown } | undefined)?.accountUuid;
+  const accountTier = raw?.organizationRateLimitTier;
   return {
     email,
     accountUuid: typeof accountUuid === 'string' ? accountUuid : undefined,
-    accessToken: typeof kc === 'string' ? kc : undefined,
+    accessToken: typeof oauth?.accessToken === 'string' ? oauth.accessToken : undefined,
     capturedFromAccountUuid: typeof capturedFrom === 'string' ? capturedFrom : undefined,
+    accountTier: typeof accountTier === 'string' ? accountTier : undefined,
+    tokenTier: typeof oauth?.rateLimitTier === 'string' ? oauth.rateLimitTier : undefined,
   };
 }
 
@@ -92,6 +95,39 @@ function keychainItemPresent(): boolean {
   return false;
 }
 
+/** Read the live plan tiers prompt-free from on-disk config + the file vault.
+ *  `activeAccountTier` is the active account's own tier (~/.claude.json
+ *  oauthAccount); `liveTokenTier` is the tier embedded in the live token in the
+ *  file-vault `.credentials.json` next to it. Read the file DIRECTLY (not via
+ *  the CredentialStore) so a Keychain-backed store can never raise a password
+ *  prompt — doctor is polled by the GUI every 60s and must stay silent. In a
+ *  Keychain-only setup the file is absent and `liveTokenTier` stays undefined,
+ *  so the active-tier check simply doesn't fire (legacy/degrade-safe). */
+function readLiveTiers(claudeJsonPath: string): { activeAccountTier?: string; liveTokenTier?: string } {
+  let activeAccountTier: string | undefined;
+  try {
+    const cj = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8')) as {
+      oauthAccount?: { organizationRateLimitTier?: unknown };
+    };
+    if (typeof cj.oauthAccount?.organizationRateLimitTier === 'string') {
+      activeAccountTier = cj.oauthAccount.organizationRateLimitTier;
+    }
+  } catch { /* missing/corrupt claude.json → no active tier to compare */ }
+
+  let liveTokenTier: string | undefined;
+  try {
+    const credFile = path.join(path.dirname(claudeJsonPath), '.claude', '.credentials.json');
+    const cred = JSON.parse(fs.readFileSync(credFile, 'utf-8')) as {
+      claudeAiOauth?: { rateLimitTier?: unknown };
+    };
+    if (typeof cred.claudeAiOauth?.rateLimitTier === 'string') {
+      liveTokenTier = cred.claudeAiOauth.rateLimitTier;
+    }
+  } catch { /* no file-vault creds (Keychain-only / logged out) → no live tier */ }
+
+  return { activeAccountTier, liveTokenTier };
+}
+
 /** Build the report from live on-disk state. */
 function buildReport(claudeJsonPath: string, accountsDirPath: string, now: number): {
   report: DoctorReport;
@@ -106,12 +142,15 @@ function buildReport(claudeJsonPath: string, accountsDirPath: string, now: numbe
   const emails = listAccounts(accountsDirPath);
   const snapshots = emails.map(e => snapshotView(e, fsAccountRepo.read(e, accountsDirPath)));
   const { views, files } = readUsageViews(accountsDirPath, emails);
+  const { activeAccountTier, liveTokenTier } = readLiveTiers(claudeJsonPath);
   const report = diagnose({
     activeAccount: active,
     snapshots,
     usage: views,
     keychainItemPresent: keychainItemPresent(),
     now,
+    activeAccountTier,
+    liveTokenTier,
   });
   return { report, rateLimitedCacheFiles: files };
 }
@@ -132,7 +171,11 @@ function applyFix(
   const actions: string[] = [];
   const codes = new Set(report.findings.map(f => f.code));
 
-  if (codes.has('snapshot-token-collision') || codes.has('snapshot-provenance-mismatch')) {
+  if (
+    codes.has('snapshot-token-collision') ||
+    codes.has('snapshot-provenance-mismatch') ||
+    codes.has('snapshot-token-tier-mismatch')
+  ) {
     // Strip token cache from EVERY snapshot — safe and simple: tokens are
     // regenerable on next login, and a partial strip could leave a residual
     // collision. The active account repopulates on the next reconcile; others
