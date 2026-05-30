@@ -20,6 +20,7 @@ import {
   getAccessTokenFromKeychain,
 } from '../usage/usage.js';
 import { findClaudeBinary } from '../setup/find-claude.js';
+import { markSessionLive } from '../sessions/session-registry.js';
 import { getTokenHealth } from '../credentials/token.js';
 import { reAuthenticate } from '../switching/switcher.js';
 import { buildSpawnArgs } from '../proxy/proxy.js';
@@ -214,6 +215,15 @@ async function handleSwitched(
       return { kind: 'error', text: e instanceof Error ? e.message : String(e) };
     }
   }
+
+  // Record the launch in the live-session registry. `extraEnv` carries
+  // CLAUDE_CONFIG_DIR only for the default-isolated path; otherwise this is a
+  // global-bound session. Best-effort; prune-on-read reclaims it on exit.
+  markSessionLive(accountsDirPath, {
+    account: payload.switchedTo,
+    configDir: extraEnv?.CLAUDE_CONFIG_DIR ?? null,
+    cwd: process.cwd(),
+  });
 
   const { command, args, options } = buildSpawnArgs(bin, [], process.platform, extraEnv);
   const result = nodeProcessAdapter.spawnSync(command, args, options);

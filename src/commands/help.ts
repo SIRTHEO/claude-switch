@@ -31,6 +31,9 @@ Usage:
   claude switch doctor [--json] [--fix]  Check credential-store health (token
                                          collisions, stale usage cache); --fix
                                          clears poisoned tokens so re-login is clean
+  claude switch sessions [--json]        List live claude sessions (account,
+                                         isolated/global, cwd); warns when two
+                                         accounts run global-bound at once
   claude switch statusline [opts]        One-line account/mode for shell prompt
                                          opts: --full | --json | --no-color
   claude switch statusline install       Add badge to Claude Code status bar

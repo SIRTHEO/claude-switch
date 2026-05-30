@@ -32,6 +32,7 @@ import {
   maybeInitSmartFallback,
 } from '../fallback/auto-fallback.js';
 import { readUsageCacheForAccount } from '../usage/usage.js';
+import { recordPassthroughSession, runIsolatedOrRefuse } from './passthrough-session.js';
 import { startFallbackProxy } from '../proxy/api-proxy.js';
 import { resolveAccountPrefs, resolveEffectiveAuthMode } from '../switching/preferences.js';
 import { findClaude } from './_helpers.js';
@@ -117,6 +118,13 @@ export async function handlePassthrough(
       savedEmails: accounts,
     });
 
+    // 28.4 — token-mixing prevention short-circuits the rest of the snapshot:
+    // auto-disable / auto-engage below act on the GLOBAL account, but when we
+    // launch the target isolated (or refuse) we are NOT running the global one.
+    if (routing.conflictRefusal || routing.launchIsolated) {
+      return { kind: 'isolate' as const, routing };
+    }
+
     const e = routing.flipped ? routing.decision!.email : initial;
     if (!e) return null;
 
@@ -133,6 +141,7 @@ export async function handlePassthrough(
     // >= engageThreshold simultaneously).
     const engage = maybeAutoEngageFallback(accountsDirPath, claudeJsonPath);
     return {
+      kind: 'run' as const,
       email: e,
       wasUnsaved,
       auto,
@@ -144,7 +153,19 @@ export async function handlePassthrough(
   if (!snapshot) {
     throw new ExitError('No account connected. Run: claude switch add');
   }
+
+  // 28.4 — routing chose isolation (or refused) to avoid a token clash; this
+  // either spawns the target's overlay isolated (never returns) or throws.
+  if (snapshot.kind === 'isolate') {
+    runIsolatedOrRefuse(snapshot.routing, claudeBin, passthroughArgs, accountsDirPath, runClaude);
+    return;
+  }
+
   const { email, wasUnsaved, auto, engage, extraEnv, routing } = snapshot;
+
+  // Record in the live-session registry (best-effort): lets a concurrent routing
+  // swap detect a global-bound clash, and `claude switch sessions` show it.
+  recordPassthroughSession(accountsDirPath, email, process.env.CLAUDE_CONFIG_DIR ?? null);
 
   // Routing banners — emitted BEFORE the standard "🔑 <email>" banner so
   // the user sees the cause-and-effect chain.

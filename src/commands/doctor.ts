@@ -15,6 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { getCurrent, list as listAccounts } from '../accounts/accounts.js';
 import { fsAccountRepo } from '../accounts/account-repository.js';
 import { diagnose, type DoctorSnapshotView, type DoctorUsageView } from '../setup/doctor.js';
+import { globalBoundSessions, listLiveSessions } from '../sessions/session-registry.js';
 import type { DoctorReport } from '../contract.js';
 
 interface DoctorOptions {
@@ -143,6 +144,11 @@ function buildReport(claudeJsonPath: string, accountsDirPath: string, now: numbe
   const snapshots = emails.map(e => snapshotView(e, fsAccountRepo.read(e, accountsDirPath)));
   const { views, files } = readUsageViews(accountsDirPath, emails);
   const { activeAccountTier, liveTokenTier } = readLiveTiers(claudeJsonPath);
+  // Live-session registry (offline, prune-on-read): the accounts running
+  // global-bound right now. Two or more distinct = token mixing in progress.
+  const globalBoundLiveAccounts = globalBoundSessions(listLiveSessions(accountsDirPath))
+    .map((s) => s.account)
+    .filter((a): a is string => a !== null);
   const report = diagnose({
     activeAccount: active,
     snapshots,
@@ -151,6 +157,7 @@ function buildReport(claudeJsonPath: string, accountsDirPath: string, now: numbe
     now,
     activeAccountTier,
     liveTokenTier,
+    globalBoundLiveAccounts,
   });
   return { report, rateLimitedCacheFiles: files };
 }

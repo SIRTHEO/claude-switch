@@ -49,6 +49,7 @@ import { handleRouteAdd, handleRouteList, handleRouteRemove, handleRouteTest } f
 import { handlePassthrough } from '../src/commands/passthrough.js';
 import { handleCacheHealth } from '../src/commands/cache-health.js';
 import { handleDoctor } from '../src/commands/doctor.js';
+import { handleSessions } from '../src/commands/sessions.js';
 import { askYN } from '../src/commands/_helpers.js';
 import type { CommandContext } from '../src/commands/context.js';
 
@@ -104,6 +105,7 @@ export type Command =
   | { action: 'dashboard' }
   | { action: 'cache-health'; sessionPath: string | undefined; json: boolean }
   | { action: 'doctor'; json: boolean; fix: boolean }
+  | { action: 'sessions'; json: boolean }
   | { action: 'terminals'; json: boolean }
   | { action: 'profile-launch'; name: string; terminal: string };
 
@@ -459,6 +461,8 @@ export function parseCommand(args: string[]): Command {
     }
     case 'doctor':
       return { action: 'doctor', json: args.includes('--json'), fix: args.includes('--fix') };
+    case 'sessions':
+      return { action: 'sessions', json: args.includes('--json') };
     case 'terminals': return { action: 'terminals', json: args.includes('--json') };
     default: return { action: 'switch-to', target: sub };
   }
@@ -712,6 +716,10 @@ async function main(): Promise<void> {
 
     case 'doctor':
       handleDoctor({ claudeJsonPath: cJson, accountsDirPath: aDir }, { json: cmd.json, fix: cmd.fix });
+      break;
+
+    case 'sessions':
+      handleSessions({ accountsDirPath: aDir }, { json: cmd.json });
       break;
 
     case 'passthrough':

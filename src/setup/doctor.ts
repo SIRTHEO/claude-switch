@@ -61,6 +61,11 @@ export interface DoctorInput {
    *  session is authenticated as (and billing) a different account than the
    *  label shows. */
   liveTokenTier?: string;
+  /** Distinct accounts running GLOBAL-bound (no CLAUDE_CONFIG_DIR) right now,
+   *  from the live-session registry. Two or more = token mixing IN PROGRESS:
+   *  they share `~/.claude/.credentials.json` and one's refresh invalidates the
+   *  other's. Offline signal (no network), safe on the 60s GUI poll. */
+  globalBoundLiveAccounts?: string[];
 }
 
 const SEVERITY_RANK: Record<DoctorSeverity, number> = { ok: 0, warn: 1, error: 2 };
@@ -161,6 +166,28 @@ export function diagnose(input: DoctorInput): DoctorReport {
       code: 'active-token-tier-mismatch',
       severity: 'error',
       message: `Active session is mislabelled: ${who} is a ${planLabel(input.activeAccountTier)} plan, but the live login token is a ${planLabel(input.liveTokenTier)} plan — you are signed in (and billing) a DIFFERENT account than the label shows. Re-authenticate ${who}: switch to it and log in again. (--fix cannot touch a live session.)`,
+      fixable: false,
+    });
+  }
+
+  // --- live-account-mixing --------------------------------------------------
+  // Two or more DIFFERENT accounts running global-bound at the same time share
+  // the one `~/.claude/.credentials.json`: each session's internal token
+  // refresh rotates the shared refresh_token, invalidating the others ("one
+  // token good, the other bad" → /login). This is mixing happening NOW, caught
+  // from the live-session registry — offline, so it stays on the silent poll
+  // path. Not auto-fixable: doctor must never kill a live session; the user
+  // relaunches the extra account(s) isolated (a profile/overlay).
+  const distinctGlobal = [...new Set(input.globalBoundLiveAccounts ?? [])].sort();
+  if (distinctGlobal.length > 1) {
+    findings.push({
+      code: 'live-account-mixing',
+      severity: 'error',
+      message:
+        `${distinctGlobal.length} accounts are running at once on the shared global login ` +
+        `(${distinctGlobal.join(', ')}). They overwrite each other's tokens — a session will ` +
+        `drop to "Please run /login". Relaunch all but one isolated: open each extra account ` +
+        `via its profile/overlay (\`claude switch sessions\` shows them).`,
       fixable: false,
     });
   }

@@ -9,6 +9,7 @@ import { fuzzyMatch, runTemporarySwitch } from '../switching/switcher.js';
 import { resolveAlias } from '../switching/aliases.js';
 import { list as listAccounts } from '../accounts/accounts.js';
 import { fallbackEnvFor } from '../fallback/fallback-env.js';
+import { markSessionLive } from '../sessions/session-registry.js';
 import { findClaude } from './_helpers.js';
 import type { CommandContext } from './context.js';
 
@@ -40,6 +41,11 @@ export async function handleTemporarySwitch(
   if (extraEnv) {
     process.stderr.write(`(fallback on — using saved API key for ${matched})\n\n`);
   }
+  // `--as` swaps the GLOBAL active account for one session, so it is
+  // global-bound (configDir null) — exactly the shape a concurrent routed swap
+  // can corrupt. Record it best-effort; prune-on-read reclaims it on exit.
+  markSessionLive(ctx.accountsDirPath, { account: matched, configDir: null, cwd: process.cwd() });
+
   // runTemporarySwitch handles save/restore (incl. Keychain), SIGINT, never returns.
   await runTemporarySwitch(claudeBin, matched, args, ctx.claudeJsonPath, ctx.accountsDirPath, extraEnv);
 }

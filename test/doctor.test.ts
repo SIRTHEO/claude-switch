@@ -185,3 +185,30 @@ describe('diagnose — tier mismatch (token plan vs account plan)', () => {
     assert.equal(partial.findings.filter(f => f.code === 'active-token-tier-mismatch').length, 0);
   });
 });
+
+describe('diagnose — live-account-mixing (concurrent global-bound sessions)', () => {
+  it('flags two different accounts running global-bound at once', () => {
+    const r = diagnose(base({ globalBoundLiveAccounts: ['a@x.com', 'b@x.com'] }));
+    const f = r.findings.find(x => x.code === 'live-account-mixing');
+    assert.ok(f);
+    assert.equal(f.severity, 'error');
+    assert.equal(f.fixable, false); // never kill a live session
+    assert.match(f.message, /a@x\.com, b@x\.com/);
+    assert.equal(r.status, 'error');
+  });
+
+  it('does NOT flag the same account running twice global-bound', () => {
+    const r = diagnose(base({ globalBoundLiveAccounts: ['a@x.com', 'a@x.com'] }));
+    assert.equal(r.findings.filter(f => f.code === 'live-account-mixing').length, 0);
+  });
+
+  it('does NOT flag a single global-bound session', () => {
+    const r = diagnose(base({ globalBoundLiveAccounts: ['a@x.com'] }));
+    assert.equal(r.findings.filter(f => f.code === 'live-account-mixing').length, 0);
+  });
+
+  it('does NOT flag when the field is absent (legacy/degrade-safe)', () => {
+    const r = diagnose(base({}));
+    assert.equal(r.findings.filter(f => f.code === 'live-account-mixing').length, 0);
+  });
+});

@@ -272,6 +272,7 @@ Not a claude-switch bug. Known issues in the Claude Code client / Anthropic bill
 | `claude` not found after install | Open a new terminal. Still broken: `claude switch setup` |
 | `Token: ✗ expired` in the dashboard | Highlight the row, press `c` (re-authenticate) |
 | Swap says "no saved credentials" / statusline numbers look frozen | Run `claude switch doctor` to find the problem (e.g. two accounts sharing a login, or a stuck usage cache), then `claude switch doctor --fix` and log in again on the affected account |
+| A session keeps getting logged out / "Please run /login" with two accounts open | Run `claude switch sessions` — if it warns that two accounts are running "global-bound" at once, they share one login file and overwrite each other's token. Launch the second account isolated (a profile) instead |
 | Fallback on but Claude still uses OAuth | First time Claude Code sees a new key it asks `Use this API key? [y/N]`, press **y** |
 | Usage stats show nothing | Available for Max/Pro subscribers only |
 | Unsure whether claude is billed via OAuth or API key | [SECURITY.md, Silent API-key risk](SECURITY.md#silent-api-key-risk-claudejson-snapshot-leak): 3 `jq` commands to verify |

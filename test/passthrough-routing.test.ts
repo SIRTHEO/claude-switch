@@ -82,11 +82,32 @@ function baseInput(f: Fixture, email: string | null, saved: string[]): RoutingFo
 const savedHomeInitial: SavedHome = { HOME: process.env['HOME'], USERPROFILE: process.env['USERPROFILE'] };
 const ORIGINAL_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
 const ORIGINAL_SWITCH_ACCOUNT = process.env.CLAUDE_SWITCH_ACCOUNT;
+const ORIGINAL_FORCE_SWAP = process.env.CLAUDE_SWITCH_FORCE_SWAP;
+
+/** Seed a live, GLOBAL-bound session for `account` using this test process's
+ *  pid (always alive, so listLiveSessions' real isProcessAlive keeps it). */
+function seedLiveGlobalSession(f: Fixture, account: string): void {
+  writeFile(
+    path.join(f.accountsDir, '.sessions.json'),
+    JSON.stringify([
+      { pid: process.pid, account, configDir: null, isolated: false, cwd: f.repo, startedAt: 1 },
+    ]),
+  );
+}
+
+/** Create a logged-in overlay profile for `email` under the fake home. */
+function createOverlay(f: Fixture, profileName: string, email: string): string {
+  const dir = mkdir(path.join(f.home, '.claude', 'profiles', profileName));
+  fs.writeFileSync(path.join(dir, '.cs-overlay'), '');
+  writeFile(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: email } }));
+  return dir;
+}
 
 describe('resolveRoutingForPassthrough', () => {
   beforeEach(() => {
     delete process.env.CLAUDE_CONFIG_DIR;
     delete process.env.CLAUDE_SWITCH_ACCOUNT;
+    delete process.env.CLAUDE_SWITCH_FORCE_SWAP;
   });
 
   before(() => {
@@ -98,6 +119,7 @@ describe('resolveRoutingForPassthrough', () => {
     restoreFakeHome(savedHomeInitial);
     if (ORIGINAL_CONFIG_DIR !== undefined) process.env.CLAUDE_CONFIG_DIR = ORIGINAL_CONFIG_DIR;
     if (ORIGINAL_SWITCH_ACCOUNT !== undefined) process.env.CLAUDE_SWITCH_ACCOUNT = ORIGINAL_SWITCH_ACCOUNT;
+    if (ORIGINAL_FORCE_SWAP !== undefined) process.env.CLAUDE_SWITCH_FORCE_SWAP = ORIGINAL_FORCE_SWAP;
   });
 
   it('returns null decision when no routing source matches', () => {
@@ -238,5 +260,98 @@ describe('resolveRoutingForPassthrough', () => {
       baseInput(f, 'alice@acme.com', ['personal@gmail.com', 'alice@acme.com', 'bob@acme.com']),
     );
     assert.equal(r2.flipped, false);
+  });
+
+  // ── 28.4 — token-mixing prevention ──────────────────────────────────────
+
+  it('launches isolated (no global swap) when a swap would clash and an overlay is ready', () => {
+    const f = setupFixture('conflict-overlay', {
+      activeEmail: 'personal@gmail.com',
+      savedEmails: ['personal@gmail.com', 'theo@acme.com'],
+    });
+    setFakeHome(f.home);
+    writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
+    seedLiveGlobalSession(f, 'personal@gmail.com'); // another account live global-bound
+    const overlayDir = createOverlay(f, 'acme-overlay', 'theo@acme.com');
+
+    const r = resolveRoutingForPassthrough(
+      baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
+    );
+    assert.equal(r.flipped, false);
+    assert.deepEqual(r.launchIsolated, { email: 'theo@acme.com', configDir: overlayDir });
+    assert.match(r.launchIsolatedBanner ?? '', /isolated/);
+    // The global active was NOT swapped — the live session keeps its token.
+    assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
+  });
+
+  it('refuses the swap when it would clash and no overlay exists', () => {
+    const f = setupFixture('conflict-no-overlay', {
+      activeEmail: 'personal@gmail.com',
+      savedEmails: ['personal@gmail.com', 'theo@acme.com'],
+    });
+    setFakeHome(f.home);
+    writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
+    seedLiveGlobalSession(f, 'personal@gmail.com');
+
+    const r = resolveRoutingForPassthrough(
+      baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
+    );
+    assert.equal(r.flipped, false);
+    assert.equal(r.launchIsolated, undefined);
+    assert.match(r.conflictRefusal ?? '', /Refusing to switch to theo@acme\.com/);
+    assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
+  });
+
+  it('CLAUDE_SWITCH_FORCE_SWAP=1 overrides the clash guard and swaps anyway', () => {
+    const f = setupFixture('conflict-force', {
+      activeEmail: 'personal@gmail.com',
+      savedEmails: ['personal@gmail.com', 'theo@acme.com'],
+    });
+    setFakeHome(f.home);
+    writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
+    seedLiveGlobalSession(f, 'personal@gmail.com');
+    process.env.CLAUDE_SWITCH_FORCE_SWAP = '1';
+
+    const r = resolveRoutingForPassthrough(
+      baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
+    );
+    assert.equal(r.flipped, true);
+    assert.equal(r.conflictRefusal, undefined);
+    assert.equal(getCurrent(f.claudeJson), 'theo@acme.com');
+  });
+
+  it('does NOT treat a live session of the SAME target account as a clash', () => {
+    const f = setupFixture('same-account-live', {
+      activeEmail: 'personal@gmail.com',
+      savedEmails: ['personal@gmail.com', 'theo@acme.com'],
+    });
+    setFakeHome(f.home);
+    writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
+    seedLiveGlobalSession(f, 'theo@acme.com'); // the live session IS the target
+
+    const r = resolveRoutingForPassthrough(
+      baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
+    );
+    assert.equal(r.flipped, true); // swapping to the already-live account is safe
+    assert.equal(getCurrent(f.claudeJson), 'theo@acme.com');
+  });
+
+  it('defaultIsolated launches the overlay isolated even with no live clash', () => {
+    const f = setupFixture('isolated-overlay', {
+      activeEmail: 'personal@gmail.com',
+      savedEmails: ['personal@gmail.com', 'theo@acme.com'],
+    });
+    setFakeHome(f.home);
+    writeStoredAccountPrefs('theo@acme.com', f.accountsDir, { defaultIsolated: true });
+    writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
+    const overlayDir = createOverlay(f, 'acme-overlay', 'theo@acme.com');
+
+    const r = resolveRoutingForPassthrough(
+      baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
+    );
+    assert.equal(r.flipped, false);
+    assert.deepEqual(r.launchIsolated, { email: 'theo@acme.com', configDir: overlayDir });
+    assert.match(r.launchIsolatedBanner ?? '', /always isolated/);
+    assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
   });
 });

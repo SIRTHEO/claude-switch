@@ -22,7 +22,7 @@ function lockFilePath(accountsDirPath: string): string {
   return path.join(accountsDirPath, '.lock');
 }
 
-function isProcessAlive(pid: number): boolean {
+export function isProcessAlive(pid: number): boolean {
   if (!Number.isFinite(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
