@@ -28,61 +28,39 @@ import { getApiKey, setApiKey } from '../credentials/apikey.js';
 import { readUsageCacheFor } from '../usage/usage.js';
 import { writeJsonAtomic } from '../platform/atomic-write.js';
 import { withLock } from '../platform/lock.js';
+import {
+  AutoFallbackConfigSchema,
+  DEFAULT_AUTO_FALLBACK_CONFIG,
+  DEFAULT_REVERT_THRESHOLD,
+  DEFAULT_ENGAGE_THRESHOLD,
+  clampThreshold,
+} from './auto-fallback-schema.js';
+import type { AutoFallbackConfig } from './auto-fallback-schema.js';
+
+// Re-exported so existing consumers (auto-fallback.tsx, fallback.ts) keep
+// importing the type from this module.
+export type { AutoFallbackConfig };
 
 const CONFIG_FILE = '.auto-fallback.json';
-const DEFAULT_REVERT_THRESHOLD = 80;
-const DEFAULT_ENGAGE_THRESHOLD = 95;
-
-export interface AutoFallbackConfig {
-  /** Auto-revert: fallback ON → OFF when usage drops. */
-  enabled: boolean;
-  /** Cutoff under which auto-revert flips fallback OFF. */
-  threshold: number;
-  /** Auto-engage: fallback OFF → ON when usage approaches the cap. */
-  engageEnabled: boolean;
-  /** Cutoff at/above which auto-engage flips fallback ON. */
-  engageThreshold: number;
-}
 
 function configPath(accountsDirPath: string): string {
   return path.join(accountsDirPath, CONFIG_FILE);
 }
 
-function clampThreshold(n: unknown, fallback: number): number {
-  if (typeof n !== 'number' || !Number.isFinite(n)) return fallback;
-  return Math.max(1, Math.min(100, Math.floor(n)));
-}
-
 export function getAutoFallbackConfig(accountsDirPath: string): AutoFallbackConfig {
-  const defaults: AutoFallbackConfig = {
-    enabled: false,
-    threshold: DEFAULT_REVERT_THRESHOLD,
-    engageEnabled: false,
-    engageThreshold: DEFAULT_ENGAGE_THRESHOLD,
-  };
+  // Parse the on-disk config through the schema. Its per-field transforms apply
+  // the [1,100] clamp and the read-time engageThreshold > threshold invariant
+  // repair; a non-object payload fails the parse and a read / JSON error throws
+  // — both fall through to the safe defaults.
   try {
-    const raw = fs.readFileSync(configPath(accountsDirPath), 'utf-8');
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return defaults;
-    const obj = parsed as Record<string, unknown>;
-    const threshold = clampThreshold(obj.threshold, DEFAULT_REVERT_THRESHOLD);
-    let engageThreshold = clampThreshold(obj.engageThreshold, DEFAULT_ENGAGE_THRESHOLD);
-    // Pre-2.7.x configs have only `threshold`. If a user set it above the
-    // new default engage cutoff (e.g. threshold:99), combining old disk
-    // state with new defaults violates the invariant engageThreshold > threshold,
-    // which would let a single passthrough both disable AND re-engage in the
-    // same call. Clamp on read so the rest of the code can rely on the
-    // invariant unconditionally.
-    if (engageThreshold <= threshold) engageThreshold = Math.min(100, threshold + 1);
-    return {
-      enabled: obj.enabled === true,
-      threshold,
-      engageEnabled: obj.engageEnabled === true,
-      engageThreshold,
-    };
-  } catch { // missing/corrupt config → defaults
-    return defaults;
+    const parsed = AutoFallbackConfigSchema.safeParse(
+      JSON.parse(fs.readFileSync(configPath(accountsDirPath), 'utf-8')),
+    );
+    if (parsed.success) return parsed.data;
+  } catch {
+    // missing / corrupt config → defaults below
   }
+  return { ...DEFAULT_AUTO_FALLBACK_CONFIG };
 }
 
 export function setAutoFallbackConfig(
