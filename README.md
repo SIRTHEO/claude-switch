@@ -67,7 +67,7 @@ That's the whole API. Nothing else to memorize.
 | 🪟 | **Two accounts, two terminals, same machine.** Isolated profiles, zero interference. |
 | 🎯 | **Project-aware routing.** Drop a `.claude-switch` in the repo, `claude` picks the right account based on `cwd`. |
 | 💾 | **Cache-health monitor.** Detect Anthropic billing bugs (cache flushes, `--resume` cost amplification) in real time. |
-| 🩺 | **`doctor` health check.** One command surfaces credential-store problems (token collisions, stale usage cache) and `--fix` repairs them. |
+| 🩺 | **`doctor` health check.** One command surfaces credential-store problems (token collisions, wrong-account tokens, stale usage cache) and `--fix` repairs them. |
 | 🔐 | **Zero telemetry.** Credentials in a `0600` file vault (no password dialogs), atomic symlink-safe writes, no `postinstall`. |
 
 ---
@@ -235,6 +235,7 @@ Narrow and worth stating clearly so you can decide whether claude-switch fits yo
 - **No password pop-ups.** Since v4.0.0, claude-switch no longer uses the macOS keychain, so macOS doesn't ask for your password every time you switch. The first time you run it after upgrading, it quietly moves your existing credentials into the vault for you.
 - **If a save goes wrong, it undoes itself.** If anything fails partway through a switch, claude-switch puts things back exactly as they were, so your account and your saved login can never fall out of sync.
 - **It warns you about surprise billing.** If your config ends up holding an API key that claude-switch isn't managing (which could quietly bill you per-use), it shows a one-time warning and then removes that key on the next switch. ([Details in SECURITY.md.](SECURITY.md#silent-api-key-risk-claudejson-snapshot-leak))
+- **Your saved login can't silently become another account.** Your plan (Max 5×/20×, Pro) is baked into both your account identity and your login token; if the two ever disagree — a sign the token actually belongs to a different account — claude-switch refuses to save it, won't restore it, and `doctor` flags it for repair, so you're never switched in as (or billed for) the wrong account. (It can't tell apart two accounts on the *same* plan — that needs a network check.)
 - **No tracking, no hidden scripts.** claude-switch sends no analytics and runs nothing behind your back at install time. The only outbound connections are your normal traffic to Anthropic, the routine login-refresh, and a once-a-day check for updates. The code is open — you can read it.
 
 ### What is **not** protected ⚠️
