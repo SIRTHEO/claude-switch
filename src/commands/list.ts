@@ -14,6 +14,7 @@ import { getAliasesForEmail } from '../switching/aliases.js';
 import type { CommandContext } from './context.js';
 import { errMessage } from '../platform/errors.js';
 import type { AccountSummary } from '../contract.js';
+import { AccountSummarySchema } from '../contract-schemas.js';
 
 interface ListOptions {
   json: boolean;
@@ -42,6 +43,11 @@ export function handleList(ctx: CommandContext, opts: ListOptions = { json: fals
         active: email === current,
       };
     });
+    // Validate our own output against the contract schema before emitting — a
+    // handler that drifts from the AccountSummary contract fails loudly here
+    // instead of feeding the GUI a malformed payload. Emit the original object
+    // so key order stays exactly as built.
+    AccountSummarySchema.array().parse(payload);
     process.stdout.write(`${JSON.stringify(payload)}\n`);
     return;
   }
