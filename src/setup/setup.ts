@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { resolve } from '../routing/resolver.js';
+import { resolve, resolvesToSelf } from '../routing/resolver.js';
 import { claudeBinFile } from '../platform/paths.js';
 import { writeFileAtomic } from '../platform/atomic-write.js';
 
@@ -26,7 +26,7 @@ function isClaudeSwitchWrapper(filePath: string): boolean {
   }
 }
 
-export function getSavedClaudeBin(binFile?: string): string | null {
+export function getSavedClaudeBin(binFile?: string, selfPath?: string): string | null {
   try {
     const file = binFile ?? claudeBinFile();
 
@@ -40,7 +40,17 @@ export function getSavedClaudeBin(binFile?: string): string | null {
     if (!bin) return null;
     fs.accessSync(bin, fs.constants.X_OK);
 
-    // Avoid infinite spawn loops if .claude-bin somehow points back at us.
+    // Avoid infinite spawn loops if .claude-bin points back at us. The realpath
+    // self-guard is the robust primary check: it fires whenever the saved bin
+    // resolves to the running wrapper entry (`realpathSync(process.argv[1])`),
+    // independent of build output. The magic-string scan below is a fragile
+    // secondary heuristic — it broke once when comment-stripping removed the
+    // marker from the first 512 bytes of the compiled wrapper, which (combined
+    // with a stale pointer left by a self-update relocation) produced an
+    // infinite self-spawn loop. Keep both: the scan still catches a *different*
+    // claude-switch wrapper (a sibling install) that realpath won't equate
+    // with our own entry.
+    if (selfPath && resolvesToSelf(bin, selfPath)) return null;
     if (isClaudeSwitchWrapper(bin)) return null;
 
     return bin;

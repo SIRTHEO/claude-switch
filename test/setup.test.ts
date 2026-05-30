@@ -49,6 +49,40 @@ describe('getSavedClaudeBin', () => {
     fs.writeFileSync(binFile, fakeExe);
     assert.equal(getSavedClaudeBin(binFile), fakeExe);
   });
+
+  it('rejects a saved bin that realpath-resolves to the running wrapper', () => {
+    if (process.platform === 'win32') return; // symlink-to-self shape is unix
+    // Reproduce the recursion bug: .claude-bin points at a path whose realpath
+    // IS the wrapper entry, and the wrapper carries no magic string (as after a
+    // comment-stripped build). The legacy text scan misses it; the realpath
+    // self-guard must catch it.
+    const wrapper = path.join(tmpDir, 'cli.js');
+    fs.writeFileSync(wrapper, '#!/usr/bin/env node\nconsole.log("x")\n'); // no marker
+    fs.chmodSync(wrapper, 0o755);
+    const shim = path.join(tmpDir, 'claude'); // what .claude-bin points at
+    fs.symlinkSync(wrapper, shim);
+    const binFile = path.join(tmpDir, '.claude', 'accounts', '.claude-bin');
+    fs.mkdirSync(path.dirname(binFile), { recursive: true });
+    fs.writeFileSync(binFile, shim);
+
+    const selfPath = fs.realpathSync(wrapper);
+    assert.equal(getSavedClaudeBin(binFile, selfPath), null);
+    // Without the self reference the marker-less wrapper slips through — this is
+    // exactly the gap the realpath guard closes (and why selfPath must be wired).
+    assert.equal(getSavedClaudeBin(binFile), shim);
+  });
+
+  it('returns a distinct executable even when a selfPath is provided', () => {
+    const realBin = path.join(tmpDir, 'real-claude');
+    fs.writeFileSync(realBin, '#!/bin/sh\n');
+    fs.chmodSync(realBin, 0o755);
+    const binFile = path.join(tmpDir, '.claude', 'accounts', '.claude-bin');
+    fs.mkdirSync(path.dirname(binFile), { recursive: true });
+    fs.writeFileSync(binFile, realBin);
+
+    const selfPath = path.join(tmpDir, 'cli.js'); // an unrelated wrapper entry
+    assert.equal(getSavedClaudeBin(binFile, selfPath), realBin);
+  });
 });
 
 describe('saveClaudeBin', () => {

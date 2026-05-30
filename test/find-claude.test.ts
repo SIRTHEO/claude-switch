@@ -103,6 +103,33 @@ describe('findClaudeBinary', () => {
     // make sure findClaudeBinary doesn't crash on empty input.
     assert.ok(result === null || typeof result === 'string');
   });
+
+  it('rejects a loop pointer via argv[1] even when called with an unrelated module url', () => {
+    if (process.platform === 'win32') return; // symlink-to-self shape is unix
+    // Reproduce the recursion bug at the call surface: run-app.ts / profiles.ts
+    // call findClaudeBinary(import.meta.url) with their OWN sub-module url, not
+    // the wrapper entry. The self-guard must still fire because the wrapper
+    // entry is realpathSync(process.argv[1]) — the thing node actually ran.
+    const wrapper = path.join(tmpHome, 'cli.js');
+    fs.writeFileSync(wrapper, '#!/usr/bin/env node\nconsole.log("x")\n'); // no marker
+    fs.chmodSync(wrapper, 0o755);
+    const shim = path.join(tmpHome, 'claude'); // a symlink to the wrapper, what .claude-bin points at
+    fs.symlinkSync(wrapper, shim);
+    const accountsDir = path.join(tmpHome, '.claude', 'accounts');
+    fs.mkdirSync(accountsDir, { recursive: true });
+    fs.writeFileSync(path.join(accountsDir, '.claude-bin'), shim);
+
+    const savedArgv1 = process.argv[1];
+    process.argv[1] = wrapper; // node ran the wrapper entry for this process
+    try {
+      // Pass an UNRELATED module url as metaUrl — the run-app.js / profiles.js
+      // mistake. The fix must not depend on this argument being the entry.
+      const result = findClaudeBinary(pathToFileURL(path.join(tmpHome, 'sub-module.js')).href);
+      // Must never hand back the wrapper/shim (PATH is empty → falls through).
+      assert.notStrictEqual(result, shim);
+      assert.notStrictEqual(result, wrapper);
+    } finally {
+      if (savedArgv1 !== undefined) process.argv[1] = savedArgv1;
+    }
+  });
 });
-// pathToFileURL is imported only to keep TS happy when removing — silence unused.
-void pathToFileURL;

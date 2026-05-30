@@ -41,6 +41,25 @@ function isClaudeSwitchWrapper(filePath: string): boolean {
   }
 }
 
+/**
+ * True if `candidate` realpath-resolves to the running wrapper entry
+ * `selfPath`. Spawning such a bin re-runs the wrapper → infinite loop, so the
+ * caller must skip it. A realpath failure resolves to `true` (skip): we never
+ * hand back a bin we cannot prove is distinct from ourselves, so an
+ * unresolvable symlink is treated as "could be us" rather than spawned.
+ *
+ * `selfPath` is expected to already be realpath-canonical (callers pass
+ * `realpathSync(process.argv[1])` / a realpath'd self), so only the candidate
+ * is resolved here — matching the original inline guards this replaces.
+ */
+export function resolvesToSelf(candidate: string, selfPath: string): boolean {
+  try {
+    return fs.realpathSync(candidate) === selfPath;
+  } catch { // unresolvable → can't prove it isn't us → skip, don't spawn
+    return true;
+  }
+}
+
 function candidateNames(): string[] {
   if (process.platform === 'win32') {
     return ['claude.cmd', 'claude.exe', 'claude'];
@@ -77,12 +96,8 @@ export function resolve({ envBin, selfPath, pathEnv }: ResolveOptions): string |
         continue; // not present/executable on this PATH entry → next candidate
       }
 
-      // Skip self
-      try {
-        if (fs.realpathSync(candidate) === selfPath) continue;
-      } catch {
-        continue; // unresolvable symlink → can't trust it, skip
-      }
+      // Skip self (spawning it would re-run the wrapper → infinite loop).
+      if (resolvesToSelf(candidate, selfPath)) continue;
 
       // Skip other claude-switch wrappers
       if (isClaudeSwitchWrapper(candidate)) continue;
@@ -101,11 +116,7 @@ export function resolve({ envBin, selfPath, pathEnv }: ResolveOptions): string |
       continue; // known path not present/executable → next fallback
     }
     if (isClaudeSwitchWrapper(knownPath)) continue;
-    try {
-      if (fs.realpathSync(knownPath) === selfPath) continue;
-    } catch {
-      continue; // unresolvable symlink → can't trust it, skip
-    }
+    if (resolvesToSelf(knownPath, selfPath)) continue;
     return knownPath;
   }
 

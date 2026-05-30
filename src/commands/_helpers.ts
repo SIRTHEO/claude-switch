@@ -2,18 +2,18 @@
 // Shared utilities used by multiple per-command handlers. Internal — not
 // part of any public API surface.
 
-import { fileURLToPath } from 'node:url';
 import { resolve } from '../routing/resolver.js';
 import { getSavedClaudeBin } from '../setup/setup.js';
+import { wrapperSelfPath } from '../setup/find-claude.js';
 import { resolveAlias } from '../switching/aliases.js';
 import { list as listAccounts } from '../accounts/accounts.js';
 import { ExitError } from '../platform/errors.js';
 
 /** Locate the real `claude` binary path (not our wrapper). */
 export function findClaude(selfUrl: string): string {
-  const saved = getSavedClaudeBin();
+  const selfPath = wrapperSelfPath(selfUrl);
+  const saved = getSavedClaudeBin(undefined, selfPath);
   if (saved) return saved;
-  const selfPath = fileURLToPath(selfUrl);
   const bin = resolve({
     envBin: process.env.CLAUDE_SWITCH_BIN || '',
     selfPath,
