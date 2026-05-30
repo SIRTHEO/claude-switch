@@ -9,6 +9,10 @@
 // INVARIANT: this module is import-free. Every type is self-contained
 // (primitives, string unions, inline objects) so the generator is a dumb copy.
 // Do not add an `import` here — inline any shared shape instead.
+//
+// SIZE: over the 280-line budget, grandfathered in the size baseline. When the
+// Zod contract slice splits the versions/update surface into a sibling, drop it
+// from the baseline (and teach gen-gui-contract.mjs to read multiple type files).
 
 /** Runtime proxy mode exposed by the statusline. */
 export type ProxyMode = 'oauth-first' | 'oauth-burst' | 'api-first';
