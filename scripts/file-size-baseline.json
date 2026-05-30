@@ -1,7 +1,6 @@
 {
   "bin/cli.ts": 685,
   "src/commands/statusline.ts": 357,
-  "src/contract.ts": 293,
   "src/credentials/credential-store.ts": 464,
   "src/profiles/profiles.ts": 580,
   "src/proxy/api-proxy.ts": 477,

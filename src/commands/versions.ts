@@ -11,7 +11,7 @@
 // for terminal users.
 
 import { getVersionsReport, type VersionsOptions } from '../setup/versions/index.js';
-import type { VersionTarget, VersionsReport } from '../contract.js';
+import type { VersionTarget, VersionsReport } from '../contract-versions.js';
 
 interface VersionsCommandOptions {
   json: boolean;

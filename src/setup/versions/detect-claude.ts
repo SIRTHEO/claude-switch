@@ -15,7 +15,7 @@
 // `current` is read from `claude --version`. The probe is sync (small
 // stdout, fast exit) and goes through ProcessPort so tests can fake it.
 
-import type { VersionTarget } from '../../contract.js';
+import type { VersionTarget } from '../../contract-versions.js';
 import type { ProcessPort } from '../../platform/process.js';
 import type { HttpPort } from '../../platform/http.js';
 import { nodeProcessAdapter } from '../../platform/process.js';

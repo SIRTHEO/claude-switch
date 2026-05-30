@@ -13,7 +13,7 @@
 // inside the app itself, at which point this target's source becomes
 // `'manual'` or `'tauri-updater'` depending on platform.
 
-import type { VersionTarget } from '../../contract.js';
+import type { VersionTarget } from '../../contract-versions.js';
 import type { HttpPort } from '../../platform/http.js';
 import { fetchGitHubReleaseLatest } from './registry.js';
 import type { TargetCache } from './cache.js';

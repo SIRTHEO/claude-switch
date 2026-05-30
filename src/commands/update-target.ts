@@ -20,7 +20,7 @@
 import { getVersionsReport, type VersionsOptions } from '../setup/versions/index.js';
 import { type InstallCommand, buildInstallCommand } from '../setup/versions/install-commands.js';
 import { runInstall } from '../setup/versions/install.js';
-import type { UpdateResult, UpdateTarget, VersionTarget, VersionsReport } from '../contract.js';
+import type { UpdateResult, UpdateTarget, VersionTarget, VersionsReport } from '../contract-versions.js';
 
 interface UpdateTargetOptions {
   target: UpdateTarget;

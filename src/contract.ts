@@ -10,9 +10,9 @@
 // (primitives, string unions, inline objects) so the generator is a dumb copy.
 // Do not add an `import` here — inline any shared shape instead.
 //
-// SIZE: over the 280-line budget, grandfathered in the size baseline. When the
-// Zod contract slice splits the versions/update surface into a sibling, drop it
-// from the baseline (and teach gen-gui-contract.mjs to read multiple type files).
+// The versions/update surface lives in the sibling contract-versions.ts (same
+// import-free invariant); the GUI generator concatenates both type bodies into
+// one generated file. Keep each source file under the 280-line budget.
 
 /** Runtime proxy mode exposed by the statusline. */
 export type ProxyMode = 'oauth-first' | 'oauth-burst' | 'api-first';
@@ -236,58 +236,3 @@ export interface DoctorReport {
    *  present (reconcile will drain it on the next foreground command). */
   keychainItemPresent: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// Versions / update-availability surface (claude switch versions)
-// ---------------------------------------------------------------------------
-
-/** How the binary was installed on this machine. Drives both the latest-version
- *  lookup channel and the eventual update command. */
-export type VersionSource = 'npm' | 'brew' | 'manual' | 'unknown';
-
-/** One row in the versions report — same shape for all three targets so the
- *  GUI table renders uniformly. */
-export interface VersionTarget {
-  /** Installed version (no leading `v`), or null when not installed / not
-   *  detected. The `gui` target is always null here — the GUI overrides it
-   *  with its own `package.json` version in the hook layer (the CLI has no
-   *  reliable way to know which GUI build the user is running). */
-  current: string | null;
-  /** Latest known version from the source registry (no leading `v`), or null
-   *  when the registry was unreachable / not applicable. */
-  latest: string | null;
-  /** Where the binary lives — drives the upgrade channel. `unknown` means
-   *  the install method couldn't be sniffed; `manual` means it was sniffed
-   *  but we don't automate updates for that channel in v1. */
-  source: VersionSource;
-  /** True when `current` and `latest` are both set and `latest` is strictly
-   *  semver-greater than `current`. Pre-releases never count as upgrades. */
-  upgradable: boolean;
-  /** ISO timestamp of the last successful registry lookup feeding `latest`.
-   *  Lets the GUI render "checked 12 min ago". */
-  lastCheckedAt: string;
-  /** Human-readable URL to consult when `source === 'manual'` (or when
-   *  automated upgrade is otherwise unavailable). Omitted otherwise. */
-  manualUrl?: string;
-}
-
-/** Shape of `claude switch versions --json`. */
-export interface VersionsReport {
-  claude: VersionTarget;
-  switch: VersionTarget;
-  gui: VersionTarget;
-}
-
-/** The three things `claude switch update <target>` can act on. */
-export type UpdateTarget = 'claude' | 'switch' | 'gui';
-
-/** Shape of `claude switch update <target> --json` — one line the GUI consumes.
- *  A discriminated union over the five emit paths so a field rename in the
- *  command handler breaks the compiler instead of silently drifting from the
- *  GUI parser. `from`/`to` are versions (no leading `v`), null when unknown. */
-export type UpdateResult =
-  | { ok: true; target: UpdateTarget; from: string | null; to: string | null }
-  | { ok: true; target: UpdateTarget; check: true; command: string; from: string | null; to: string | null }
-  | { ok: true; target: UpdateTarget; manualUrl: string; from: string | null; to: string | null }
-  | { ok: false; target: UpdateTarget; error: string; exitCode: number | null }
-  | { ok: false; target: UpdateTarget; error: string; source: VersionSource; manualUrl: string; exitCode: number };

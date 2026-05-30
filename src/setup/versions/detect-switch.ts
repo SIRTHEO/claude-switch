@@ -7,7 +7,7 @@
 // registry through the generic fetcher in registry.ts.
 
 import { VERSION } from '../version.js';
-import type { VersionTarget } from '../../contract.js';
+import type { VersionTarget } from '../../contract-versions.js';
 import type { TargetCache } from './cache.js';
 import { fetchNpmLatest, isNewer } from './registry.js';
 import type { HttpPort } from '../../platform/http.js';

@@ -13,7 +13,7 @@
 // "Could not check" in the GUI; the cache still writes whatever did
 // succeed so a partial outage doesn't poison the next call.
 
-import type { VersionTarget, VersionsReport } from '../../contract.js';
+import type { VersionTarget, VersionsReport } from '../../contract-versions.js';
 import type { HttpPort } from '../../platform/http.js';
 import type { ProcessPort } from '../../platform/process.js';
 

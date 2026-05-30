@@ -20,7 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { writeJsonAtomic } from '../../platform/atomic-write.js';
-import type { VersionSource } from '../../contract.js';
+import type { VersionSource } from '../../contract-versions.js';
 
 /** Per-target cache row. `latest === null` means the lookup ran but the
  *  registry was unreachable — we still cache the negative result for the TTL

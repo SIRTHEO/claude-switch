@@ -16,7 +16,7 @@
 //
 // `manual` and `unknown` claude sources → null (manual instructions only).
 
-import type { UpdateTarget, VersionSource } from '../../contract.js';
+import type { UpdateTarget, VersionSource } from '../../contract-versions.js';
 
 export interface InstallCommand {
   /** Argv head (`npm`, `brew`). */
