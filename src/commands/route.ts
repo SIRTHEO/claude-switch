@@ -31,6 +31,7 @@ import {
 } from '../routing/routing.js';
 import type { CommandContext } from './context.js';
 import type { RouteRule, RouteTestResult } from '../contract.js';
+import { RouteRuleSchema } from '../contract-schemas.js';
 
 const ROUTING_FILE = '.routing.json';
 
@@ -155,6 +156,7 @@ export function handleRouteList(
       target: r.account ?? r.alias ?? '',
       kind: r.account ? 'email' : 'alias',
     }));
+    RouteRuleSchema.array().parse(payload);
     process.stdout.write(`${JSON.stringify(payload)}\n`);
     return;
   }

@@ -5,6 +5,7 @@ import { ExitError, errMessage } from '../platform/errors.js';
 import { setAlias, listAliases, removeAlias } from '../switching/aliases.js';
 import type { CommandContext } from './context.js';
 import type { AliasEntry } from '../contract.js';
+import { AliasEntrySchema } from '../contract-schemas.js';
 
 export function handleAliasSet(
   ctx: CommandContext,
@@ -36,6 +37,7 @@ export function handleAliasList(
 
   if (opts.json) {
     const payload: AliasEntry[] = entries.map(([alias, email]) => ({ alias, email }));
+    AliasEntrySchema.array().parse(payload);
     process.stdout.write(`${JSON.stringify(payload)}\n`);
     return;
   }

@@ -9,6 +9,7 @@ import { isFallbackEnabled, setFallbackEnabled } from '../fallback/fallback.js';
 import { getAutoFallbackConfig, setAutoFallbackConfig } from '../fallback/auto-fallback.js';
 import type { CommandContext } from './context.js';
 import type { FallbackStatus } from '../contract.js';
+import { FallbackStatusSchema } from '../contract-schemas.js';
 
 interface FallbackOptions {
   json: boolean;
@@ -42,6 +43,7 @@ export function handleFallback(
         activeAccount: current || null,
         hasApiKey: hasKey,
       };
+      FallbackStatusSchema.parse(status);
       process.stdout.write(`${JSON.stringify(status)}\n`);
       return;
     }
