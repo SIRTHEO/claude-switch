@@ -28,17 +28,17 @@ analytics, no `postinstall` script.
 
 ### The attack path
 
-When the Anthropic Console "extra usage" feature is enabled on an account, or when a user accepts a one-off API key prompt inside the claude binary, the claude binary writes an `apiKey` field into `~/.claude.json`. Before Phase 14.2, `accounts.save()` captured that field as `_claudeJsonApiKey` inside the per-account snapshot (`~/.claude/accounts/<email>.json`). On every subsequent `accounts.load()` (triggered by `claude switch <account>`), that key was silently re-injected back into `~/.claude.json`. The claude binary reads the field and routes all traffic through the API tier — not OAuth subscription — without any visible prompt or banner. The result is unexpected API billing even on accounts that `claude switch apikey list` reports as having no key configured.
+When the Anthropic Console "extra usage" feature is enabled on an account, or when a user accepts a one-off API key prompt inside the claude binary, the claude binary writes an `apiKey` field into `~/.claude.json`. Before v3.6.x, `accounts.save()` captured that field as `_claudeJsonApiKey` inside the per-account snapshot (`~/.claude/accounts/<email>.json`). On every subsequent `accounts.load()` (triggered by `claude switch <account>`), that key was silently re-injected back into `~/.claude.json`. The claude binary reads the field and routes all traffic through the API tier — not OAuth subscription — without any visible prompt or banner. The result is unexpected API billing even on accounts that `claude switch apikey list` reports as having no key configured.
 
 The gap: `getApiKey(email)` reads only the claude-switch-managed store (the `~/.claude-switch/apikeys.json` vault, or the `_apiKey` field in the snapshot). It does **not** read `_claudeJsonApiKey`. So the CLI confirms "no key" while the claude binary silently uses one.
 
-### How claude-switch handles it (Phase 14.2 + 14.3)
+### How claude-switch handles it
 
-**Phase 14.2 — automatic purge on load (v3.6.x+):** `accounts.load()` now calls `getApiKey(email)` before restoring `data.apiKey`. If no key is tracked by claude-switch, both `data.apiKey` and `data.customApiKeyResponses` are deleted from `~/.claude.json`. This closes the silent re-injection path.
+**Automatic purge on load (v3.6.x+):** `accounts.load()` now calls `getApiKey(email)` before restoring `data.apiKey`. If no key is tracked by claude-switch, both `data.apiKey` and `data.customApiKeyResponses` are deleted from `~/.claude.json`. This closes the silent re-injection path.
 
 **Override (one-release back-compat):** Set `CLAUDE_SWITCH_KEEP_UNTRACKED_APIKEY=1` to disable the purge. Use this only if you intentionally manage an API key outside claude-switch and want to preserve the previous behaviour. This env escape will be removed in a future release.
 
-**Phase 14.3 — transitional warning:** `passthrough.ts` emits a stderr banner if `~/.claude.json` carries an `apiKey` that `getApiKey()` does not recognise:
+**Transitional warning:** `passthrough.ts` emits a stderr banner if `~/.claude.json` carries an `apiKey` that `getApiKey()` does not recognise:
 
 ```
 ⚠ claude-switch: ~/.claude.json carries an API key NOT tracked by claude-switch.
@@ -64,8 +64,6 @@ jq '{apiKey_set: (.apiKey != null), apiKey_prefix: (.apiKey // "" | .[0:8])}' \
 ```
 
 If command 1 reports no key but command 2 or 3 shows a key present, you were exposed to silent billing before upgrading to v3.6.x. After upgrading, command 3 will return `apiKey_set: false` on the next account load.
-
-Full root-cause analysis: `.claude/docs/reports/2026-05-13-silent-apikey-after-subscription-exhaustion.md` (internal, not committed to the public repo).
 
 ## Credential exposure via process arguments
 
