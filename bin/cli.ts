@@ -52,6 +52,7 @@ import { handlePassthrough } from '../src/commands/passthrough.js';
 import { handleCacheHealth } from '../src/commands/cache-health.js';
 import { handleDoctor } from '../src/commands/doctor.js';
 import { handleSessions } from '../src/commands/sessions.js';
+import { handleMigrate } from '../src/commands/migrate.js';
 import { askYN } from '../src/commands/_helpers.js';
 import type { CommandContext } from '../src/commands/context.js';
 
@@ -313,6 +314,10 @@ async function main(): Promise<void> {
 
     case 'sessions':
       handleSessions({ accountsDirPath: aDir }, { json: cmd.json });
+      break;
+
+    case 'migrate':
+      await handleMigrate({ accountsDirPath: aDir }, cmd.session, cmd.target, { json: cmd.json });
       break;
 
     case 'passthrough':

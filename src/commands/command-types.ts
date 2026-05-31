@@ -61,5 +61,6 @@ export type Command =
   | { action: 'cache-health'; sessionPath: string | undefined; json: boolean }
   | { action: 'doctor'; json: boolean; fix: boolean }
   | { action: 'sessions'; json: boolean }
+  | { action: 'migrate'; session: string | undefined; target: string | undefined; json: boolean }
   | { action: 'terminals'; json: boolean }
   | { action: 'profile-launch'; name: string; terminal: string };

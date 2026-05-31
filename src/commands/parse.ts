@@ -196,6 +196,12 @@ export function parseCommand(args: string[]): Command {
       return { action: 'doctor', json: args.includes('--json'), fix: args.includes('--fix') };
     case 'sessions':
       return { action: 'sessions', json: args.includes('--json') };
+    case 'migrate': {
+      // `migrate <pid> <account>` — positionals, flags filtered so a trailing
+      // `--json` is never mistaken for the account arg.
+      const positionals = args.slice(2).filter((a) => !a.startsWith('-'));
+      return { action: 'migrate', session: positionals[0], target: positionals[1], json: args.includes('--json') };
+    }
     case 'terminals': return { action: 'terminals', json: args.includes('--json') };
     default: return { action: 'switch-to', target: sub };
   }

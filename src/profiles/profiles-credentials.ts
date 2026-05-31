@@ -11,10 +11,34 @@ import {
   readProfileCredentials,
   writeProfileCredentials,
 } from '../credentials/keychain.js';
+import type { ClaudeAiOauth } from '../credentials/credential-store.js';
 import { getCurrent } from '../accounts/accounts.js';
 import { claudeJsonPath } from '../platform/paths.js';
 import { errMessage, debugProfiles } from '../platform/errors.js';
 import { findClaudeBinary } from '../setup/find-claude.js';
+
+/**
+ * The `oauthAccount` block when tokens must be embedded inline (non-darwin, OR
+ * the credential vault disabled via CLAUDE_SWITCH_DISABLE_KEYCHAIN): there is no
+ * `<configDir>/.credentials.json` for claude to read, so the access/refresh
+ * tokens go directly into the identity block where the binary reads them inline.
+ *
+ * On the default (file-vault) path the tokens live in the vault file and this
+ * block stays metadata-only — callers omit this call there. Shared by the
+ * profile import flow (`importProfileFromAccount`) and the live-migration writer
+ * (`migrateSession`) so the embed shape has a single definition.
+ */
+export function embedTokensInIdentity(
+  identity: Record<string, unknown>,
+  oauth: ClaudeAiOauth,
+): Record<string, unknown> {
+  return {
+    ...identity,
+    accessToken: oauth.accessToken,
+    refreshToken: oauth.refreshToken,
+    expiresAt: oauth.expiresAt,
+  };
+}
 
 /**
  * Trusted-bins list passed to `security -T` when writing a profile

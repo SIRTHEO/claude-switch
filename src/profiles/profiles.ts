@@ -30,6 +30,7 @@ import { refreshLegacySnapshotIfStale } from './refresh-legacy-snapshot.js';
 import {
   profileKeychainTrustedBins,
   captureLiveCredentialsForActiveAccount,
+  embedTokensInIdentity,
 } from './profiles-credentials.js';
 
 // Public re-export so commands/profile.ts keeps importing from the same path.
@@ -333,13 +334,10 @@ export function importProfileFromAccount(
     } else if (_keychain.claudeAiOauth) {
       // Linux/Windows: embed tokens directly in JSON.
       debugProfiles(`keychainWrite=skipped service=per-config-dir (non-darwin or disable-flag) writing to JSON`);
-      claudeJson.oauthAccount = {
-        ...oauthFields,
-        emailAddress: email,
-        accessToken: _keychain.claudeAiOauth.accessToken,
-        refreshToken: _keychain.claudeAiOauth.refreshToken,
-        expiresAt: _keychain.claudeAiOauth.expiresAt,
-      };
+      claudeJson.oauthAccount = embedTokensInIdentity(
+        { ...oauthFields, emailAddress: email },
+        _keychain.claudeAiOauth,
+      );
     } else {
       // _keychain present but missing claudeAiOauth — treat as login-required.
       debugProfiles(`keychainWrite=skipped legacyKeychain=true but no claudeAiOauth — needsLogin=true`);
