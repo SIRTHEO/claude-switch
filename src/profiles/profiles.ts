@@ -42,7 +42,7 @@ export { refreshLegacySnapshotIfStale } from './refresh-legacy-snapshot.js';
 // underscore, hyphen — same alphabet as account aliases.
 const PROFILE_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
 // Names that would be confusing if accepted (clash with subcommand names).
-const RESERVED_NAMES = new Set(['list', 'ls', 'create', 'use', 'login', 'remove', 'rm', 'status', 'help']);
+const RESERVED_NAMES = new Set(['default', 'list', 'ls', 'create', 'use', 'login', 'remove', 'rm', 'status', 'help']);
 
 export function isValidProfileName(name: string): boolean {
   if (typeof name !== 'string') return false;

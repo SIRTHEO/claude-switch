@@ -92,7 +92,7 @@ export type Command =
   | { action: 'profile-mcp-list'; name: string; json: boolean }
   | { action: 'profile-mcp-add'; name: string; server: string; spec: McpAddSpec }
   | { action: 'profile-mcp-remove'; name: string; server: string }
-  | { action: 'profile-list'; json: boolean }
+  | { action: 'profile-list'; json: boolean; includeDefault: boolean }
   | { action: 'profile-create'; name: string; overlay: boolean }
   | { action: 'profile-use'; name: string; args: string[] }
   | { action: 'profile-login'; name: string }
@@ -315,7 +315,7 @@ export function parseCommand(args: string[]): Command {
         throw new ExitError('Usage: claude switch profile mcp <list|add|remove> <profile> [server]');
       }
       if (!sub2 || sub2 === 'list' || sub2 === 'ls') {
-        return { action: 'profile-list', json: args.includes('--json') };
+        return { action: 'profile-list', json: args.includes('--json'), includeDefault: args.includes('--include-default') };
       }
       if (sub2 === 'create') {
         const createName = args[3];
@@ -457,7 +457,7 @@ async function main(): Promise<void> {
   if (cmd.action === 'profile-mcp-list')   { await handleProfileMcpList(cmd.name, { json: cmd.json }); return; }
   if (cmd.action === 'profile-mcp-add')    { await handleProfileMcpAdd(cmd.name, cmd.server, cmd.spec); return; }
   if (cmd.action === 'profile-mcp-remove') { await handleProfileMcpRemove(cmd.name, cmd.server); return; }
-  if (cmd.action === 'profile-list')   { await handleProfileList({ json: cmd.json }); return; }
+  if (cmd.action === 'profile-list')   { await handleProfileList({ json: cmd.json, includeDefault: cmd.includeDefault }, statuslineCtx); return; }
   if (cmd.action === 'profile-create') { await handleProfileCreate(cmd.name, { overlay: cmd.overlay }); return; }
   if (cmd.action === 'profile-status') { await handleProfileStatus(cmd.name); return; }
   if (cmd.action === 'profile-login')  { await handleProfileLogin(statuslineCtx, cmd.name); return; }

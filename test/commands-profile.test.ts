@@ -148,6 +148,31 @@ describe('handleProfileList', () => {
     await handleProfileList({ json: true });
     assert.deepEqual(JSON.parse(h.stdout.join('').trim()), []);
   });
+
+  it('--include-default prepends the read-only default workspace (--json)', async () => {
+    fs.writeFileSync(h.claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'global@x.com' } }));
+    const profileDir = path.join(h.fakeHome, '.claude', 'profiles', 'work');
+    fs.mkdirSync(profileDir, { recursive: true });
+    h.stdout.length = 0;
+    await handleProfileList({ json: true, includeDefault: true }, h.ctx);
+    const parsed = JSON.parse(h.stdout.join('').trim()) as Array<{
+      name: string; account: string | null; isDefault?: boolean;
+    }>;
+    assert.equal(parsed[0]?.name, 'default');
+    assert.equal(parsed[0]?.isDefault, true);
+    assert.equal(parsed[0]?.account, 'global@x.com');
+    assert.ok(parsed.some((e) => e.name === 'work'), 'profiles still listed after default');
+  });
+
+  it('no-flag --json stays unchanged: no default entry, no isDefault key', async () => {
+    const profileDir = path.join(h.fakeHome, '.claude', 'profiles', 'work');
+    fs.mkdirSync(profileDir, { recursive: true });
+    h.stdout.length = 0;
+    await handleProfileList({ json: true });
+    const parsed = JSON.parse(h.stdout.join('').trim()) as Array<Record<string, unknown>>;
+    assert.equal(parsed.some((e) => e.name === 'default'), false, 'no synthetic default in the plain list');
+    assert.equal(parsed.every((e) => !Object.hasOwn(e, 'isDefault')), true, 'no isDefault key leaks into the plain list');
+  });
 });
 
 // ---------------------------------------------------------------------------

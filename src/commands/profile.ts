@@ -14,45 +14,45 @@ import { ExitError, errMessage } from '../platform/errors.js';
 import { getTokenHealth } from '../credentials/token.js';
 import { findClaude } from './_helpers.js';
 import type { CommandContext } from './context.js';
-import type { ProfileEntry } from '../contract.js';
 
 interface ProfileListOptions {
   json: boolean;
+  /** When set (and a ctx is provided), prepend the read-only `default`
+   *  workspace (the global `~/.claude`) to the listing — the unified-workspace
+   *  view. Without it the listing stays profiles-only and byte-identical. */
+  includeDefault?: boolean;
 }
 
 export async function handleProfileList(
   opts: ProfileListOptions = { json: false },
+  ctx?: CommandContext,
 ): Promise<void> {
-  const { listProfiles, readProfile } = await import('../profiles/profiles.js');
-  const { isOverlayProfile } = await import('../profiles/overlay.js');
-  const profiles = listProfiles();
+  // Profiles-only by default (byte-identical to the historical output);
+  // `--include-default` prepends the read-only `default` workspace.
+  const { profileEntries, listWorkspaces } = await import('../profiles/workspaces.js');
+  const entries = opts.includeDefault && ctx
+    ? listWorkspaces(ctx.claudeJsonPath, ctx.accountsDirPath)
+    : profileEntries();
 
   if (opts.json) {
-    const payload: ProfileEntry[] = profiles.map((name) => {
-      const info = readProfile(name);
-      return {
-        name,
-        account: info.hasLogin ? info.emailAddress ?? null : null,
-        hasLogin: info.hasLogin,
-        path: info.path,
-        overlay: isOverlayProfile(name),
-      };
-    });
-    process.stdout.write(`${JSON.stringify(payload)}\n`);
+    process.stdout.write(`${JSON.stringify(entries)}\n`);
     return;
   }
 
-  if (profiles.length === 0) {
+  if (entries.length === 0) {
     console.log('No profiles. Create one with: claude switch profile create <name>');
     return;
   }
-  console.log('Profiles:\n');
-  for (const name of profiles) {
-    const info = readProfile(name);
-    const right = info.hasLogin
-      ? `→  ${info.emailAddress ?? '<unknown>'}`
-      : `(not logged in — run: claude switch profile login ${name})`;
-    console.log(`  ${name.padEnd(20)} ${right}`);
+
+  console.log(opts.includeDefault ? 'Workspaces:\n' : 'Profiles:\n');
+  for (const e of entries) {
+    const label = e.isDefault ? `${e.name} (default)` : e.name;
+    const right = e.hasLogin
+      ? `→  ${e.account ?? '<unknown>'}`
+      : e.isDefault
+        ? '(not logged in)'
+        : `(not logged in — run: claude switch profile login ${e.name})`;
+    console.log(`  ${label.padEnd(opts.includeDefault ? 24 : 20)} ${right}`);
   }
 }
 

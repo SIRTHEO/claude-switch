@@ -100,6 +100,11 @@ export interface ProfileEntry {
    *  shares the global skills + session history via symlink. False for a
    *  classic fully-isolated profile. */
   overlay: boolean;
+  /** True only for the synthetic `default` workspace entry (the `~/.claude`
+   *  global) surfaced by the unified listing (`listWorkspaces`). Absent on real
+   *  profiles. Read-only: the default cannot be created/removed/logged-in as a
+   *  profile. */
+  isDefault?: boolean;
 }
 
 /** `claude switch skills list --json` — one entry per globally installed skill. */
