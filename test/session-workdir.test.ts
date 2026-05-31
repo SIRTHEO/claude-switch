@@ -11,7 +11,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { cleanupPendingWorkDirs, prepareSessionWorkDir, sweepStaleWorkDirs } from '../src/sessions/session-workdir.js';
+import {
+  cleanupPendingWorkDirs,
+  prepareSessionWorkDir,
+  reconcileWorkDirToCanonical,
+  sweepStaleWorkDirs,
+} from '../src/sessions/session-workdir.js';
 import type { CredentialStore, KeychainData } from '../src/credentials/credential-store.js';
 
 const CONTAINERS = ['projects', 'sessions', 'skills', 'shell-snapshots', 'file-history', 'todos'];
@@ -51,6 +56,60 @@ function captureStore(read: KeychainData | null): { store: CredentialStore; writ
   };
   return { store, writes };
 }
+
+/** Fake store whose per-config-dir reads come from a map, capturing writes. */
+function reconcileStore(reads: Record<string, KeychainData | null>): {
+  store: CredentialStore;
+  writes: Array<{ configDir: string | null; data: KeychainData }>;
+} {
+  const base = captureStore(null).store;
+  const writes: Array<{ configDir: string | null; data: KeychainData }> = [];
+  const store: CredentialStore = {
+    ...base,
+    readOAuthForConfigDir: (configDir) => reads[configDir ?? ''] ?? null,
+    writeOAuthForConfigDir: (configDir, data) => { writes.push({ configDir, data }); },
+  };
+  return { store, writes };
+}
+
+describe('reconcileWorkDirToCanonical', () => {
+  const oauth = (at: string, exp: number): KeychainData => ({ claudeAiOauth: { accessToken: at, refreshToken: 'r', expiresAt: exp } });
+
+  it('pushes a NEWER work-dir token back to the canonical (in-session rotation)', () => {
+    const { store, writes } = reconcileStore({ '/wd': oauth('NEW', 2000), '/canon': oauth('OLD', 1000) });
+    reconcileWorkDirToCanonical('/wd', '/canon', store);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0]!.configDir, '/canon');
+    assert.equal(writes[0]!.data.claudeAiOauth?.accessToken, 'NEW');
+  });
+
+  it('does NOT push back when the work-dir token is not newer', () => {
+    const { store, writes } = reconcileStore({ '/wd': oauth('OLD', 1000), '/canon': oauth('CUR', 2000) });
+    reconcileWorkDirToCanonical('/wd', '/canon', store);
+    assert.equal(writes.length, 0);
+  });
+
+  it('pushes back when the canonical has no token', () => {
+    const { store, writes } = reconcileStore({ '/wd': oauth('NEW', 2000), '/canon': null });
+    reconcileWorkDirToCanonical('/wd', '/canon', store);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0]!.data.claudeAiOauth?.accessToken, 'NEW');
+  });
+
+  it('no-ops when the work dir has no token', () => {
+    const { store, writes } = reconcileStore({ '/wd': null, '/canon': oauth('CUR', 1000) });
+    reconcileWorkDirToCanonical('/wd', '/canon', store);
+    assert.equal(writes.length, 0);
+  });
+
+  it('handles a numeric-string expiresAt (newest-wins still fires, not NaN-frozen)', () => {
+    const wd: KeychainData = { claudeAiOauth: { accessToken: 'NEW', refreshToken: 'r', expiresAt: '2000' } };
+    const { store, writes } = reconcileStore({ '/wd': wd, '/canon': oauth('OLD', 1000) });
+    reconcileWorkDirToCanonical('/wd', '/canon', store);
+    assert.equal(writes.length, 1, 'a string expiresAt must not freeze the compare via NaN');
+    assert.equal(writes[0]!.data.claudeAiOauth?.accessToken, 'NEW');
+  });
+});
 
 describe('prepareSessionWorkDir', () => {
   let home: string;

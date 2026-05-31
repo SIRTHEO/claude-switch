@@ -29,26 +29,72 @@ import { ensureDirSymlink } from '../profiles/link-dir.js';
 import { PROFILE_DATA_CONTAINERS, ensureProfileDataContainers } from '../profiles/overlay.js';
 import { profileKeychainTrustedBins } from '../profiles/profiles-credentials.js';
 
-/** Work dirs THIS process created, removed on a clean exit. A single shared
- *  `process.on('exit')` listener (registered lazily) drains the set — registering
- *  one listener per seed would trip the MaxListeners warning under tests that
- *  seed many dirs in one process. */
-const pendingWorkDirCleanups = new Set<string>();
+/**
+ * Push a token the session rotated in its work dir back to the canonical store,
+ * newest-wins by `expiresAt`. claude's in-session refresh lands in the work dir's
+ * own credential file; without this the canonical goes stale and a later DIRECT
+ * launch of that account 401s until its own refresh. Dead-simple: if the work
+ * dir's token is newer than the canonical's (or the canonical has none), copy it
+ * back. A crash before exit loses the last rotation — the full bidirectional
+ * reconcile + the usage-poll guard are later work. Best-effort.
+ *
+ * ASSUMPTION (verify with a real token before relying on this — the (e) gate):
+ * claude writes its in-session refreshed token to `<configDir>/.credentials.json`
+ * (the file it reads). claude's refresh endpoint is a fixed external host, so the
+ * write path can't be exercised with a local mock; if claude instead persists the
+ * refresh elsewhere on macOS, reconcile no-ops and the canonical stays stale until
+ * the next explicit refresh — the same gap step (e) closes completely.
+ */
+/** Coerce `expiresAt` (typed `number | string`) to an epoch for comparison.
+ *  Numeric values pass through; a numeric string parses; an ISO string falls
+ *  back to Date.parse — so a string form can't silently become NaN and freeze
+ *  the newest-wins compare (which would make reconcile never fire). */
+function toEpoch(v: number | string | undefined): number {
+  if (typeof v === 'number') return v;
+  if (typeof v !== 'string') return NaN;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : Date.parse(v);
+}
+
+export function reconcileWorkDirToCanonical(
+  workDir: string,
+  canonicalDir: string,
+  credentials: CredentialStore = defaultCredentialStore,
+): void {
+  const fresh = credentials.readOAuthForConfigDir(workDir)?.claudeAiOauth;
+  if (!fresh) return; // no creds in the work dir → nothing to push back
+  const canon = credentials.readOAuthForConfigDir(canonicalDir)?.claudeAiOauth;
+  const canonEpoch = canon ? toEpoch(canon.expiresAt) : NaN;
+  const freshEpoch = toEpoch(fresh.expiresAt);
+  // Push back when the canonical lacks a usable expiry OR the work dir's token is
+  // strictly newer. If the work dir's own expiry is unparseable, don't overwrite
+  // a valid canonical (can't prove it's newer).
+  if (!Number.isFinite(canonEpoch) || (Number.isFinite(freshEpoch) && freshEpoch > canonEpoch)) {
+    credentials.writeOAuthForConfigDir(canonicalDir, { claudeAiOauth: fresh }, profileKeychainTrustedBins());
+  }
+}
+
+/** Work dirs THIS process created, drained on a clean exit (reconcile-then-rm).
+ *  A single shared `process.on('exit')` listener (registered lazily) drains the
+ *  map — one listener per seed would trip the MaxListeners warning under tests
+ *  that seed many dirs in one process. The value carries what reconcile needs. */
+const pendingWorkDirCleanups = new Map<string, { canonicalDir: string; credentials: CredentialStore }>();
 let cleanupRegistered = false;
 
-/** Remove every work dir scheduled for cleanup. `fs.rmSync` removes the link
- *  ENTRIES, never following the symlinks into the canonical/global targets, so
- *  this can't delete shared user data. Exported for tests (the real call is the
- *  exit listener). */
+/** Reconcile each scheduled work dir back to its canonical (newest-wins), then
+ *  remove it. `fs.rmSync` removes the link ENTRIES, never following the symlinks
+ *  into the canonical/global targets, so this can't delete shared user data.
+ *  Exported for tests (the real call is the exit listener). */
 export function cleanupPendingWorkDirs(): void {
-  for (const dir of pendingWorkDirCleanups) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best-effort: stale dir on exit */ }
+  for (const [workDir, { canonicalDir, credentials }] of pendingWorkDirCleanups) {
+    try { reconcileWorkDirToCanonical(workDir, canonicalDir, credentials); } catch { /* best-effort: stale on exit */ }
+    try { fs.rmSync(workDir, { recursive: true, force: true }); } catch { /* best-effort: stale on exit */ }
   }
   pendingWorkDirCleanups.clear();
 }
 
-function scheduleWorkDirCleanup(workDir: string): void {
-  pendingWorkDirCleanups.add(workDir);
+function scheduleWorkDirCleanup(workDir: string, canonicalDir: string, credentials: CredentialStore): void {
+  pendingWorkDirCleanups.set(workDir, { canonicalDir, credentials });
   if (!cleanupRegistered) {
     cleanupRegistered = true;
     process.on('exit', cleanupPendingWorkDirs);
@@ -163,7 +209,8 @@ export function prepareSessionWorkDir(
   }
 
   // Remove this dir when the process exits cleanly (the sweep above is the
-  // crash/SIGKILL backstop).
-  scheduleWorkDirCleanup(workDir);
+  // crash/SIGKILL backstop), reconciling any in-session token rotation back to
+  // the canonical first.
+  scheduleWorkDirCleanup(workDir, canonicalDir, credentials);
   return workDir;
 }
