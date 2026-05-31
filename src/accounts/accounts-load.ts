@@ -64,9 +64,9 @@ export function load(
 
   // Snapshot-token-collision detection (23.5). When a previous version of
   // claude-switch corrupted a snapshot by capturing the wrong account's live
-  // Keychain (see save()'s guard above + the 2026-05-22 report), two
+  // credentials (see save()'s guard above + the 2026-05-22 report), two
   // snapshots end up sharing the same OAuth accessToken. Restoring that
-  // shared token into the Keychain replays account A's session under
+  // shared token into the live vault replays account A's session under
   // account B's identity — the server rejects, and Claude Code falls
   // through to a fresh browser OAuth login.
   //

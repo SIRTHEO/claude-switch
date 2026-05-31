@@ -10,9 +10,8 @@
 //
 // It is the middle ground between routing (everything shared, but two live
 // accounts collide on the shared default config dir) and a classic profile
-// (fully isolated, but starts empty). Rationale + the identity/config split that
-// limits sharing to skills+projects: .claude/docs/design/2026-05-29-overlay-
-// profiles-usage.md (the umbrella repo).
+// (fully isolated, but starts empty). The identity/config split limits sharing
+// to skills + projects (the credential vault stays per-overlay).
 
 import fs from 'node:fs';
 import os from 'node:os';

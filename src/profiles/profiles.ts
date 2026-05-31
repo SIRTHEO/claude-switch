@@ -4,12 +4,12 @@
 // Each profile is a directory under ~/.claude/profiles/<name>/ that we
 // pass as `CLAUDE_CONFIG_DIR` when spawning claude. Claude Code natively
 // supports this env var (verified on v2.1.123) and gives every distinct
-// dir its own userID, its own macOS Keychain entry, its own session
+// dir its own userID, its own credential vault file, its own session
 // state, etc.
 //
 // This is completely separate from the legacy `claude switch <account>`
 // flow. The legacy flow rewrites global state (~/.claude.json + the
-// default Keychain entry) and is shared across all terminals; profiles
+// default credential vault) and is shared across all terminals; profiles
 // are isolated and per-terminal. Both can coexist on the same machine
 // without interfering with each other.
 
@@ -148,16 +148,16 @@ export function readProfile(name: string): ProfileInfo {
   } catch {
     // Fresh profile (no .claude.json yet) or unreadable. Leave fields null.
   }
-  // On macOS, OAuth tokens live in the Keychain — NOT in the .claude.json
-  // file. The JSON's oauthAccount block is purely descriptive, so a stale
-  // `emailAddress` can persist long after the Keychain entry has been
-  // wiped/expired/never-written. We saw this break "Open account
-  // isolated": the dispatcher trusted hasLogin=true from JSON, spawned
-  // claude in the empty profile, and claude itself fell back to its
-  // login picker. So on darwin we demote hasLogin to "JSON says yes AND
-  // a Keychain entry actually resolves at the per-config-dir service
-  // claude itself queries". The (service, account) pair is derived in
-  // keychain.ts to match claude's `My("-credentials")` / `uV()` formula.
+  // On macOS the profile's OAuth tokens live in the credential VAULT file
+  // (`<configDir>/.credentials.json`) — NOT inline in .claude.json, whose
+  // oauthAccount block is purely descriptive. So a stale `emailAddress` can
+  // persist long after the vault creds were wiped/expired/never-written. We saw
+  // this break "Open account isolated": the dispatcher trusted hasLogin=true
+  // from JSON, spawned claude in the empty profile, and claude fell back to its
+  // login picker. So on darwin we demote hasLogin to "JSON says yes AND the
+  // vault actually resolves creds for this config dir" (readProfileCredentials,
+  // through the credential-store port — file vault by default; the opt-in
+  // Keychain backend would use the per-config-dir service instead).
   if (
     hasLogin &&
     process.platform === 'darwin' &&
@@ -193,13 +193,14 @@ export function removeProfile(name: string): { dir: string; userID: string | nul
 // Strategy:
 //   1. Generate a fresh userID (random 64-char hex).
 //   2. Write `<profile>/.claude.json` with that userID and the email.
-//   3. macOS only: write the saved Keychain blob into a Keychain entry
-//      keyed by our chosen userID. (Linux/Windows store tokens in
-//      .claude.json directly — see Note below.)
+//   3. macOS (store enabled): write the saved credential blob through the
+//      vault port → `<configDir>/.credentials.json` by default (the macOS
+//      Keychain only under the CLAUDE_SWITCH_USE_KEYCHAIN=1 opt-in).
+//      (Linux/Windows store tokens in .claude.json directly — see Note below.)
 //
 // Empirically verified: Claude Code does NOT regenerate userID if it
 // already exists in .claude.json on first run. So the userID we pick
-// becomes the persistent identifier for that profile's Keychain entry.
+// becomes the persistent identifier for that profile's stored credential.
 //
 // NOTE on Linux/Windows: Claude Code stores the OAuth tokens inside
 // .claude.json itself on those platforms. The legacy account file's
@@ -418,8 +419,8 @@ interface EnsureProfileResult {
  * no browser re-login required when a Keychain snapshot is present.
  *
  * Internally calls `refreshLegacySnapshotIfStale` before any sync
- * credential-writing so the snapshot landing in the Keychain / per-profile
- * JSON is always fresh by construction. Refresh failure is silent — we
+ * credential-writing so the snapshot landing in the per-profile credential
+ * vault / JSON is always fresh by construction. Refresh failure is silent — we
  * fall through to the existing "needsLogin" handling.
  */
 export async function ensureProfileForAccount(
@@ -483,10 +484,10 @@ export async function ensureProfileForAccount(
       if (emailMatch) {
         debugProfiles(`emailMatch=true profileFound=true path=${info.path}`);
         // Live-capture fast path: when the email coincides with the active
-        // account, refresh the profile's Keychain entry from the default
-        // Keychain. Handles the drift case where the profile entry was
-        // valid at recovery time but has since gone stale (claude rotates
-        // the default Keychain in-process). No-op on non-darwin / when
+        // account, refresh the profile's vault creds from the default
+        // account's vault. Handles the drift case where the profile creds were
+        // valid at recovery time but have since gone stale (claude rotates
+        // the default creds in-process). No-op on non-darwin / when
         // Keychain disabled / when email != active / when already in sync.
         captureLiveCredentialsForActiveAccount(email, info.path);
         // Re-read so hasLogin reflects any freshly-written entry.

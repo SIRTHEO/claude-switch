@@ -55,9 +55,11 @@ export function readAccountOauth(
   // Tokens live in one of three places depending on platform + snapshot
   // generation:
   //
-  //   1. macOS: snapshot has `_keychain.claudeAiOauth.{accessToken,…}` —
-  //      the active claude binary keeps live tokens in the Keychain, and
-  //      save() copies that block into the file at snapshot time.
+  //   1. macOS: snapshot has `_keychain.claudeAiOauth.{accessToken,…}` (the
+  //      `_keychain` name is a legacy data-format label) — the active claude
+  //      binary keeps live tokens in its credential store (the vault file
+  //      `~/.claude/.credentials.json` by default), and save() copies that
+  //      block into the snapshot at save time.
   //   2. Linux / Windows: snapshot has the tokens directly at the top
   //      level (claude.json's `oauthAccount` spread by save()).
   //   3. Legacy: tokens nested under an explicit `oauthAccount` object.

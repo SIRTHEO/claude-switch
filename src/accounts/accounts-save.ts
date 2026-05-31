@@ -41,14 +41,15 @@ export function save(
   const keychainDisabled = process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN === '1';
 
   // Defensive guard against the snapshot-token-collision class (23.5).
-  // save() reads the LIVE Keychain via credentials.readOAuth() and writes the
-  // result into the named snapshot. If the named snapshot is NOT the currently
-  // active account (per ~/.claude.json.oauthAccount.emailAddress) the result
-  // is a snapshot for account X that carries account Y's OAuth tokens.
-  // The next `load(X)` then replays Y's tokens into the Keychain, the server
-  // rejects them (token UUID ≠ requested account UUID), and Claude Code falls
-  // through to a fresh browser OAuth login — exactly the regression reported
-  // 2026-05-22 (see .claude/docs/reports/2026-05-22-snapshot-token-collision.md).
+  // save() reads the LIVE credentials via credentials.readOAuth() (the vault
+  // file `~/.claude/.credentials.json` by default) and writes the result into
+  // the named snapshot. If the named snapshot is NOT the currently active
+  // account (per ~/.claude.json.oauthAccount.emailAddress) the result is a
+  // snapshot for account X that carries account Y's OAuth tokens. The next
+  // `load(X)` then replays Y's tokens into the live vault, the server rejects
+  // them (token UUID ≠ requested account UUID), and Claude Code falls through
+  // to a fresh browser OAuth login — exactly the snapshot-token-collision
+  // regression reported 2026-05-22.
   //
   // The current call sites (switcher, syncActiveSnapshotIfStale, passthrough,
   // addAccount, reAuthenticate, status) all save the email returned by

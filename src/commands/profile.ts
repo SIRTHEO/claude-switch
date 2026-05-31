@@ -1,7 +1,7 @@
 // src/commands/profile.ts
 // `claude switch profile …` — per-terminal isolated claude sessions via
 // CLAUDE_CONFIG_DIR. Each profile lives at ~/.claude/profiles/<name>/
-// with its own userID, Keychain entry, sessions.
+// with its own userID, credential vault file, sessions.
 //
 // All sub-commands here use dynamic `import('../profiles/profiles.js')` so cli.ts
 // startup doesn't pay the profiles module cost on the hot path
