@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { prepareSessionWorkDir } from '../src/sessions/session-workdir.js';
+import { cleanupPendingWorkDirs, prepareSessionWorkDir, sweepStaleWorkDirs } from '../src/sessions/session-workdir.js';
 import type { CredentialStore, KeychainData } from '../src/credentials/credential-store.js';
 
 const CONTAINERS = ['projects', 'sessions', 'skills', 'shell-snapshots', 'file-history', 'todos'];
@@ -129,6 +129,27 @@ describe('prepareSessionWorkDir', () => {
       /no resolvable credentials/i,
     );
     assert.ok(!fs.existsSync(path.join(claudeDir, 'session-dirs', `work.${process.pid}`)), 'half-seeded dir removed');
+  });
+
+  it('sweepStaleWorkDirs removes dead-pid work dirs, keeps live ones and non-work entries', () => {
+    const sessionDirs = path.join(claudeDir, 'session-dirs');
+    fs.mkdirSync(path.join(sessionDirs, 'work.999999'), { recursive: true }); // dead pid (injected)
+    fs.mkdirSync(path.join(sessionDirs, `live.${process.pid}`), { recursive: true });
+    fs.mkdirSync(path.join(sessionDirs, 'notours'), { recursive: true }); // no .<pid> suffix
+    // Inject liveness so the test is deterministic (only THIS pid is alive).
+    sweepStaleWorkDirs(claudeDir, { isAlive: (pid) => pid === process.pid });
+    assert.ok(!fs.existsSync(path.join(sessionDirs, 'work.999999')), 'dead-pid work dir removed');
+    assert.ok(fs.existsSync(path.join(sessionDirs, `live.${process.pid}`)), 'live work dir kept');
+    assert.ok(fs.existsSync(path.join(sessionDirs, 'notours')), 'non-work entry left alone');
+  });
+
+  it('schedules the work dir for exit cleanup; cleanupPendingWorkDirs removes it', () => {
+    const canonical = path.join(claudeDir, 'profiles', 'work');
+    seedCanonical(canonical, 'sirtheo.work@example.com');
+    const workDir = prepareSessionWorkDir(canonical, accountsDir);
+    assert.ok(fs.existsSync(workDir), 'work dir created');
+    cleanupPendingWorkDirs(); // what the exit listener calls
+    assert.ok(!fs.existsSync(workDir), 'cleanup removed the work dir');
   });
 
   it('recycles a stale work dir from a reused pid', () => {

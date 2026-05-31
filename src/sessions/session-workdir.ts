@@ -24,9 +24,59 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { type CredentialStore, defaultCredentialStore } from '../credentials/credential-store.js';
+import { isProcessAlive } from '../platform/lock.js';
 import { ensureDirSymlink } from '../profiles/link-dir.js';
 import { PROFILE_DATA_CONTAINERS, ensureProfileDataContainers } from '../profiles/overlay.js';
 import { profileKeychainTrustedBins } from '../profiles/profiles-credentials.js';
+
+/** Work dirs THIS process created, removed on a clean exit. A single shared
+ *  `process.on('exit')` listener (registered lazily) drains the set — registering
+ *  one listener per seed would trip the MaxListeners warning under tests that
+ *  seed many dirs in one process. */
+const pendingWorkDirCleanups = new Set<string>();
+let cleanupRegistered = false;
+
+/** Remove every work dir scheduled for cleanup. `fs.rmSync` removes the link
+ *  ENTRIES, never following the symlinks into the canonical/global targets, so
+ *  this can't delete shared user data. Exported for tests (the real call is the
+ *  exit listener). */
+export function cleanupPendingWorkDirs(): void {
+  for (const dir of pendingWorkDirCleanups) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best-effort: stale dir on exit */ }
+  }
+  pendingWorkDirCleanups.clear();
+}
+
+function scheduleWorkDirCleanup(workDir: string): void {
+  pendingWorkDirCleanups.add(workDir);
+  if (!cleanupRegistered) {
+    cleanupRegistered = true;
+    process.on('exit', cleanupPendingWorkDirs);
+  }
+}
+
+/**
+ * Remove orphaned work dirs whose owning pid is dead — the robust backstop for
+ * the immediate exit cleanup (which a crash / SIGKILL bypasses). Each work dir is
+ * named `<profile>.<pid>`; an entry whose pid is not alive is removed. Best-effort
+ * per entry; `fs.rmSync` never follows the container symlinks. Runs opportunistically
+ * at every seed, so a new session reclaims the previous ones' leftovers.
+ */
+export function sweepStaleWorkDirs(globalConfigDir: string, deps: { isAlive?: (pid: number) => boolean } = {}): void {
+  const isAlive = deps.isAlive ?? isProcessAlive;
+  const root = path.join(globalConfigDir, 'session-dirs');
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(root);
+  } catch {
+    return; // no session-dirs yet → nothing to sweep
+  }
+  for (const entry of entries) {
+    const pid = Number(entry.match(/\.(\d+)$/)?.[1]);
+    if (!Number.isInteger(pid) || isAlive(pid)) continue; // not ours / still live → leave it
+    try { fs.rmSync(path.join(root, entry), { recursive: true, force: true }); } catch { /* best-effort */ }
+  }
+}
 
 /** Per-session private files — copied, never symlinked (see header).
  *  `.credentials.json` is NOT here: it goes through the credential port below.
@@ -68,6 +118,9 @@ export function prepareSessionWorkDir(
 ): string {
   const credentials = deps.credentials ?? defaultCredentialStore;
   const globalConfigDir = path.dirname(accountsDirPath); // ~/.claude
+  // Opportunistic cleanup: reclaim work dirs whose owning session has died
+  // (crash / SIGKILL bypass the exit listener) before creating a new one.
+  sweepStaleWorkDirs(globalConfigDir);
   const name = path.basename(path.resolve(canonicalDir));
   const workDir = path.resolve(globalConfigDir, 'session-dirs', `${name}.${process.pid}`);
 
@@ -109,5 +162,8 @@ export function prepareSessionWorkDir(
     ensureDirSymlink(path.join(workDir, sub), path.resolve(canonicalDir, sub));
   }
 
+  // Remove this dir when the process exits cleanly (the sweep above is the
+  // crash/SIGKILL backstop).
+  scheduleWorkDirCleanup(workDir);
   return workDir;
 }
