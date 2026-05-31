@@ -88,8 +88,21 @@ describe('handlePassthrough — B2 routing isolation wiring', () => {
     const dir = path.join(home, '.claude', 'profiles', name);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, '.cs-overlay'), '');
-    fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: email } }));
+    // Inline token (test-mode embed) so the work-dir seeder's no-creds guard passes.
+    fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({
+      oauthAccount: { emailAddress: email, accessToken: 'tok', refreshToken: 'rtok', expiresAt: 9999999999999 },
+    }));
     return dir;
+  }
+
+  /** Assert the spawn landed in a per-session work dir for `<name>` seeded from
+   *  `canonical` (not the canonical dir itself), and the registry recorded it. */
+  function assertWorkDir(env: NodeJS.ProcessEnv | null | undefined, name: string, canonical: string): string {
+    const ccd = env?.CLAUDE_CONFIG_DIR;
+    assert.ok(ccd?.startsWith(path.join(home, '.claude', 'session-dirs') + path.sep), 'spawns in a per-session work dir');
+    assert.match(path.basename(ccd!), new RegExp(`^${name}\\.\\d+$`), 'work dir named <profile>.<pid>');
+    assert.notEqual(ccd, canonical, 'the canonical dir is NOT the spawn dir');
+    return ccd!;
   }
 
   it('launches an existing overlay isolated (CLAUDE_CONFIG_DIR set, no global swap)', async () => {
@@ -104,13 +117,14 @@ describe('handlePassthrough — B2 routing isolation wiring', () => {
     });
 
     assert.equal(runCalls.length, 1, 'claude must be launched');
-    assert.equal(runCalls[0]?.CLAUDE_CONFIG_DIR, overlayDir, 'must spawn isolated against the overlay');
+    const ccd = assertWorkDir(runCalls[0], 'acme', overlayDir);
     // Global active untouched — the live personal session keeps its token.
     assert.equal(getCurrent(claudeJson), 'personal@gmail.com');
-    // The isolated session was recorded.
+    // The isolated session was recorded against the work dir.
     const recorded = readRaw(accDir).filter((s) => s.account === 'theo@acme.com');
     assert.equal(recorded.length, 1);
     assert.equal(recorded[0]!.isolated, true);
+    assert.equal(recorded[0]!.configDir, ccd);
   });
 
   it('reuses an existing (non-overlay) logged-in profile isolated when no overlay marker exists', async () => {
@@ -122,7 +136,10 @@ describe('handlePassthrough — B2 routing isolation wiring', () => {
     const profileDir = createProfile('acme-work');
     fs.writeFileSync(
       path.join(profileDir, '.claude.json'),
-      JSON.stringify({ userID: 'w'.repeat(64), oauthAccount: { emailAddress: 'theo@acme.com' } }),
+      JSON.stringify({
+        userID: 'w'.repeat(64),
+        oauthAccount: { emailAddress: 'theo@acme.com', accessToken: 'tok', refreshToken: 'rtok', expiresAt: 9999999999999 },
+      }),
     );
     const runCalls: Array<NodeJS.ProcessEnv | null | undefined> = [];
 
@@ -134,7 +151,7 @@ describe('handlePassthrough — B2 routing isolation wiring', () => {
     });
 
     assert.equal(runCalls.length, 1, 'claude must be launched');
-    assert.equal(runCalls[0]?.CLAUDE_CONFIG_DIR, profileDir, 'must spawn isolated against the resolved profile');
+    assertWorkDir(runCalls[0], 'acme-work', profileDir);
     // Global active untouched — routing is ephemeral (no swap, B2).
     assert.equal(getCurrent(claudeJson), 'personal@gmail.com');
     const recorded = readRaw(accDir).filter((s) => s.account === 'theo@acme.com');
@@ -173,8 +190,9 @@ describe('handlePassthrough — B2 routing isolation wiring', () => {
     // The profile was minted on demand (derived name "theo")…
     const minted = path.join(profilesRoot, 'theo');
     assert.equal(fs.existsSync(minted), true, 'the routed account profile must be created on demand');
-    // …and claude spawned isolated against it, with the global active untouched.
-    assert.equal(runCalls[0]?.CLAUDE_CONFIG_DIR, minted, 'must spawn isolated against the minted profile');
+    // …and claude spawned isolated against a work dir seeded from it (not the
+    // canonical minted profile), with the global active untouched.
+    assertWorkDir(runCalls[0], 'theo', minted);
     assert.equal(getCurrent(claudeJson), 'personal@gmail.com');
     const recorded = readRaw(accDir).filter((s) => s.account === 'theo@acme.com');
     assert.equal(recorded.length, 1);

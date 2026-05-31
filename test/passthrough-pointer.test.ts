@@ -75,7 +75,11 @@ describe('handlePassthrough — default-pointer divert (slice 4a)', () => {
     const dir = createProfile(name);
     fs.writeFileSync(
       path.join(dir, '.claude.json'),
-      JSON.stringify({ userID: 'w'.repeat(64), oauthAccount: { emailAddress: email } }),
+      JSON.stringify({
+        userID: 'w'.repeat(64),
+        // Inline token (test-mode embed) so the work-dir seeder's no-creds guard passes.
+        oauthAccount: { emailAddress: email, accessToken: 'tok', refreshToken: 'rtok', expiresAt: 9999999999999 },
+      }),
     );
     return dir;
   }
@@ -99,13 +103,19 @@ describe('handlePassthrough — default-pointer divert (slice 4a)', () => {
     await handlePassthrough(ctx(), ['--help'], { runClaude });
 
     assert.equal(calls.length, 1, 'claude must be launched once');
-    assert.equal(calls[0]?.CLAUDE_CONFIG_DIR, workDir, 'must spawn isolated against the pointed profile');
+    // Spawns in a per-session work dir seeded from the pointed profile (not the
+    // canonical profile dir itself).
+    const ccd = calls[0]?.CLAUDE_CONFIG_DIR;
+    assert.ok(ccd?.startsWith(path.join(home, '.claude', 'session-dirs') + path.sep), 'spawns in a work dir');
+    assert.match(path.basename(ccd!), /^work\.\d+$/);
+    assert.notEqual(ccd, workDir, 'the canonical pointed profile is NOT the spawn dir');
     // The global default slot is NOT overwritten by the divert.
     assert.equal(getCurrent(claudeJson), 'sirtheo.personal@example.com');
-    // Recorded as an isolated session for the profile's account.
+    // Recorded as an isolated session for the profile's account, against the work dir.
     const recorded = readRaw(accDir).filter((s) => s.account === 'sirtheo.work@example.com');
     assert.equal(recorded.length, 1);
     assert.equal(recorded[0]!.isolated, true);
+    assert.equal(recorded[0]!.configDir, ccd);
   });
 
   it("default pointer → falls through to the global flow (no CLAUDE_CONFIG_DIR injected)", async () => {

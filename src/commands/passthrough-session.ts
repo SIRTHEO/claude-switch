@@ -26,6 +26,28 @@ export function recordPassthroughSession(
 }
 
 /**
+ * Seed a disposable per-session work dir from the resolved canonical profile,
+ * record the live session against the WORK dir, and spawn claude there — never
+ * in the canonical dir itself, so a future live migration can rewrite this
+ * session's dir without corrupting the account's store. Shared by the routing
+ * and default-pointer isolated launch paths (identical shape). `runClaude`
+ * never returns in production.
+ */
+async function launchInSeededWorkDir(
+  canonicalDir: string,
+  account: string,
+  accountsDirPath: string,
+  claudeBin: string,
+  args: string[],
+  runClaude: typeof proxyRun,
+): Promise<void> {
+  const { prepareSessionWorkDir } = await import('../sessions/session-workdir.js');
+  const workDir = prepareSessionWorkDir(canonicalDir, accountsDirPath);
+  recordPassthroughSession(accountsDirPath, account, workDir);
+  runClaude(claudeBin, args, { CLAUDE_CONFIG_DIR: workDir });
+}
+
+/**
  * 28.4 / B2 — turn routing's isolation decision into a launch. Resolves the
  * routed account to its own credential dir and spawns claude there
  * (CLAUDE_CONFIG_DIR set, no global swap) — minting the profile on demand when
@@ -64,10 +86,9 @@ export async function runIsolatedOrRefuse(
   if (routing.launchIsolatedBanner) {
     process.stderr.write(`${routing.launchIsolatedBanner}\n\n`);
   }
-  recordPassthroughSession(accountsDirPath, launch.email, launch.configDir);
   // `runClaude` (proxyRun) never returns in production; the caller adds an
   // explicit `return` so a non-blocking test fake can't fall through.
-  runClaude(claudeBin, args, { CLAUDE_CONFIG_DIR: launch.configDir });
+  await launchInSeededWorkDir(launch.configDir, launch.email, accountsDirPath, claudeBin, args, runClaude);
 }
 
 /**
@@ -96,6 +117,7 @@ export async function launchPointedWorkspace(
       `Run: claude switch profile login ${pointed.name}`,
     );
   }
-  recordPassthroughSession(accountsDirPath, info.emailAddress ?? pointed.name, pointed.configDir);
-  runClaude(claudeBin, args, { CLAUDE_CONFIG_DIR: pointed.configDir });
+  await launchInSeededWorkDir(
+    pointed.configDir, info.emailAddress ?? pointed.name, accountsDirPath, claudeBin, args, runClaude,
+  );
 }
