@@ -37,13 +37,14 @@ export interface MigrateResult {
 
 /** How `migrateSession` resolves (and mints on demand) the target profile.
  *  Defaults to `ensureProfileForAccount`; injectable so tests don't run the
- *  real legacy-snapshot refresh / network path. */
-export type EnsureProfileFn = (
+ *  real legacy-snapshot refresh / network path. Internal — tests pass `deps`
+ *  as an object literal, structurally checked, so this name needn't be exported. */
+type EnsureProfileFn = (
   email: string,
   accountsDirPath: string,
 ) => Promise<{ profilePath: string; needsLogin: boolean }>;
 
-export interface MigrateDeps {
+interface MigrateDeps {
   credentials?: CredentialStore;
   ensureProfile?: EnsureProfileFn;
   /** Force the storage branch (token in the vault file vs embedded inline in

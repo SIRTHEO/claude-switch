@@ -74,6 +74,20 @@ describe('handleMigrate — JSON contract + output paths', () => {
     fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
+  it('is INERT by default: a valid pid with no injected migrate refuses "not available"', async () => {
+    // The command is wired but disabled until per-session work dirs land — its
+    // default action refuses, never reaching a real migration. Inject NOTHING.
+    const pid = seedIsolated();
+    const { out, err } = await capture(() =>
+      handleMigrate({ accountsDirPath: accountsDir }, String(pid), 'sirtheo.work@example.com', { json: true }),
+    );
+    const parsed = JSON.parse(out.trim());
+    assert.equal(parsed.ok, false);
+    assert.match(parsed.error, /not available/i);
+    assert.equal(err, '', 'stderr clean in json mode');
+    assert.equal(process.exitCode, 1);
+  });
+
   it('--json success emits one JSON line {ok:true,...} and clean stderr', async () => {
     const pid = seedIsolated();
     const { out, err } = await capture(() =>

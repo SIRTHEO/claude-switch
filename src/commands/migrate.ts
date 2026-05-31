@@ -1,22 +1,40 @@
 // src/commands/migrate.ts
 // `claude switch migrate <pid> <account> [--json]` — live-migrate a RUNNING
 // isolated claude session (identified by the pid shown in `claude switch
-// sessions`) to a different account, without restarting it. Thin surface over
-// `migrateSession`: resolve pid → the session's private config dir from the
-// live registry, then hand off to the writer (which enforces every safety gate:
-// isolated-only, target-logged-in, target-not-live-elsewhere).
+// sessions`) to a different account, without restarting it.
+//
+// ⛔ TEMPORARILY INERT. Live migration rewrites a running session's config dir;
+// today every isolated session runs in its account's CANONICAL profile dir, so a
+// real migration would corrupt that account and reintroduce token mixing. The
+// command is therefore wired but DISABLED at the surface: its default action is
+// `notAvailable` (an unconditional refuse), immune to where sessions run. It is
+// re-enabled — by switching the default back to `migrateSession` — only once
+// per-session work dirs + the reconcile/usage-poll/launch-refusal protections
+// land (the per-session-dir work and its final step). The `migrateSession` writer
+// itself stays fully tested for that day.
 
-import { type MigrateResult, migrateSession } from '../sessions/migrate-session.js';
+import type { MigrateResult } from '../sessions/migrate-session.js';
 import { listLiveSessions } from '../sessions/session-registry.js';
 
 interface MigrateOptions {
   json: boolean;
 }
 
-/** Seam so the JSON-contract test can drive the output paths without the real
- *  profile-resolve / credential write. Production uses `migrateSession`. */
+type MigrateFn = (target: string, configDir: string, accountsDirPath: string) => Promise<MigrateResult>;
+
+/** Default action while the feature is disabled (see header): refuse, never
+ *  touch credentials. Replaced by `migrateSession` when migration is re-enabled. */
+const notAvailable: MigrateFn = () => {
+  throw new Error(
+    'live migration is not available in this version yet — it lands with the ' +
+      'per-session working-directory support (so it can never corrupt an account).',
+  );
+};
+
+/** Seam so the JSON-contract test can drive the output paths with an injected
+ *  migration. Production uses `notAvailable` (feature disabled — see header). */
 interface MigrateDeps {
-  migrate?: (target: string, configDir: string, accountsDirPath: string) => Promise<MigrateResult>;
+  migrate?: MigrateFn;
 }
 
 /** Emit a single-line JSON failure + exit non-zero (GUI contract: clean stderr
@@ -37,7 +55,7 @@ export async function handleMigrate(
   opts: MigrateOptions,
   deps: MigrateDeps = {},
 ): Promise<void> {
-  const migrate = deps.migrate ?? migrateSession;
+  const migrate = deps.migrate ?? notAvailable;
   if (!session || !target) {
     fail('usage: claude switch migrate <pid> <account>  (pid from `claude switch sessions`)', opts);
     return;
