@@ -213,7 +213,10 @@ export function ProfilesScreen({ accountsDirPath, initialNotice, onExit }: Scree
           `Profile:  ${result.profileName}`,
           `User ID:  ${result.userID.slice(0, 16)}…`,
         ];
-        if (result.wroteToKeychain) lines.push('Tokens:   written to macOS Keychain');
+        // `wroteToKeychain` = tokens written via the credential vault port, which
+        // is the file vault (<configDir>/.credentials.json) by default — NOT the
+        // macOS Keychain (that is opt-in only). See SECURITY.md.
+        if (result.wroteToKeychain) lines.push('Tokens:   written to the profile credential vault');
         else if (result.needsLogin) lines.push('', '⚠ No credential snapshot found.', 'Run "Authenticate profile" to complete setup.');
         else lines.push('Tokens:   written to profile .claude.json');
         setStep({ kind: 'note', title: 'Imported', body: lines.join('\n') });
@@ -232,8 +235,11 @@ export function ProfilesScreen({ accountsDirPath, initialNotice, onExit }: Scree
     try {
       const result = removeProfile(step.profileName);
       const lines = [`Removed: ${result.dir}`];
-      if (result.userID && process.platform === 'darwin') {
-        lines.push('', 'Note: the macOS Keychain entry was not removed.', 'Manual cleanup:', `  security delete-generic-password -a "${result.userID}" -s "Claude Code-credentials"`);
+      // By default the profile's tokens live in <dir>/.credentials.json (file
+      // vault) and were just removed with the dir — nothing to clean up. Only
+      // the opt-in macOS Keychain backend leaves a separate entry behind.
+      if (result.userID && process.platform === 'darwin' && process.env.CLAUDE_SWITCH_USE_KEYCHAIN === '1') {
+        lines.push('', 'Note: the opt-in macOS Keychain entry was not removed.', 'Manual cleanup:', `  security delete-generic-password -a "${result.userID}" -s "Claude Code-credentials"`);
       }
       setStep({ kind: 'note', title: 'Removed', body: lines.join('\n') });
     } catch (e) {

@@ -266,42 +266,52 @@ export function importProfileFromAccount(
   const { _keychain, ...oauthFields } = account;
 
   // Determine whether we can fully populate the profile with credentials,
-  // or whether the user has to `profile login` afterwards. Two paths:
+  // or whether the user has to `profile login` afterwards. Two paths — and note
+  // (see SECURITY.md): the DEFAULT credential backend is the FILE vault, NOT the
+  // macOS Keychain.
   //
-  //   macOS  →  if we have _keychain, write it to the Keychain at the
-  //             per-config-dir service Claude Code derives from the
-  //             profile path. Account field is the OS username, NOT the
-  //             userID — newer claude (v2.x) ignores the userID for
-  //             OAuth lookups and only honours
-  //             `Claude Code-credentials-<sha256(configDir)[0:8]>` /
-  //             `os.userInfo().username`. We still record userID in the
-  //             JSON for our own bookkeeping (telemetry/debug).
+  //   default (darwin, store enabled)  →  write the tokens through the
+  //             credential vault port (`writeProfileCredentials`). By DEFAULT
+  //             that is the FILE vault → `<configDir>/.credentials.json` (the
+  //             file Claude Code reads natively); ONLY under
+  //             CLAUDE_SWITCH_USE_KEYCHAIN=1 does the port use the macOS
+  //             Keychain (per-config-dir service `Claude Code-credentials-
+  //             <sha256(configDir)[0:8]>`, account = `os.userInfo().username`;
+  //             v2.x ignores userID for OAuth lookups). oauthAccount in
+  //             .claude.json stays metadata-only on this path.
   //
-  //   other  →  Claude Code reads tokens from .claude.json itself, so we
-  //             embed accessToken/refreshToken/expiresAt directly there.
+  //   else (non-darwin, OR store disabled via DISABLE_KEYCHAIN)  →  Claude Code
+  //             reads tokens from .claude.json itself, so we embed
+  //             accessToken/refreshToken/expiresAt directly there.
   //
   // If we have no _keychain snapshot (pre-v2.2 legacy account), we write
   // ONLY the userID to the JSON — no oauthAccount. That way readProfile()
   // returns hasLogin=false and `profile use` correctly refuses to spawn
   // claude, prompting the user to run `profile login` first.
-  // `hasCompletedOnboarding` is the gate Claude Code 2.x checks before
-  // attempting to read OAuth tokens from the Keychain. Without it the
-  // binary shows the full welcome wizard (theme picker → "Select login
-  // method"), bypassing the Keychain entry entirely even when valid
-  // credentials are present. Set it here so imported profiles enter
-  // the REPL directly.
+  // `hasCompletedOnboarding` is the gate Claude Code 2.x checks before reading
+  // OAuth tokens from its credential store (the vault file, or the Keychain
+  // item under the opt-in). Without it the binary shows the full welcome wizard
+  // (theme picker → "Select login method"), bypassing the stored credential
+  // even when it is valid. Set it here so imported profiles enter the REPL
+  // directly.
   const claudeJson: Record<string, unknown> = {
     userID,
     hasCompletedOnboarding: true,
   };
+  // `wroteToKeychain` is a legacy field name on ImportResult (kept for the
+  // contract + tests) — it means "tokens were written via the vault port",
+  // which is a FILE write by default, not a Keychain write.
   let wroteToKeychain = false;
   let needsLogin = false;
 
-  // CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 forces the JSON-embedding path even on
-  // darwin. Used by the test suite (so `npm test` doesn't trigger Keychain
-  // auth prompts) and by users who explicitly opt out of the Keychain
-  // backend. The mock claude binary in test/fixtures honours the same
-  // contract — JSON-embedded tokens are read directly.
+  // CLAUDE_SWITCH_DISABLE_KEYCHAIN=1 forces the JSON-embedding path (tokens
+  // inline in .claude.json) instead of the credential vault. Used by the test
+  // suite (so `npm test` is non-interactive) and by users who opt out of the
+  // store. The mock claude binary in test/fixtures honours the same contract —
+  // JSON-embedded tokens are read directly.
+  // NB: despite the name, `useKeychain` means "use the credential vault port"
+  // (file vault by default; macOS Keychain only under USE_KEYCHAIN=1), NOT
+  // "the macOS Keychain is in use".
   const useKeychain = process.platform === 'darwin'
     && process.env.CLAUDE_SWITCH_DISABLE_KEYCHAIN !== '1';
 
