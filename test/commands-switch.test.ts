@@ -13,9 +13,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { handleSwitchTo } from '../src/commands/switch.js';
-import { save as saveAccount } from '../src/accounts/accounts.js';
+import { save as saveAccount, getCurrent } from '../src/accounts/accounts.js';
 import { setAlias } from '../src/switching/aliases.js';
 import type { CommandContext } from '../src/commands/context.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 // ---------------------------------------------------------------------------
 // Scaffolding
@@ -27,10 +28,14 @@ interface Harness {
   accDir: string;
   ctx: CommandContext;
   stdout: string[];
+  savedHome: SavedHome;
 }
 
 function setup(activeEmail?: string): Harness {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-switch-'));
+  // The re-point path creates a profile under os.homedir()/.claude/profiles, so
+  // HOME must be isolated or the test pollutes the real ~/.claude.
+  const savedHome = setFakeHome(tmpDir);
   const claudeJson = path.join(tmpDir, '.claude.json');
   const accDir = path.join(tmpDir, 'accounts');
   fs.mkdirSync(accDir, { recursive: true });
@@ -48,10 +53,11 @@ function setup(activeEmail?: string): Harness {
     updateInfo: null,
     selfUrl: fileURLToPath(import.meta.url),
   };
-  return { tmpDir, claudeJson, accDir, ctx, stdout: [] };
+  return { tmpDir, claudeJson, accDir, ctx, stdout: [], savedHome };
 }
 
 function teardown(h: Harness): void {
+  restoreFakeHome(h.savedHome);
   fs.rmSync(h.tmpDir, { recursive: true, force: true });
 }
 
@@ -142,5 +148,14 @@ describe('handleSwitchTo — exact single match', () => {
     await handleSwitchTo(h.ctx, 'bob');
     const out = h.stdout.join('\n');
     assert.match(out, /bob@example\.com/);
+  });
+
+  it('re-points WITHOUT overwriting ~/.claude (the global stays the active account)', async () => {
+    // Unified-profile model: `claude switch <other>` re-points the default
+    // pointer; it must NOT swap the global ~/.claude (that was the mixing bug).
+    saveAccount('carol@example.com', h.claudeJson, h.accDir);
+    h.stdout.length = 0;
+    await handleSwitchTo(h.ctx, 'carol@example.com');
+    assert.equal(getCurrent(h.claudeJson), 'alice@example.com', '~/.claude untouched by a re-point');
   });
 });

@@ -146,7 +146,7 @@ function writeAccountFile(accountsDirPath: string, email: string): void {
 // Scenario A — switch A→B, statusline reflects the active account
 // ---------------------------------------------------------------------------
 
-describe('statusline realtime — Scenario A: switch A→B + badge update', () => {
+describe('statusline realtime — Scenario A: switch re-points, global statusline unchanged', () => {
   let tmpHome: string;
   let accountsDir: string;
 
@@ -182,23 +182,19 @@ describe('statusline realtime — Scenario A: switch A→B + badge update', () =
     assert.strictEqual(got.fiveHour, 30, 'five-hour usage must be 30% for account A');
   });
 
-  it('after switching to B, statusline reflects B (60%)', () => {
+  it('`claude switch B` re-points without changing the GLOBAL statusline (re-point, not swap)', () => {
+    // Unified-profile model: a switch re-points the default-pointer and does NOT
+    // overwrite ~/.claude. The statusline reflects its INVOCATION CONTEXT — run
+    // in the global context (no CLAUDE_CONFIG_DIR) it still shows the global
+    // account A, unchanged by the re-point. B's badge shows only inside B's
+    // profile context — that is Scenario B below. The rich "spawned vs current
+    // per terminal" view is the dashboard ("cruscotto") slice.
     const sw = runSwitch(tmpHome, emailB);
     assert.strictEqual(sw.status, 0, `claude switch ${emailB} must exit 0, stderr: ${sw.stderr}`);
 
     const got = runStatusline(tmpHome);
-    assert.strictEqual(got.email, emailB, 'active account must be B after switch');
-    assert.strictEqual(got.fiveHour, 60, 'five-hour usage must be 60% for account B');
-  });
-
-  it('after switching back to A, statusline reflects A (30%) again', () => {
-    // Switch B → A
-    const sw = runSwitch(tmpHome, emailA);
-    assert.strictEqual(sw.status, 0, `claude switch ${emailA} must exit 0, stderr: ${sw.stderr}`);
-
-    const got = runStatusline(tmpHome);
-    assert.strictEqual(got.email, emailA, 'active account must be A again');
-    assert.strictEqual(got.fiveHour, 30, 'five-hour usage must be 30% for account A');
+    assert.strictEqual(got.email, emailA, 'global statusline must still show A — a re-point does not swap the global');
+    assert.strictEqual(got.fiveHour, 30, 'global five-hour usage stays A’s 30%');
   });
 });
 

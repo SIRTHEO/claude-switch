@@ -115,7 +115,7 @@ describe('_internal.handleSwitched', () => {
       switchedFrom: h.email,
       switchedTo: h.email,
       autoLaunch: true,
-      defaultIsolated: false,
+      pointer: 'default',
     }, h.accDir);
     assert.equal(notice?.kind, 'info');
     assert.match(notice?.text ?? '', /Already on/);
@@ -126,45 +126,49 @@ describe('_internal.handleSwitched', () => {
       switchedFrom: 'old@x.com',
       switchedTo: h.email,
       autoLaunch: false,
-      defaultIsolated: false,
+      pointer: 'default',
     }, h.accDir);
     assert.equal(notice?.kind, 'success');
     assert.match(notice?.text ?? '', /Switched to/);
   });
 
-  it('enters defaultIsolated path and returns a notice (warning or error or success)', async () => {
-    // With CLAUDE_SWITCH_BIN set and defaultIsolated=true, handleSwitched enters
-    // the profile-isolation branch. In a tmpDir without real profiles data,
-    // ensureProfileForAccount may succeed (needsLogin=false) or throw — either
-    // way, we verify the path is exercised and a notice (not a throw) comes back.
+  it('launches isolated by a non-default pointer and returns a notice (or throws on spawn)', async () => {
+    // With CLAUDE_SWITCH_BIN set and a non-default pointer, handleSwitched
+    // launches that profile isolated (CLAUDE_CONFIG_DIR = profilePath(pointer)).
+    // The fake bin exits 0, so the spawn-and-wait path throws ExitError; either
+    // an ExitError or a returned notice proves the isolated branch ran.
     const prevBin = process.env.CLAUDE_SWITCH_BIN;
     let savedHome: SavedHome;
     process.env.CLAUDE_SWITCH_BIN = h.claudeBin;
     savedHome = setFakeHome(h.tmpDir);
+    // Capture stderr: the isolated branch writes a distinctive banner naming the
+    // pointed profile BEFORE it spawns. Its presence is the launch-target proof
+    // — it means the profile-isolated path ran, NOT the global ~/.claude launch
+    // (which writes no such banner). A pointer-only check would miss that bug.
+    const origWrite = process.stderr.write.bind(process.stderr);
+    const stderrSeen: string[] = [];
+    (process.stderr as { write: unknown }).write = (chunk: string | Uint8Array): boolean => {
+      stderrSeen.push(String(chunk));
+      return true;
+    };
     try {
-      const notice = await _internal.handleSwitched({
+      await _internal.handleSwitched({
         switchedFrom: 'old@example.com',
         switchedTo: h.email,
         autoLaunch: true,
-        defaultIsolated: true,
+        pointer: 'work',
       }, h.accDir);
-      // Either an ExitError is thrown (spawnSync with exit 0) or we get a notice.
-      // Both are valid — the important thing is the defaultIsolated branch was entered.
-      assert.ok(
-        notice === null ||
-        notice?.kind === 'warning' ||
-        notice?.kind === 'error' ||
-        notice?.kind === 'success',
-        `Expected notice or null, got: ${JSON.stringify(notice)}`,
-      );
     } catch (err) {
-      // ExitError is acceptable — spawnSync completed without error.
+      // ExitError is expected — the fake bin exits 0, so spawn-and-wait throws.
       assert.ok(err instanceof ExitError, `Expected ExitError, got: ${String(err)}`);
     } finally {
+      (process.stderr as { write: unknown }).write = origWrite;
       if (prevBin === undefined) delete process.env.CLAUDE_SWITCH_BIN;
       else process.env.CLAUDE_SWITCH_BIN = prevBin;
       restoreFakeHome(savedHome);
     }
+    // Launch-target assertion: launched isolated against the pointed profile.
+    assert.match(stderrSeen.join(''), /isolated · profile: work/);
   });
 });
 
@@ -349,7 +353,7 @@ describe('_internal.handleSwitched — autoLaunch paths', () => {
         switchedFrom: 'old@example.com',
         switchedTo: h.email,
         autoLaunch: true,
-        defaultIsolated: false,
+        pointer: 'default',
       }, h.accDir);
       assert.equal(notice?.kind, 'success');
       assert.match(notice?.text ?? '', /Switched to/);
@@ -371,7 +375,7 @@ describe('_internal.handleSwitched — autoLaunch paths', () => {
           switchedFrom: 'old@example.com',
           switchedTo: h.email,
           autoLaunch: true,
-          defaultIsolated: false,
+          pointer: 'default',
         }, h.accDir),
         (err: unknown) => err instanceof ExitError,
       );
@@ -429,7 +433,7 @@ describe('_runDispatchLoop', () => {
             switchedFrom: h.email,
             switchedTo: h.email,
             autoLaunch: false,
-            defaultIsolated: false,
+            pointer: 'default',
           },
         };
       }
@@ -502,7 +506,7 @@ describe('_runDispatchLoop', () => {
           switchedFrom: 'old@example.com',
           switchedTo: h.email,
           autoLaunch: true,
-          defaultIsolated: false,
+          pointer: 'default',
         },
       });
       await assert.rejects(

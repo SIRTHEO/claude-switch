@@ -113,7 +113,7 @@ describe('E2E interactive — happy-path (in-process)', () => {
             switchedFrom: h.email,
             switchedTo: h.email,
             autoLaunch: false,
-            defaultIsolated: false,
+            pointer: 'default',
           },
         };
       }

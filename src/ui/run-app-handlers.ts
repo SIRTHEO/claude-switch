@@ -55,7 +55,13 @@ export async function handleSwitched(
     switchedFrom: string | null;
     switchedTo: string;
     autoLaunch: boolean;
-    defaultIsolated: boolean;
+    /** The default-pointer `repointToDefault` resolved for this switch:
+     *  `'default'` (or absent) → launch the global ~/.claude; a profile name →
+     *  launch that profile isolated. The §1 default short-circuit already lives
+     *  in `repointToDefault`, so we trust the resolved pointer here rather than
+     *  re-deriving it (which would risk minting a duplicate home for the
+     *  default account). */
+    pointer?: string;
   },
   accountsDirPath: string,
 ): Promise<Notice> {
@@ -70,27 +76,15 @@ export async function handleSwitched(
     return { kind: 'success', text: `Switched to ${payload.switchedTo}` };
   }
 
-  // Default-isolated: run inside a per-terminal profile (auto-created on
-  // demand) instead of using the global swap. Avoids polluting other open
-  // terminals with the new account.
+  // Launch by the resolved pointer: a non-`default` pointer runs that profile
+  // isolated (its own creds via CLAUDE_CONFIG_DIR); `'default'`/absent launches
+  // the global ~/.claude. The profile was already ensured by repointToDefault,
+  // so we only need its dir — no re-ensure (and no §1 re-derivation here).
   let extraEnv: NodeJS.ProcessEnv | undefined;
-  if (payload.defaultIsolated) {
-    try {
-      const { ensureProfileForAccount } = await import('../profiles/profiles.js');
-      // ensureProfileForAccount is async and handles the legacy-snapshot
-      // refresh internally.
-      const ensured = await ensureProfileForAccount(payload.switchedTo, accountsDirPath);
-      if (ensured.needsLogin) {
-        return {
-          kind: 'warning',
-          text: `Profile "${ensured.profileName}" needs a one-time browser login. Run: claude switch profile login ${ensured.profileName}`,
-        };
-      }
-      extraEnv = { CLAUDE_CONFIG_DIR: ensured.profilePath };
-      process.stderr.write(`🔑 ${payload.switchedTo} (isolated · profile: ${ensured.profileName})\n\n`);
-    } catch (e) {
-      return { kind: 'error', text: e instanceof Error ? e.message : String(e) };
-    }
+  if (payload.pointer && payload.pointer !== 'default') {
+    const { profilePath } = await import('../profiles/profiles.js');
+    extraEnv = { CLAUDE_CONFIG_DIR: profilePath(payload.pointer) };
+    process.stderr.write(`🔑 ${payload.switchedTo} (isolated · profile: ${payload.pointer})\n\n`);
   }
 
   // Record the launch in the live-session registry. `extraEnv` carries

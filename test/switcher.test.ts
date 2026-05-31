@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fuzzyMatch, switchTo, switchToAndSyncFallback, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switching/switcher.js';
 import { isFallbackEnabled, setFallbackEnabledInLock } from '../src/fallback/fallback.js';
+import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 describe('fuzzyMatch', () => {
   const accounts = ['work@company.com', 'personal@gmail.com', 'test@company.com'];
@@ -449,15 +450,20 @@ describe('switchInteractive — with mocked ask', () => {
   let tmpDir: string;
   let claudeJson: string;
   let accDir: string;
+  let savedHome: SavedHome;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-si-'));
+    // Re-point creates a profile under os.homedir()/.claude/profiles — isolate
+    // HOME so the test never pollutes the real ~/.claude.
+    savedHome = setFakeHome(tmpDir);
     claudeJson = path.join(tmpDir, '.claude.json');
     accDir = path.join(tmpDir, 'accounts');
     fs.mkdirSync(accDir, { recursive: true });
   });
 
   afterEach(() => {
+    restoreFakeHome(savedHome);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -488,14 +494,19 @@ describe('switchInteractive — with mocked ask', () => {
     assert.ok(logged.some(l => l.includes('Only one account')));
   });
 
-  it('switches to chosen account via injected askFn', async () => {
+  it('re-points the chosen account without overwriting the global ~/.claude', async () => {
+    // Unified-profile model: the picker re-points the default-pointer instead of
+    // swapping ~/.claude. With a credential-less account the re-point reports
+    // needs-login and points nothing; either way the global is NOT overwritten
+    // (that was the mixing bug). The picker's display ("(active)" marker, etc.)
+    // is redone in the dashboard / "cruscotto" slice — not asserted here.
     fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
     fs.writeFileSync(path.join(accDir, 'a@x.com.json'), JSON.stringify({ emailAddress: 'a@x.com' }));
     fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com' }));
     const deps: SwitcherDeps = { askFn: async () => '2' };
     await switchInteractive(claudeJson, accDir, deps);
     const result = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
-    assert.equal(result.oauthAccount.emailAddress, 'b@x.com');
+    assert.equal(result.oauthAccount.emailAddress, 'a@x.com', 're-point must not swap the global');
   });
 
   it('throws ExitError on invalid choice', async () => {
@@ -507,111 +518,40 @@ describe('switchInteractive — with mocked ask', () => {
   });
 });
 
-describe('switchInteractive — active marker / getCurrent() consistency (11.11 regression)', () => {
+describe('switchInteractive — re-point (unified-profile model)', () => {
   let tmpDir: string;
   let claudeJson: string;
   let accDir: string;
+  let savedHome: SavedHome;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-si11-'));
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-si-repoint-'));
+    // Re-point creates a profile under os.homedir()/.claude/profiles — isolate
+    // HOME so the test never pollutes the real ~/.claude.
+    savedHome = setFakeHome(tmpDir);
     claudeJson = path.join(tmpDir, '.claude.json');
     accDir = path.join(tmpDir, 'accounts');
     fs.mkdirSync(accDir, { recursive: true });
   });
 
   afterEach(() => {
+    restoreFakeHome(savedHome);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  // Helper: capture console.log lines during fn()
-  async function captureLog(fn: () => Promise<void>): Promise<string[]> {
-    const lines: string[] = [];
-    const orig = console.log;
-    console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
-    try {
-      await fn();
-    } finally {
-      console.log = orig;
-    }
-    return lines;
-  }
-
-  it('(active) marker in next call matches getCurrent() after one switch', async () => {
-    // a@x.com starts active; b@x.com is saved. Switch a→b.
+  // Replaces the swap-era "(active) marker / 11.11 regression" block. The 11.11
+  // bug was a stale getCurrent() read corrupting the in-place SWAP; the unified
+  // model re-points (atomic setDefaultPointer of the explicitly-picked account)
+  // and never swaps ~/.claude, so that bug class is structurally gone. The
+  // picker's "(active)"-marker display moves to the dashboard ("cruscotto")
+  // slice; here we lock the engine truth: the picker re-points, global untouched.
+  it('re-points the picked account and leaves the global ~/.claude untouched', async () => {
     fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
     fs.writeFileSync(path.join(accDir, 'a@x.com.json'), JSON.stringify({ emailAddress: 'a@x.com' }));
     fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com' }));
-
-    // Switch a → b (b is index 2 in alphabetical order)
+    const { getCurrent } = await import('../src/accounts/accounts.js');
     await switchInteractive(claudeJson, accDir, { askFn: async () => '2' });
-
-    // getCurrent() must now report b@x.com
-    const { getCurrent } = await import('../src/accounts/accounts.js');
-    assert.equal(getCurrent(claudeJson), 'b@x.com', 'getCurrent() after switch must be b@x.com');
-
-    // The next menu render must display (active) on b@x.com, not a@x.com.
-    // Abort with an invalid choice to stop after printing the list.
-    const lines = await captureLog(async () => {
-      await switchInteractive(claudeJson, accDir, { askFn: async () => '99' }).catch(() => undefined);
-    });
-    const activeLine = lines.find(l => l.includes('(active)'));
-    assert.ok(activeLine, 'at least one line must carry (active) marker');
-    assert.ok(activeLine!.includes('b@x.com'), `(active) must be on b@x.com, got: ${activeLine}`);
-    assert.ok(!activeLine!.includes('a@x.com'), '(active) must NOT be on a@x.com');
-  });
-
-  it('(active) marker stays consistent through A→B→A round-trip', async () => {
-    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
-    fs.writeFileSync(path.join(accDir, 'a@x.com.json'), JSON.stringify({ emailAddress: 'a@x.com' }));
-    fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com' }));
-
-    const { getCurrent } = await import('../src/accounts/accounts.js');
-
-    // a → b
-    await switchInteractive(claudeJson, accDir, { askFn: async () => '2' });
-    assert.equal(getCurrent(claudeJson), 'b@x.com', 'getCurrent() must be b after first switch');
-
-    // b → a
-    await switchInteractive(claudeJson, accDir, { askFn: async () => '1' });
-    assert.equal(getCurrent(claudeJson), 'a@x.com', 'getCurrent() must be a after round-trip');
-
-    // The menu now opened fresh must show (active) on a@x.com
-    const lines = await captureLog(async () => {
-      await switchInteractive(claudeJson, accDir, { askFn: async () => '99' }).catch(() => undefined);
-    });
-    const activeLine = lines.find(l => l.includes('(active)'));
-    assert.ok(activeLine, 'at least one line must carry (active) marker');
-    assert.ok(activeLine!.includes('a@x.com'), `(active) must be on a@x.com after round-trip, got: ${activeLine}`);
-  });
-
-  it('getCurrent() reflects state even when concurrent external switch happened during ask()', async () => {
-    // Reproduces the scenario from the 11.10 incident:
-    // switchInteractive reads currentEmail at T0, user is slow to answer,
-    // an EXTERNAL process switches the active account at T1, then the user
-    // picks an account at T2.  getCurrent() after T2 must equal the picked
-    // account — the stale T0 read must not corrupt state.
-    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
-    fs.writeFileSync(path.join(accDir, 'a@x.com.json'), JSON.stringify({ emailAddress: 'a@x.com' }));
-    fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com' }));
-    fs.writeFileSync(path.join(accDir, 'c@x.com.json'), JSON.stringify({ emailAddress: 'c@x.com' }));
-
-    const { getCurrent } = await import('../src/accounts/accounts.js');
-    const { withLock } = await import('../src/platform/lock.js');
-    const { load } = await import('../src/accounts/accounts.js');
-
-    // During the ask() call, simulate an external process switching a→b.
-    const askFn = async (): Promise<string> => {
-      // External switch: a → b (while the user is still reading the menu).
-      withLock(accDir, () => load('b@x.com', claudeJson, accDir));
-      // User picks c (index 3 in alphabetical order a, b, c)
-      return '3';
-    };
-
-    await switchInteractive(claudeJson, accDir, { askFn });
-
-    // Regardless of the concurrent switch, the user picked c — getCurrent() must be c.
-    assert.equal(getCurrent(claudeJson), 'c@x.com',
-      'getCurrent() must be the explicitly picked account even after a concurrent external switch');
+    assert.equal(getCurrent(claudeJson), 'a@x.com', 're-point must not overwrite the global');
   });
 });
 

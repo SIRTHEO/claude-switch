@@ -188,7 +188,8 @@ export async function switchInteractive(claudeJsonPath: string, accountsDirPath:
     throw new ExitError('Invalid choice.');
   }
 
-  console.log(switchTo(accounts[index - 1]!, claudeJsonPath, accountsDirPath));
+  const { repointToDefault } = await import('./repoint.js');
+  console.log((await repointToDefault(accounts[index - 1]!, claudeJsonPath, accountsDirPath)).message);
 }
 
 export async function addAccount(claudeBin: string, claudeJsonPath: string, accountsDirPath: string, deps?: SwitcherDeps): Promise<void> {

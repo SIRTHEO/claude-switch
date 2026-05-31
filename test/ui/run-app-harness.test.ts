@@ -102,7 +102,7 @@ describe('makeRunAppHarness — _internal handler dispatch', () => {
 
   it('handleSwitched returns info notice when already on the same account', async () => {
     const notice = await _internal.handleSwitched(
-      { switchedFrom: EMAIL, switchedTo: EMAIL, autoLaunch: false, defaultIsolated: false },
+      { switchedFrom: EMAIL, switchedTo: EMAIL, autoLaunch: false, pointer: 'default' },
       h.accountsDir,
     );
     assert.equal(notice?.kind, 'info', 'should be an info notice');
@@ -111,7 +111,7 @@ describe('makeRunAppHarness — _internal handler dispatch', () => {
 
   it('handleSwitched returns success notice when switching without autoLaunch', async () => {
     const notice = await _internal.handleSwitched(
-      { switchedFrom: 'other@example.com', switchedTo: EMAIL, autoLaunch: false, defaultIsolated: false },
+      { switchedFrom: 'other@example.com', switchedTo: EMAIL, autoLaunch: false, pointer: 'default' },
       h.accountsDir,
     );
     assert.equal(notice?.kind, 'success', 'should be a success notice');

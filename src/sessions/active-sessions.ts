@@ -84,19 +84,3 @@ export function countActiveClaudeSessions(
   }
   return { count };
 }
-
-/**
- * One-line, terminal-friendly warning string for use right before a switch.
- * Returns null when there's nothing to warn about (count === 0).
- *
- * Kept separate from the detector so the menu can render it as `p.note`
- * while the CLI prints it on stderr.
- */
-export function buildActiveSessionsWarning(count: number): string | null {
-  if (count <= 0) return null;
-  const noun = count === 1 ? 'another claude session is' : `${count} other claude sessions are`;
-  return (
-    `⚠ ${noun} running. The switch only affects new "claude" launches — ` +
-    `already-running sessions keep using their cached tokens until you exit and restart them.`
-  );
-}

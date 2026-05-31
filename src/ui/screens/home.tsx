@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { StatusMessage } from '@inkjs/ui';
 
-import { switchToAndSyncFallback } from '../../switching/switcher.js';
+import { repointToDefault } from '../../switching/repoint.js';
 import { resolveAccountPrefs } from '../../switching/preferences.js';
 import { useSnapshot } from '../hooks/use-snapshot.js';
 import { useAsyncAction } from '../hooks/use-async-action.js';
@@ -44,7 +44,9 @@ export interface HomeExit {
     switchedFrom: string | null;
     switchedTo: string;
     autoLaunch: boolean;
-    defaultIsolated: boolean;
+    /** The default-pointer the re-point resolved: `'default'`/absent → launch
+     *  the global ~/.claude; a profile name → launch that profile isolated. */
+    pointer?: string;
   };
 }
 
@@ -125,34 +127,27 @@ export function HomeScreen({ claudeJsonPath, accountsDirPath, initialNotice, onE
         switchedFrom: target.email,
         switchedTo: target.email,
         autoLaunch: prefs.autoLaunchOnSwitch,
-        defaultIsolated: prefs.defaultIsolated,
       });
       return;
     }
     const before = target.email;
     const previous = snap.current;
-    void run(() => {
+    void run(async () => {
       const prefs = resolveAccountPrefs(before, accountsDirPath);
-      // Bundle the switch + fallback flip into one withLock so a concurrent
-      // `claude switch` from another terminal can't race the two writes
-      // and leave us with `active=B / fallback=ON / B has no key`.
-      const outcome = switchToAndSyncFallback(before, claudeJsonPath, accountsDirPath, {
-        autoFlipFallback: prefs.autoFlipFallback,
-      });
-      let fallbackHint = '';
-      if (prefs.autoFlipFallback) {
-        fallbackHint = outcome.hasApiKey
-          ? ' · fallback ON (API key)'
-          : ' · fallback OFF (OAuth)';
-      }
+      // Unified-profile model: re-point the default-pointer (no ~/.claude
+      // overwrite, no fallback flip — decision A1). On needs-login, refuse to
+      // launch and surface the message instead of spawning a broken session.
+      const outcome = await repointToDefault(before, claudeJsonPath, accountsDirPath);
       refresh();
-      queueMicrotask(() => finish('switched', {
-        switchedFrom: previous || null,
-        switchedTo: before,
-        autoLaunch: prefs.autoLaunchOnSwitch,
-        defaultIsolated: prefs.defaultIsolated,
-      }));
-      return outcome.message + fallbackHint;
+      if (!outcome.needsLogin) {
+        queueMicrotask(() => finish('switched', {
+          switchedFrom: previous || null,
+          switchedTo: before,
+          autoLaunch: prefs.autoLaunchOnSwitch,
+          pointer: outcome.pointer ?? 'default',
+        }));
+      }
+      return outcome.message;
     });
   };
 

@@ -7,9 +7,8 @@
 
 import { resolveAlias } from '../switching/aliases.js';
 import { list as listAccounts } from '../accounts/accounts.js';
-import { fuzzyMatch, switchInteractive, switchToAndSyncFallback } from '../switching/switcher.js';
-import { getSavedClaudeBin } from '../setup/setup.js';
-import { readGlobalPrefs } from '../switching/preferences.js';
+import { fuzzyMatch, switchInteractive } from '../switching/switcher.js';
+import { repointToDefault } from '../switching/repoint.js';
 import { runApp } from '../ui/run-app.js';
 import type { CommandContext } from './context.js';
 
@@ -31,34 +30,14 @@ export async function handleSwitchTo(ctx: CommandContext, target: string): Promi
   const matches = fuzzyMatch(resolved, accounts);
 
   if (matches.length === 1) {
-    // Warn (don't block) if other claude sessions are running — they
-    // won't see the switch until restarted. See FAQ in README.
-    const { countActiveClaudeSessions, buildActiveSessionsWarning } = await import('../sessions/active-sessions.js');
-    const sessions = countActiveClaudeSessions(getSavedClaudeBin());
-    const warning = buildActiveSessionsWarning(sessions.count);
-    if (warning) process.stderr.write(`${warning}\n\n`);
-
-    // Bundle switch + fallback flip in one withLock so a concurrent
-    // `claude switch` can't race the two writes (see switcher.ts).
-    // Honour the user's `defaultAutoFlipFallback` preference so the CLI
-    // matches the Ink dashboard — pre-3.6 the CLI hard-coded `true` and
-    // silently ignored the toggle, which silently re-enabled fallback
-    // on every `claude switch <account>` even when the user had turned
-    // auto-flip off.
-    const prefs = readGlobalPrefs(accountsDirPath);
-    const outcome = switchToAndSyncFallback(matches[0]!, claudeJsonPath, accountsDirPath, {
-      autoFlipFallback: prefs.defaultAutoFlipFallback,
-    });
+    // Unified-profile model: re-point the default-pointer instead of
+    // overwriting ~/.claude. No active-sessions warning anymore — a re-point
+    // never disturbs a running session (each pins its own dir at launch), which
+    // is the whole point. Fallback-on-switch is dropped (decision A1): switch is
+    // a pure re-point now. `repointToDefault`'s message covers both the success
+    // and the needs-login outcomes.
+    const outcome = await repointToDefault(matches[0]!, claudeJsonPath, accountsDirPath);
     console.log(outcome.message);
-    if (outcome.fallbackFlipped) {
-      process.stderr.write(outcome.hasApiKey
-        ? '  Fallback ON — API key active (no OAuth available for this account)\n'
-        : '  Fallback OFF — using OAuth\n');
-    } else {
-      process.stderr.write(outcome.hasApiKey
-        ? '  API key saved (manual toggle: claude switch fallback on)\n'
-        : '  Using OAuth\n');
-    }
     return;
   }
 
