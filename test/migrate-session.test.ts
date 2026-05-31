@@ -16,6 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { migrateSession } from '../src/sessions/migrate-session.js';
+import { prepareSessionWorkDir } from '../src/sessions/session-workdir.js';
 import type { CredentialStore, KeychainData } from '../src/credentials/credential-store.js';
 
 const WORK = 'sirtheo.work@example.com';
@@ -134,6 +135,35 @@ describe('migrateSession', () => {
     const cfg = readJson(path.join(cDir, '.claude.json'));
     assert.equal(cfg.userID, 'c'.repeat(64), 'userID untouched — only oauthAccount is replaced');
     assert.equal(cfg.hasCompletedOnboarding, true);
+  });
+
+  it('migrates a REAL per-session work dir end to end, leaving the data-container symlinks intact', async () => {
+    // Seed a real work dir from a spawn profile A (the b+migrate full path).
+    const canonA = path.join(claudeDir, 'profiles', 'personal-spawn');
+    writeJson(path.join(canonA, '.claude.json'), {
+      userID: 'a'.repeat(64),
+      hasCompletedOnboarding: true,
+      oauthAccount: { emailAddress: PERSONAL, accountUuid: 'uuid-a', accessToken: 'sk-A', refreshToken: 'rt', expiresAt: 9999999999999 },
+    });
+    const workDir = prepareSessionWorkDir(canonA, accountsDir);
+    const projectsBefore = fs.readlinkSync(path.join(workDir, 'projects'));
+    assert.equal(projectsBefore, path.resolve(canonA, 'projects'), 'work dir containers link to spawn profile A');
+
+    // Migrate the live work dir to WORK (bDir is the target profile).
+    const res = await migrateSession(WORK, workDir, accountsDir, { ensureProfile: ensureWork });
+    assert.equal(res.noop, false);
+
+    const oauth = readJson(path.join(workDir, '.claude.json')).oauthAccount as Record<string, unknown>;
+    assert.equal(oauth.emailAddress, WORK, 'identity flipped to the target in the work dir');
+    assert.equal(oauth.accessToken, 'sk-ant-oat01-WORK', "target's token embedded");
+    // The data-container symlinks are UNTOUCHED — history/sessions follow the
+    // running session, not the account it now speaks as.
+    assert.equal(fs.readlinkSync(path.join(workDir, 'projects')), projectsBefore, 'containers untouched by migrate');
+    // The spawn profile A's canonical store is NOT corrupted.
+    assert.equal(
+      (readJson(path.join(canonA, '.claude.json')).oauthAccount as Record<string, unknown>).emailAddress,
+      PERSONAL,
+    );
   });
 
   it('refuses a session running in the canonical profiles tree (interim safety guard)', async () => {

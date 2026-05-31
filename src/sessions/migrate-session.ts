@@ -134,22 +134,23 @@ export async function migrateSession(
     );
   }
 
-  // Guard 1.5 — INTERIM SAFETY. Refuse a configDir inside the canonical profiles
-  // tree (`~/.claude/profiles/<name>`). Today every isolated session runs in its
-  // account's CANONICAL profile dir, which doubles as that account's credential
-  // store — so rewriting it would corrupt the account and let a later
-  // `profile use <name>` launch the wrong identity (token mixing). Until each
-  // session reads a disposable PER-SESSION copy (work dir) instead of the
-  // canonical, live migration is unsafe and this makes the command inert. When
-  // work dirs land (they sit OUTSIDE the profiles tree), this guard lifts on its
-  // own. The profiles root mirrors sessions.ts: `<~/.claude>/profiles`.
+  // Guard 1.5 — refuse a configDir inside the canonical profiles tree
+  // (`~/.claude/profiles/<name>`). A session must run in a per-session WORK DIR
+  // (`session-dirs/<profile>.<pid>`, OUTSIDE the profiles tree), seeded from the
+  // canonical — never in the canonical store itself, which doubles as the
+  // account's credential vault. Rewriting the canonical would corrupt the account
+  // (a later `profile use <name>` would launch the wrong identity = token mixing).
+  // Work dirs pass this guard; a session still bound to the canonical (e.g. the
+  // deferred "open in new terminal" path) is refused. This is the writer-level
+  // defence — the `migrate` command surface stays disabled (handleMigrate →
+  // notAvailable) until step (e). The profiles root mirrors sessions.ts.
   const profilesRoot = path.resolve(path.join(globalConfigDir, 'profiles'));
   const resolvedConfig = path.resolve(configDir);
   if (resolvedConfig === profilesRoot || resolvedConfig.startsWith(profilesRoot + path.sep)) {
     throw new Error(
-      'Live migration is not available yet: this session runs in its account\'s ' +
-        'canonical profile directory, and rewriting it would corrupt that account. ' +
-        'Per-session working directories (the safe target) are not implemented yet.',
+      'Refusing to migrate a session bound to its account\'s canonical profile ' +
+        'directory — that would corrupt the account. Only a per-session work dir ' +
+        'can be migrated.',
     );
   }
 
@@ -190,16 +191,17 @@ export async function migrateSession(
 
     // Guard 2 — refuse if the target is already LIVE elsewhere. Two live copies
     // of one account share Anthropic's single server-side refresh_token, so one
-    // rotation invalidates the other (the unified model's hard edge). Detect via
-    // the live registry: another session SPAWNED as the target, or any session
-    // whose configDir IS the target's profile (target launched isolated).
+    // rotation invalidates the other (the unified model's hard edge). The primary
+    // signal is a live session SPAWNED as the target. (The configDir-is-target's-
+    // profile branch is now rare: sessions run in per-session work dirs, not the
+    // canonical profile dir — it only fires for a session still bound to the
+    // canonical, e.g. the deferred open-in-new-terminal path.)
     //
-    // KNOWN GAP (a follow-up closes this): the registry records the SPAWNED
-    // `account`, not the CURRENT one, so a session previously migrated TO the
-    // target still reports its old account and a second migrate-to-target from
-    // another terminal won't see it here. An additive `currentAccount` registry
-    // field is what makes this check exact; until then this catches
-    // spawned-as-target and isolated-profile-live, which are the common cases.
+    // KNOWN GAP (closed by the `currentAccount` producer, step (d)): the registry
+    // records the SPAWNED `account`, not the CURRENT one, so a session previously
+    // migrated TO the target still reports its old account and a second
+    // migrate-to-target from another terminal won't see it here. Until then this
+    // catches the common cases (spawned-as-target / canonical-bound-target).
     const live = listLiveSessions(accountsDirPath);
     const conflict = live.some((s) => {
       if (s.configDir && path.resolve(s.configDir) === thisConfigResolved) return false; // the migrating session itself
