@@ -11,12 +11,28 @@ import { clearScreen } from '../screen-buffer.js';
 import { buildSpawnArgs } from '../../proxy/proxy.js';
 import { ExitError } from '../../platform/errors.js';
 import { readProfile } from '../../profiles/profiles.js';
+import { prepareSessionWorkDir } from '../../sessions/session-workdir.js';
+import { markSessionLive } from '../../sessions/session-registry.js';
 import { awaitInkScreen } from '../utils/ink-screen.js';
 import { ProfilesScreen } from './profiles-screen.js';
 import type { ScreenExit } from './profiles-types.js';
 
 export { ProfilesScreen } from './profiles-screen.js';
 export type { ScreenExit } from './profiles-types.js';
+
+/**
+ * Seed a disposable per-session work dir from the profile, record the live
+ * session against it, and spawn claude there (propagating exit via ExitError) —
+ * never in the canonical profile dir, so a future migration can rewrite this
+ * session's dir without corrupting the account. Shared by the three
+ * session-launching menu actions (isolated / use-profile / login-then-isolated).
+ */
+function launchSeededSession(canonicalDir: string, account: string, accountsDirPath: string, claudeBin: string): never {
+  const workDir = prepareSessionWorkDir(canonicalDir, accountsDirPath);
+  markSessionLive(accountsDirPath, { account, configDir: workDir, cwd: process.cwd() });
+  const { command, args, options } = buildSpawnArgs(claudeBin, [], process.platform, { CLAUDE_CONFIG_DIR: workDir });
+  spawnClaudeAndExit(command, args, options);
+}
 
 /**
  * Run `claude` via spawnSync and propagate the exit status as an ExitError
@@ -71,18 +87,12 @@ export async function runProfilesScreen(
     if (req.kind === 'isolated') {
       restoreBuffer();
       process.stderr.write(`🔑 ${req.email} (isolated) — profile: ${req.profileName}\n\n`);
-      const { command, args, options } = buildSpawnArgs(
-        claudeBin, [], process.platform, { CLAUDE_CONFIG_DIR: req.profileDir },
-      );
-      spawnClaudeAndExit(command, args, options);
+      launchSeededSession(req.profileDir, req.email, accountsDirPath, claudeBin);
     }
     if (req.kind === 'use-profile') {
       restoreBuffer();
       process.stderr.write(`🔑 ${req.profileName} (profile, isolated) — ${req.emailAddress}\n\n`);
-      const { command, args, options } = buildSpawnArgs(
-        claudeBin, [], process.platform, { CLAUDE_CONFIG_DIR: req.profileDir },
-      );
-      spawnClaudeAndExit(command, args, options);
+      launchSeededSession(req.profileDir, req.emailAddress, accountsDirPath, claudeBin);
     }
     if (req.kind === 'login-profile') {
       restoreBuffer();
@@ -132,10 +142,7 @@ export async function runProfilesScreen(
       }
 
       process.stderr.write(`\n🔑 ${req.email} (isolated) — profile: ${req.profileName}\n\n`);
-      const launch = buildSpawnArgs(
-        claudeBin, [], process.platform, { CLAUDE_CONFIG_DIR: req.profileDir },
-      );
-      spawnClaudeAndExit(launch.command, launch.args, launch.options);
+      launchSeededSession(req.profileDir, req.email, accountsDirPath, claudeBin);
     }
   }
 }

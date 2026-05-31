@@ -83,7 +83,12 @@ export async function handleSwitched(
   let extraEnv: NodeJS.ProcessEnv | undefined;
   if (payload.pointer && payload.pointer !== 'default') {
     const { profilePath } = await import('../profiles/profiles.js');
-    extraEnv = { CLAUDE_CONFIG_DIR: profilePath(payload.pointer) };
+    // Run in a disposable per-session work dir seeded from the pointed profile,
+    // not the canonical dir itself (so a future migration rewrites the session's
+    // dir). The profile was already ensured (logged-in) by repointToDefault.
+    const { prepareSessionWorkDir } = await import('../sessions/session-workdir.js');
+    const workDir = prepareSessionWorkDir(profilePath(payload.pointer), accountsDirPath);
+    extraEnv = { CLAUDE_CONFIG_DIR: workDir };
     process.stderr.write(`🔑 ${payload.switchedTo} (isolated · profile: ${payload.pointer})\n\n`);
   }
 

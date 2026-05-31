@@ -78,9 +78,16 @@ export async function handleProfileUse(
 ): Promise<never> {
   const { info, dir, claudeBin } = await resolveActiveProfile(ctx, name);
   process.stderr.write(`🔑 ${name} (profile, isolated) — ${info.emailAddress}\n\n`);
+  // Run in a disposable per-session work dir seeded from the profile (the
+  // canonical store), never in the canonical dir itself — so a future live
+  // migration can rewrite this session's dir without corrupting the account.
+  const { prepareSessionWorkDir } = await import('../sessions/session-workdir.js');
+  const workDir = prepareSessionWorkDir(dir, ctx.accountsDirPath);
+  const { markSessionLive } = await import('../sessions/session-registry.js');
+  markSessionLive(ctx.accountsDirPath, { account: info.emailAddress ?? name, configDir: workDir, cwd: process.cwd() });
   const { buildSpawnArgs } = await import('../proxy/proxy.js');
   const { command, args, options } = buildSpawnArgs(claudeBin, passthroughArgs, process.platform, {
-    CLAUDE_CONFIG_DIR: dir,
+    CLAUDE_CONFIG_DIR: workDir,
   });
   const { nodeProcessAdapter } = await import('../platform/process.js');
   const result = nodeProcessAdapter.spawnSync(command, args, options);

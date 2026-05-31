@@ -141,6 +141,14 @@ describe('_internal.handleSwitched', () => {
     let savedHome: SavedHome;
     process.env.CLAUDE_SWITCH_BIN = h.claudeBin;
     savedHome = setFakeHome(h.tmpDir);
+    // The pointed profile must exist and carry a credential — the work-dir
+    // seeder refuses (no-creds guard) before the spawn otherwise.
+    const workProfile = path.join(h.tmpDir, '.claude', 'profiles', 'work');
+    fs.mkdirSync(workProfile, { recursive: true });
+    fs.writeFileSync(path.join(workProfile, '.claude.json'), JSON.stringify({
+      userID: 'w'.repeat(64),
+      oauthAccount: { emailAddress: h.email, accessToken: 'tok', refreshToken: 'rtok', expiresAt: 9999999999999 },
+    }));
     // Capture stderr: the isolated branch writes a distinctive banner naming the
     // pointed profile BEFORE it spawns. Its presence is the launch-target proof
     // — it means the profile-isolated path ran, NOT the global ~/.claude launch
