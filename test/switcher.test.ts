@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fuzzyMatch, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switching/switcher.js';
+import { fuzzyMatch, checkPendingRestore } from '../src/switching/switcher.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 describe('fuzzyMatch', () => {
@@ -31,42 +31,7 @@ describe('fuzzyMatch', () => {
   });
 });
 
-describe('savePendingRestore', () => {
-  let tmpDir: string;
-  let accDir: string;
-
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-switch-'));
-    accDir = path.join(tmpDir, 'accounts');
-  });
-
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it('sets 0o600 permissions on the state file (unix)', () => {
-    if (process.platform === 'win32') return;
-    savePendingRestore('a@x.com', accDir);
-    const stat = fs.statSync(path.join(accDir, '.claude-switch-state.json'));
-    assert.equal(stat.mode & 0o777, 0o600);
-  });
-
-  it('overwrites an existing pending-restore', () => {
-    savePendingRestore('first@x.com', accDir);
-    savePendingRestore('second@x.com', accDir);
-    const state = JSON.parse(fs.readFileSync(path.join(accDir, '.claude-switch-state.json'), 'utf-8'));
-    assert.equal(state.pendingRestore, 'second@x.com');
-  });
-
-  it('creates the accounts dir if missing', () => {
-    const newAcc = path.join(tmpDir, 'fresh-accounts-dir');
-    assert.equal(fs.existsSync(newAcc), false);
-    savePendingRestore('a@x.com', newAcc);
-    assert.equal(fs.existsSync(path.join(newAcc, '.claude-switch-state.json')), true);
-  });
-});
-
-describe('checkPendingRestore + clearPendingRestore', () => {
+describe('checkPendingRestore (migration drain)', () => {
   let tmpDir: string;
   let claudeJson: string;
   let accDir: string;
@@ -82,6 +47,16 @@ describe('checkPendingRestore + clearPendingRestore', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  // Seed a leftover pendingRestore marker the way a pre-upgrade interrupted
+  // `--as` would have. The writer is retired (the unified model never swaps the
+  // global), so we write state.json directly to exercise the migration drain.
+  function seedPending(email: string): void {
+    fs.writeFileSync(
+      path.join(accDir, '.claude-switch-state.json'),
+      JSON.stringify({ version: 1, fallback: { enabled: false, autoEngaged: false }, pendingRestore: email }),
+    );
+  }
+
   it('returns null when no pending-restore is set', () => {
     assert.equal(checkPendingRestore(claudeJson, accDir), null);
   });
@@ -95,7 +70,7 @@ describe('checkPendingRestore + clearPendingRestore', () => {
   });
 
   it('drops the marker even when restore fails (no infinite retry loop)', () => {
-    savePendingRestore('ghost@x.com', accDir);
+    seedPending('ghost@x.com');
     fs.writeFileSync(claudeJson, JSON.stringify({}));
     // load() will not find ghost@x.com.json — checkPendingRestore should
     // still drop the field so the next invocation doesn't loop on it.
@@ -111,7 +86,7 @@ describe('checkPendingRestore + clearPendingRestore', () => {
     fs.writeFileSync(path.join(accDir, 'original@x.com.json'), JSON.stringify({
       emailAddress: 'original@x.com', token: 'orig'
     }));
-    savePendingRestore('original@x.com', accDir);
+    seedPending('original@x.com');
 
     const restored = checkPendingRestore(claudeJson, accDir);
     assert.equal(restored, 'original@x.com');
@@ -120,18 +95,6 @@ describe('checkPendingRestore + clearPendingRestore', () => {
     assert.equal(result.oauthAccount.emailAddress, 'original@x.com');
     const state = JSON.parse(fs.readFileSync(path.join(accDir, '.claude-switch-state.json'), 'utf-8'));
     assert.equal(state.pendingRestore, undefined, 'field cleared after successful restore');
-  });
-
-  it('clearPendingRestore drops the field if present', () => {
-    savePendingRestore('a@x.com', accDir);
-    clearPendingRestore(accDir);
-    const state = JSON.parse(fs.readFileSync(path.join(accDir, '.claude-switch-state.json'), 'utf-8'));
-    assert.equal(state.pendingRestore, undefined);
-  });
-
-  it('clearPendingRestore is a no-op when nothing is pending', () => {
-    // Should not throw.
-    clearPendingRestore(accDir);
   });
 
   it('migrates legacy .pending-restore marker to state.pendingRestore', () => {
@@ -149,7 +112,6 @@ describe('checkPendingRestore + clearPendingRestore', () => {
 import {
   reAuthOutcome,
   switchInteractive,
-  runTemporarySwitch,
   reAuthenticate,
   addAccount,
   type SwitcherDeps,
@@ -221,15 +183,6 @@ describe('reAuthOutcome — re-auth decision logic', () => {
 });
 
 // ─── DI-refactored function tests ────────────────────────────────────────────
-
-function makeExitFn(): { exitFn: (code: number) => never; codes: number[] } {
-  const codes: number[] = [];
-  const exitFn = (code: number): never => {
-    codes.push(code);
-    throw new Error(`exit:${code}`);
-  };
-  return { exitFn, codes };
-}
 
 function makeSpawnFn(exitCode = 0, error?: Error): ProcessPort['spawnSync'] {
   return (_cmd, _args, _opts) => ({
@@ -358,73 +311,6 @@ describe('switchInteractive — re-point (unified-profile model)', () => {
     const { getCurrent } = await import('../src/accounts/accounts.js');
     await switchInteractive(claudeJson, accDir, { askFn: async () => '2' });
     assert.equal(getCurrent(claudeJson), 'a@x.com', 're-point must not overwrite the global');
-  });
-});
-
-describe('runTemporarySwitch — with mocked spawnSync + exitFn', () => {
-  let tmpDir: string;
-  let claudeJson: string;
-  let accDir: string;
-
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-rts-'));
-    claudeJson = path.join(tmpDir, '.claude.json');
-    accDir = path.join(tmpDir, 'accounts');
-    fs.mkdirSync(accDir, { recursive: true });
-  });
-
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it('exits with child process status when targetEmail === current', async () => {
-    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'me@x.com' } }));
-    const { exitFn, codes } = makeExitFn();
-    const deps: SwitcherDeps = { process: procWith(makeSpawnFn(42)), exitFn };
-    await assert.rejects(
-      () => runTemporarySwitch('claude', 'me@x.com', [], claudeJson, accDir, null, deps),
-      /exit:42/,
-    );
-    assert.deepEqual(codes, [42]);
-  });
-
-  it('exits code 1 on spawnSync error when targetEmail === current', async () => {
-    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'me@x.com' } }));
-    const { exitFn, codes } = makeExitFn();
-    const deps: SwitcherDeps = { process: procWith(makeSpawnFn(0, new Error('ENOENT'))), exitFn };
-    await assert.rejects(
-      () => runTemporarySwitch('claude', 'me@x.com', [], claudeJson, accDir, null, deps),
-      /exit:1/,
-    );
-    assert.deepEqual(codes, [1]);
-  });
-
-  it('saves pending restore, swaps account, exits with child status', async () => {
-    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
-    fs.writeFileSync(path.join(accDir, 'a@x.com.json'), JSON.stringify({ emailAddress: 'a@x.com' }));
-    fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com', _keychain: 'yes' }));
-    const { exitFn, codes } = makeExitFn();
-    const deps: SwitcherDeps = {
-      process: procWith(makeSpawnFn(7)),
-      exitFn,
-      saveFn: (email, sourcePath, accountsPath) => {
-        const data = JSON.parse(fs.readFileSync(sourcePath, 'utf-8'));
-        fs.writeFileSync(path.join(accountsPath, `${email}.json`), JSON.stringify(data.oauthAccount));
-      },
-      loadFn: (email, targetPath, accountsPath) => {
-        const account = JSON.parse(fs.readFileSync(path.join(accountsPath, `${email}.json`), 'utf-8'));
-        fs.writeFileSync(targetPath, JSON.stringify({ oauthAccount: account }));
-        return { keychainRestored: false };
-      },
-    };
-    await assert.rejects(
-      () => runTemporarySwitch('claude', 'b@x.com', [], claudeJson, accDir, null, deps),
-      /exit:7/,
-    );
-    assert.deepEqual(codes, [7]);
-    // claude.json should have been restored to original after restoreOriginal()
-    const after = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
-    assert.equal(after.oauthAccount.emailAddress, 'a@x.com');
   });
 });
 

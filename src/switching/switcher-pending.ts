@@ -1,25 +1,20 @@
 // src/switcher-pending.ts
-// Pending-restore marker: persists "restore this account when the temporary
-// switch ends", consumed atomically so two concurrent processes can't both
-// claim the same restore.
+// MIGRATION-ONLY pending-restore drain. Up to v4 the temporary `--as` runner
+// swapped the global ~/.claude and left a `pendingRestore` marker so the next
+// `claude` could restore the previous account (crash anchor). The unified
+// profile model retired that swap: `--as` now launches isolated and never
+// touches the global, so NOTHING writes this marker anymore.
+//
+// We keep the READ side for one release: an interrupted pre-upgrade `--as`
+// left ~/.claude holding the WRONG account, and under the unified model
+// ~/.claude is the permanent frozen default — so we must restore the correct
+// account on the first `claude` after upgrade, before the default is read.
+// `handlePassthrough` calls this first (on-read migration, no migration script).
+// Remove this module once the upgrade window has passed.
 
-import fs from 'node:fs';
 import { load } from '../accounts/accounts.js';
 import { withLock } from '../platform/lock.js';
-import { updateState, updateStateInLock } from './state-store.js';
-
-/** Save a pending-restore marker. Acquires the lock itself.
- *  Use from contexts with no surrounding `withLock`. */
-export function savePendingRestore(email: string, accountsDirPath: string): void {
-  fs.mkdirSync(accountsDirPath, { recursive: true });
-  updateState(accountsDirPath, (state) => ({ ...state, pendingRestore: email }));
-}
-
-/** Save a pending-restore marker INSIDE an existing `withLock`. */
-export function savePendingRestoreInLock(email: string, accountsDirPath: string): void {
-  fs.mkdirSync(accountsDirPath, { recursive: true });
-  updateStateInLock(accountsDirPath, (state) => ({ ...state, pendingRestore: email }));
-}
+import { updateState } from './state-store.js';
 
 export function checkPendingRestore(claudeJsonPath: string, accountsDirPath: string): string | null {
   // Atomically: read the pending email AND clear it in one locked pass.
@@ -46,14 +41,4 @@ export function checkPendingRestore(claudeJsonPath: string, accountsDirPath: str
   } catch { // capture+load failed → no snapshot produced
     return null;
   }
-}
-
-export function clearPendingRestore(accountsDirPath: string): void {
-  // No-op when the state file doesn't exist yet — readState returns
-  // EMPTY_STATE, the patch removes a field that wasn't there.
-  if (!fs.existsSync(accountsDirPath)) return;
-  updateState(accountsDirPath, (state) => {
-    const { pendingRestore: _drop, ...rest } = state;
-    return rest as typeof state;
-  });
 }

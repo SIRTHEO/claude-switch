@@ -1,9 +1,8 @@
 // src/switcher.ts
 // Core account switching (lock-disciplined) plus the interactive switch/add
-// flows. Pending-restore markers, the temporary `--as` runner, and re-auth
-// live in sibling modules (switcher-pending / switcher-temporary /
-// switcher-reauth) and are re-exported here so importers keep using
-// `./switcher.js`.
+// flows. The pending-restore migration marker and re-auth live in sibling
+// modules (switcher-pending / switcher-reauth) and are re-exported here so
+// importers keep using `./switcher.js`.
 
 import readline from 'node:readline';
 import { getCurrent, list, load, save } from '../accounts/accounts.js';
@@ -15,9 +14,8 @@ import { buildSpawnArgs } from '../proxy/proxy.js';
 import type { SwitcherDeps } from './switcher-deps.js';
 
 export type { SwitcherDeps } from './switcher-deps.js';
-export { checkPendingRestore, clearPendingRestore, savePendingRestore } from './switcher-pending.js';
+export { checkPendingRestore } from './switcher-pending.js';
 export { reAuthOutcome, reAuthenticate } from './switcher-reauth.js';
-export { runTemporarySwitch } from './switcher-temporary.js';
 
 function defaultAsk(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

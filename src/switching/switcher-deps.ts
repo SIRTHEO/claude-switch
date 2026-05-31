@@ -7,8 +7,5 @@ import type { ProcessPort } from '../platform/process.js';
 export interface SwitcherDeps {
   process?: ProcessPort;
   askFn?: (question: string) => Promise<string>;
-  exitFn?: (code: number) => never;
   getTokenHealthFn?: (claudeJsonPath: string) => { status: string } | null;
-  saveFn?: (email: string, claudeJsonPath: string, accountsDirPath: string) => void;
-  loadFn?: (email: string, claudeJsonPath: string, accountsDirPath: string) => { keychainRestored: boolean };
 }

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getCurrent, save, load, list, remove } from '../src/accounts/accounts.js';
-import { fuzzyMatch, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switching/switcher.js';
+import { fuzzyMatch, checkPendingRestore } from '../src/switching/switcher.js';
 import { setAlias, resolveAlias, getAliasesForEmail } from '../src/switching/aliases.js';
 
 // Swap the active account in ~/.claude — the save+load primitive that the
@@ -190,7 +190,7 @@ describe('integration: aliases', () => {
   });
 });
 
-describe('integration: pending restore (--as crash recovery)', () => {
+describe('integration: pending restore (pre-unified --as migration drain)', () => {
   let tmpDir: string;
   let claudeJson: string;
   let accDir: string;
@@ -214,11 +214,21 @@ describe('integration: pending restore (--as crash recovery)', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('saves and restores pending account', () => {
-    savePendingRestore('work@co.com', accDir);
+  // Seed a leftover marker the way a pre-upgrade interrupted `--as` would have
+  // (the writer is retired — the unified model never swaps the global).
+  function seedPending(email: string): void {
+    fs.writeFileSync(
+      path.join(accDir, '.claude-switch-state.json'),
+      JSON.stringify({ version: 1, fallback: { enabled: false, autoEngaged: false }, pendingRestore: email }),
+    );
+  }
 
-    swap('personal@gmail.com', claudeJson, accDir);
-    assert.equal(getCurrent(claudeJson), 'personal@gmail.com');
+  it('restores the marked account into the global config on first run', () => {
+    // Simulate an interrupted pre-upgrade `--as personal`: the global was left
+    // on personal, with work@co.com marked for restore. The on-read drain must
+    // put the correct frozen-default account back before anything reads it.
+    seedPending('work@co.com');
+    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'personal@gmail.com' } }));
 
     const restored = checkPendingRestore(claudeJson, accDir);
     assert.equal(restored, 'work@co.com');
@@ -228,14 +238,7 @@ describe('integration: pending restore (--as crash recovery)', () => {
     assert.equal(JSON.parse(stateRaw).pendingRestore, undefined);
   });
 
-  it('clearPendingRestore removes file', () => {
-    savePendingRestore('work@co.com', accDir);
-    clearPendingRestore(accDir);
-    const stateRaw = fs.readFileSync(path.join(accDir, '.claude-switch-state.json'), 'utf-8');
-    assert.equal(JSON.parse(stateRaw).pendingRestore, undefined);
-  });
-
-  it('checkPendingRestore returns null when no file', () => {
+  it('returns null when no marker is present', () => {
     const result = checkPendingRestore(claudeJson, accDir);
     assert.equal(result, null);
   });

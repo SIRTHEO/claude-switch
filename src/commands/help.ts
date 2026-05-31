@@ -55,7 +55,7 @@ Usage:
   claude switch update                   Check for updates and install if available
   claude switch help                     Show this help
   claude switch setup                    Re-run first-time setup
-  claude --as <alias|email> ...          Use account temporarily
+  claude --as <alias|email> ...          Run an account isolated, one session
   claude switch --completions <shell>    Generate shell completions
 
 All other commands are passed through to the real claude binary.`);
