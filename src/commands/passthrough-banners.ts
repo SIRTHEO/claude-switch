@@ -30,13 +30,11 @@ export function emitPassthroughBanners(params: {
 }): void {
   const { accountsDirPath, email, wasUnsaved, auto, engage, routing, extraEnv, updateInfo } = params;
 
-  // Routing banners — emitted BEFORE the standard "🔑 <email>" banner so
-  // the user sees the cause-and-effect chain.
-  if (routing.flipped && routing.decision?.banner) {
-    process.stderr.write(`${routing.decision.banner}\n\n`);
-  } else if (routing.isolatedHint) {
-    process.stderr.write(`${routing.isolatedHint}\n\n`);
-  }
+  // Routing warning — emitted BEFORE the standard "🔑 <email>" banner. Only the
+  // 0-match "no saved account matches, staying on the active" warning reaches
+  // the run path now; a different-account routing decision takes the isolate
+  // path instead (its banner prints from runIsolatedOrRefuse), so there is no
+  // flip/hint banner to emit here.
   if (routing.decision?.warning) {
     process.stderr.write(`${routing.decision.warning}\n\n`);
   }

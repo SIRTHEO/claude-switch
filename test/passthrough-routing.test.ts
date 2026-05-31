@@ -1,8 +1,11 @@
 // test/passthrough-routing.test.ts
-// Integration coverage for resolveRoutingForPassthrough — the helper
-// that runs inside the passthrough snapshot lock and performs the
-// in-lock save/load swap when project-aware routing decides on a
-// different account.
+// Integration coverage for resolveRoutingForPassthrough — the synchronous
+// helper that runs inside the passthrough snapshot lock. Under the unified
+// profile model (decision B2) it NEVER swaps the global account: a cwd rule
+// pointing at a different account yields an isolated-launch signal instead —
+// `launchIsolated` when a logged-in overlay already exists, else `mintIsolated`
+// for the handler to create-on-demand off the lock. The async mint itself is
+// covered in passthrough-isolate.test.ts (the handler path).
 
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -71,7 +74,6 @@ function cleanup(): void {
 function baseInput(f: Fixture, email: string | null, saved: string[]): RoutingForPassthroughInput {
   return {
     accountsDirPath: f.accountsDir,
-    claudeJsonPath: f.claudeJson,
     cwd: f.repo,
     initialEmail: email,
     savedEmails: saved,
@@ -82,7 +84,6 @@ function baseInput(f: Fixture, email: string | null, saved: string[]): RoutingFo
 const savedHomeInitial: SavedHome = { HOME: process.env['HOME'], USERPROFILE: process.env['USERPROFILE'] };
 const ORIGINAL_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
 const ORIGINAL_SWITCH_ACCOUNT = process.env.CLAUDE_SWITCH_ACCOUNT;
-const ORIGINAL_FORCE_SWAP = process.env.CLAUDE_SWITCH_FORCE_SWAP;
 
 /** Seed a live, GLOBAL-bound session for `account` using this test process's
  *  pid (always alive, so listLiveSessions' real isProcessAlive keeps it). */
@@ -107,7 +108,6 @@ describe('resolveRoutingForPassthrough', () => {
   beforeEach(() => {
     delete process.env.CLAUDE_CONFIG_DIR;
     delete process.env.CLAUDE_SWITCH_ACCOUNT;
-    delete process.env.CLAUDE_SWITCH_FORCE_SWAP;
   });
 
   before(() => {
@@ -119,7 +119,6 @@ describe('resolveRoutingForPassthrough', () => {
     restoreFakeHome(savedHomeInitial);
     if (ORIGINAL_CONFIG_DIR !== undefined) process.env.CLAUDE_CONFIG_DIR = ORIGINAL_CONFIG_DIR;
     if (ORIGINAL_SWITCH_ACCOUNT !== undefined) process.env.CLAUDE_SWITCH_ACCOUNT = ORIGINAL_SWITCH_ACCOUNT;
-    if (ORIGINAL_FORCE_SWAP !== undefined) process.env.CLAUDE_SWITCH_FORCE_SWAP = ORIGINAL_FORCE_SWAP;
   });
 
   it('returns null decision when no routing source matches', () => {
@@ -130,10 +129,11 @@ describe('resolveRoutingForPassthrough', () => {
     setFakeHome(f.home);
     const r = resolveRoutingForPassthrough(baseInput(f, 'a@gmail.com', ['a@gmail.com']));
     assert.equal(r.decision, null);
-    assert.equal(r.flipped, false);
+    assert.equal(r.launchIsolated, undefined);
+    assert.equal(r.mintIsolated, undefined);
   });
 
-  it('flips active when .claude-switch matches a different saved account', () => {
+  it('signals create-on-demand (no global swap) when .claude-switch matches a different saved account', () => {
     const f = setupFixture('flip', {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com', 'theo@acme.com'],
@@ -144,13 +144,16 @@ describe('resolveRoutingForPassthrough', () => {
     const r = resolveRoutingForPassthrough(
       baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
     );
-    assert.equal(r.flipped, true);
+    // No overlay exists → mint signal, not a launchIsolated.
+    assert.equal(r.mintIsolated?.email, 'theo@acme.com');
+    assert.equal(r.launchIsolated, undefined);
     assert.equal(r.decision?.email, 'theo@acme.com');
-    assert.match(r.decision?.banner ?? '', /routed to theo@acme\.com/);
-    assert.equal(getCurrent(f.claudeJson), 'theo@acme.com');
+    assert.match(r.launchIsolatedBanner ?? '', /routed to theo@acme\.com/);
+    // The global active was NOT swapped — routing is ephemeral (B2).
+    assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
   });
 
-  it('does not flip when active already satisfies', () => {
+  it('does not act when active already satisfies', () => {
     const f = setupFixture('already-active', {
       activeEmail: 'theo@acme.com',
       savedEmails: ['theo@acme.com'],
@@ -161,13 +164,14 @@ describe('resolveRoutingForPassthrough', () => {
     const r = resolveRoutingForPassthrough(
       baseInput(f, 'theo@acme.com', ['theo@acme.com']),
     );
-    assert.equal(r.flipped, false);
+    assert.equal(r.launchIsolated, undefined);
+    assert.equal(r.mintIsolated, undefined);
     assert.equal(r.decision?.email, 'theo@acme.com');
     assert.equal(r.decision?.banner, undefined);
     assert.equal(getCurrent(f.claudeJson), 'theo@acme.com');
   });
 
-  it('emits warning + does NOT flip on 0-match', () => {
+  it('emits warning + does NOT act on 0-match', () => {
     const f = setupFixture('no-match-warn', {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com'],
@@ -178,7 +182,8 @@ describe('resolveRoutingForPassthrough', () => {
     const r = resolveRoutingForPassthrough(
       baseInput(f, 'personal@gmail.com', ['personal@gmail.com']),
     );
-    assert.equal(r.flipped, false);
+    assert.equal(r.launchIsolated, undefined);
+    assert.equal(r.mintIsolated, undefined);
     assert.match(r.decision?.warning ?? '', /no saved account matches/);
     assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
   });
@@ -196,11 +201,12 @@ describe('resolveRoutingForPassthrough', () => {
       baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
     );
     assert.equal(r.decision, null);
-    assert.equal(r.flipped, false);
+    assert.equal(r.launchIsolated, undefined);
+    assert.equal(r.mintIsolated, undefined);
     assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
   });
 
-  it('emits isolatedHint when target has defaultIsolated:true', () => {
+  it('signals create-on-demand with the "always isolated" banner when target has defaultIsolated:true', () => {
     const f = setupFixture('isolated-target', {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com', 'theo@acme.com'],
@@ -212,8 +218,9 @@ describe('resolveRoutingForPassthrough', () => {
     const r = resolveRoutingForPassthrough(
       baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
     );
-    assert.equal(r.flipped, false);
-    assert.match(r.isolatedHint ?? '', /isolated/);
+    // No overlay yet → mint on demand (NOT the old hint-and-run-the-wrong-account).
+    assert.equal(r.mintIsolated?.email, 'theo@acme.com');
+    assert.match(r.launchIsolatedBanner ?? '', /always isolated/);
     // Active stays on personal — we did NOT silently flip into work.
     assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
   });
@@ -230,12 +237,12 @@ describe('resolveRoutingForPassthrough', () => {
     const r = resolveRoutingForPassthrough(
       baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'alice@acme.com', 'bob@other.com']),
     );
-    assert.equal(r.flipped, true);
+    assert.equal(r.mintIsolated?.email, 'bob@other.com');
     assert.equal(r.decision?.email, 'bob@other.com');
-    assert.equal(getCurrent(f.claudeJson), 'bob@other.com');
+    assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
   });
 
-  it('updates lastUsedByDomain after a domain-constrained flip', () => {
+  it('updates lastUsedByDomain after a domain-constrained route', () => {
     const f = setupFixture('last-used', {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com', 'alice@acme.com', 'bob@acme.com'],
@@ -248,8 +255,10 @@ describe('resolveRoutingForPassthrough', () => {
       baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'alice@acme.com', 'bob@acme.com']),
     );
     assert.equal(r1.decision?.email, 'alice@acme.com');
+    assert.equal(r1.mintIsolated?.email, 'alice@acme.com');
 
-    // state.json should now record acme.com → alice.
+    // state.json should now record acme.com → alice (routing memory survives,
+    // it is NOT the sticky default-pointer).
     const stateRaw = JSON.parse(
       fs.readFileSync(path.join(f.accountsDir, '.claude-switch-state.json'), 'utf-8'),
     );
@@ -259,12 +268,13 @@ describe('resolveRoutingForPassthrough', () => {
     const r2 = resolveRoutingForPassthrough(
       baseInput(f, 'alice@acme.com', ['personal@gmail.com', 'alice@acme.com', 'bob@acme.com']),
     );
-    assert.equal(r2.flipped, false);
+    assert.equal(r2.mintIsolated, undefined);
+    assert.equal(r2.launchIsolated, undefined);
   });
 
-  // ── 28.4 — token-mixing prevention ──────────────────────────────────────
+  // ── B2 — ephemeral isolated launch (never swaps the global) ──────────────
 
-  it('launches isolated (no global swap) when a swap would clash and an overlay is ready', () => {
+  it('launches isolated (no global swap) when an overlay is ready and a swap would clash', () => {
     const f = setupFixture('conflict-overlay', {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com', 'theo@acme.com'],
@@ -277,14 +287,14 @@ describe('resolveRoutingForPassthrough', () => {
     const r = resolveRoutingForPassthrough(
       baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
     );
-    assert.equal(r.flipped, false);
     assert.deepEqual(r.launchIsolated, { email: 'theo@acme.com', configDir: overlayDir });
+    assert.equal(r.mintIsolated, undefined);
     assert.match(r.launchIsolatedBanner ?? '', /isolated/);
     // The global active was NOT swapped — the live session keeps its token.
     assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
   });
 
-  it('refuses the swap when it would clash and no overlay exists', () => {
+  it('signals create-on-demand (no swap, no refusal) when a swap would clash and no overlay exists', () => {
     const f = setupFixture('conflict-no-overlay', {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com', 'theo@acme.com'],
@@ -296,28 +306,12 @@ describe('resolveRoutingForPassthrough', () => {
     const r = resolveRoutingForPassthrough(
       baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
     );
-    assert.equal(r.flipped, false);
+    // The clash refusal is gone: an isolated launch never touches the live
+    // session's tokens, so we mint on demand instead of refusing.
+    assert.equal(r.mintIsolated?.email, 'theo@acme.com');
     assert.equal(r.launchIsolated, undefined);
-    assert.match(r.conflictRefusal ?? '', /Refusing to switch to theo@acme\.com/);
+    assert.match(r.launchIsolatedBanner ?? '', /token clash/);
     assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
-  });
-
-  it('CLAUDE_SWITCH_FORCE_SWAP=1 overrides the clash guard and swaps anyway', () => {
-    const f = setupFixture('conflict-force', {
-      activeEmail: 'personal@gmail.com',
-      savedEmails: ['personal@gmail.com', 'theo@acme.com'],
-    });
-    setFakeHome(f.home);
-    writeFile(path.join(f.repo, '.claude-switch'), '{"match":{"emailDomain":"acme.com"}}');
-    seedLiveGlobalSession(f, 'personal@gmail.com');
-    process.env.CLAUDE_SWITCH_FORCE_SWAP = '1';
-
-    const r = resolveRoutingForPassthrough(
-      baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
-    );
-    assert.equal(r.flipped, true);
-    assert.equal(r.conflictRefusal, undefined);
-    assert.equal(getCurrent(f.claudeJson), 'theo@acme.com');
   });
 
   it('does NOT treat a live session of the SAME target account as a clash', () => {
@@ -332,11 +326,13 @@ describe('resolveRoutingForPassthrough', () => {
     const r = resolveRoutingForPassthrough(
       baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
     );
-    assert.equal(r.flipped, true); // swapping to the already-live account is safe
-    assert.equal(getCurrent(f.claudeJson), 'theo@acme.com');
+    assert.equal(r.mintIsolated?.email, 'theo@acme.com');
+    // Not flagged as a clash → the plain routing banner, not the clash one.
+    assert.doesNotMatch(r.launchIsolatedBanner ?? '', /token clash/);
+    assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
   });
 
-  it('defaultIsolated launches the overlay isolated even with no live clash', () => {
+  it('launches the overlay isolated for a defaultIsolated target even with no live clash', () => {
     const f = setupFixture('isolated-overlay', {
       activeEmail: 'personal@gmail.com',
       savedEmails: ['personal@gmail.com', 'theo@acme.com'],
@@ -349,8 +345,8 @@ describe('resolveRoutingForPassthrough', () => {
     const r = resolveRoutingForPassthrough(
       baseInput(f, 'personal@gmail.com', ['personal@gmail.com', 'theo@acme.com']),
     );
-    assert.equal(r.flipped, false);
     assert.deepEqual(r.launchIsolated, { email: 'theo@acme.com', configDir: overlayDir });
+    assert.equal(r.mintIsolated, undefined);
     assert.match(r.launchIsolatedBanner ?? '', /always isolated/);
     assert.equal(getCurrent(f.claudeJson), 'personal@gmail.com');
   });

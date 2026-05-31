@@ -13,9 +13,9 @@ import type { RoutingSnapshot } from './passthrough-routing.js';
  * spawn-and-wait paths; prune-on-read reclaims it on exit. `configDir` null =
  * global-bound; a profile shell's CLAUDE_CONFIG_DIR marks it isolated.
  *
- * NB for 28.4: in passthrough this is called AFTER the routing swap (fine for
- * observability); the prevention decision reads the registry BEFORE the swap
- * inside `resolveRoutingForPassthrough`.
+ * NB for 28.4: the routing conflict decision reads the registry BEFORE this
+ * process records itself (inside `resolveRoutingForPassthrough`), so it sees
+ * other sessions, not ourselves.
  */
 export function recordPassthroughSession(
   accountsDirPath: string,
@@ -26,29 +26,48 @@ export function recordPassthroughSession(
 }
 
 /**
- * 28.4 — act on routing's token-mixing decision. Either launches the target's
- * isolated overlay (its own credential file → immune to global swaps) and never
- * returns, or throws an actionable refusal. Reached only when the routing
- * snapshot carries `launchIsolated` or `conflictRefusal`.
+ * 28.4 / B2 — turn routing's isolation decision into a launch. Resolves the
+ * routed account to its own credential dir and spawns claude there
+ * (CLAUDE_CONFIG_DIR set, no global swap) — minting the profile on demand when
+ * no logged-in overlay exists yet (B2 create-on-demand). Throws an actionable
+ * refusal when the minted profile still needs a login (don't launch a broken
+ * session). Async because `ensureProfileForAccount` is (network token refresh)
+ * and lives in the heavy profiles module — lazily imported here so it stays off
+ * the passthrough hot path's eager import graph, and runs OUTSIDE the snapshot
+ * lock. Reached only when the snapshot carries `launchIsolated` or `mintIsolated`.
  */
-export function runIsolatedOrRefuse(
+export async function runIsolatedOrRefuse(
   routing: RoutingSnapshot,
   claudeBin: string,
   args: string[],
   accountsDirPath: string,
   runClaude: typeof proxyRun,
-): void {
-  // No ready overlay → refuse rather than mix tokens / run the wrong account.
-  if (!routing.launchIsolated) {
-    throw new ExitError(routing.conflictRefusal ?? 'No account connected. Run: claude switch add');
+): Promise<void> {
+  let launch = routing.launchIsolated;
+
+  // No existing overlay → mint the routed account's profile on demand (B2).
+  if (!launch && routing.mintIsolated) {
+    const { ensureProfileForAccount } = await import('../profiles/profiles.js');
+    const result = await ensureProfileForAccount(routing.mintIsolated.email, accountsDirPath);
+    if (result.needsLogin) {
+      throw new ExitError(
+        `${routing.mintIsolated.email} is routed here but its isolated profile ` +
+        `has no login yet. Run: claude switch profile login ${result.profileName}`,
+      );
+    }
+    launch = { email: routing.mintIsolated.email, configDir: result.profilePath };
+  }
+
+  if (!launch) {
+    throw new ExitError('No account connected. Run: claude switch add');
   }
   if (routing.launchIsolatedBanner) {
     process.stderr.write(`${routing.launchIsolatedBanner}\n\n`);
   }
-  recordPassthroughSession(accountsDirPath, routing.launchIsolated.email, routing.launchIsolated.configDir);
+  recordPassthroughSession(accountsDirPath, launch.email, launch.configDir);
   // `runClaude` (proxyRun) never returns in production; the caller adds an
   // explicit `return` so a non-blocking test fake can't fall through.
-  runClaude(claudeBin, args, { CLAUDE_CONFIG_DIR: routing.launchIsolated.configDir });
+  runClaude(claudeBin, args, { CLAUDE_CONFIG_DIR: launch.configDir });
 }
 
 /**

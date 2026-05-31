@@ -110,10 +110,10 @@ export async function handlePassthrough(
   //
   // Project-aware routing runs FIRST inside this lock. If a
   // .claude-switch / .routing.json / CLAUDE_SWITCH_ACCOUNT decides on a
-  // different account, we perform the swap (save+load) before the rest of
-  // the snapshot reads, so they all see the final active. Routing is
-  // skipped when CLAUDE_CONFIG_DIR is set externally (we are inside an
-  // explicit profile chosen by the user — don't override).
+  // DIFFERENT account, routing is ephemeral (B2): the snapshot short-circuits
+  // to an isolated launch of that account (no global swap), resolved or minted
+  // after the lock. Routing is skipped when CLAUDE_CONFIG_DIR is set externally
+  // (we are inside an explicit profile chosen by the user — don't override).
   const snapshot = withLock(accountsDirPath, () => {
     // Capture (before any routing swap) a token the claude binary rotated into
     // `.credentials.json` during the previous session, so the snapshot keeps a
@@ -128,20 +128,23 @@ export async function handlePassthrough(
     // Routing resolution + optional in-lock swap
     const routing = resolveRoutingForPassthrough({
       accountsDirPath,
-      claudeJsonPath,
       cwd: process.cwd(),
       initialEmail: initial || null,
       savedEmails: accounts,
     });
 
-    // 28.4 — token-mixing prevention short-circuits the rest of the snapshot:
-    // auto-disable / auto-engage below act on the GLOBAL account, but when we
-    // launch the target isolated (or refuse) we are NOT running the global one.
-    if (routing.conflictRefusal || routing.launchIsolated) {
+    // B2 — routing to a different account short-circuits the rest of the
+    // snapshot: auto-disable / auto-engage below act on the GLOBAL account, but
+    // when routing launches the target isolated (or mints it on demand) we are
+    // NOT running the global one.
+    if (routing.launchIsolated || routing.mintIsolated) {
       return { kind: 'isolate' as const, routing };
     }
 
-    const e = routing.flipped ? routing.decision!.email : initial;
+    // Routing never swaps the global anymore (B2), so the run path always
+    // proceeds on the active account; the isolate branch above owns every
+    // different-account case.
+    const e = initial;
     if (!e) return null;
 
     const wasUnsaved = !accounts.includes(e);
@@ -170,10 +173,11 @@ export async function handlePassthrough(
     throw new ExitError('No account connected. Run: claude switch add');
   }
 
-  // 28.4 — routing chose isolation (or refused) to avoid a token clash; this
-  // either spawns the target's overlay isolated (never returns) or throws.
+  // B2 — routing chose isolation; this spawns the target isolated (overlay or
+  // minted-on-demand, never returns) or throws an actionable refusal. Async:
+  // the on-demand mint (ensureProfileForAccount) runs here, OUTSIDE the lock.
   if (snapshot.kind === 'isolate') {
-    runIsolatedOrRefuse(snapshot.routing, claudeBin, passthroughArgs, accountsDirPath, runClaude);
+    await runIsolatedOrRefuse(snapshot.routing, claudeBin, passthroughArgs, accountsDirPath, runClaude);
     return;
   }
 
