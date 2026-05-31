@@ -75,6 +75,31 @@ describe('handleSessions', () => {
     assert.match(out, /b@x\.com — isolated/);
   });
 
+  it('names the profile for an isolated session in the profiles tree', () => {
+    // configDir under <~/.claude>/profiles/<name> → "profile \"<name>\"".
+    const profileDir = path.join(path.dirname(dir), 'profiles', 'work');
+    recordSession(dir, SESSION({ pid: 3, account: 'c@x.com', isolated: true, configDir: profileDir }), ALIVE);
+    const out = capture(() => handleSessions({ accountsDirPath: dir }, { json: false }, { ...ALIVE, now: () => NOW }));
+    assert.match(out, /c@x\.com — profile "work"/);
+  });
+
+  it('shows plain "isolated" for a configDir outside the profiles tree', () => {
+    recordSession(dir, SESSION({ pid: 4, account: 'd@x.com', isolated: true, configDir: '/some/custom/ccd' }), ALIVE);
+    const out = capture(() => handleSessions({ accountsDirPath: dir }, { json: false }, { ...ALIVE, now: () => NOW }));
+    assert.match(out, /d@x\.com — isolated/);
+    assert.doesNotMatch(out, /d@x\.com — profile/);
+  });
+
+  it('--json output is unchanged (no derived profile-name field leaks into the contract)', () => {
+    const profileDir = path.join(path.dirname(dir), 'profiles', 'work');
+    recordSession(dir, SESSION({ pid: 5, account: 'e@x.com', isolated: true, configDir: profileDir }), ALIVE);
+    const out = capture(() => handleSessions({ accountsDirPath: dir }, { json: true }, { ...ALIVE, now: () => NOW }));
+    const parsed = JSON.parse(out.trim()) as Array<Record<string, unknown>>;
+    // The profile name is a human-display derivation only; the JSON contract
+    // stays the raw LiveSession shape (consumers derive the name from configDir).
+    assert.deepEqual(Object.keys(parsed[0]!).sort(), ['account', 'configDir', 'cwd', 'isolated', 'pid', 'startedAt']);
+  });
+
   it('warns when ≥2 accounts run GLOBAL-bound at once (mixing hazard)', () => {
     recordSession(dir, SESSION({ pid: 1, account: 'a@x.com', isolated: false }), ALIVE);
     recordSession(dir, SESSION({ pid: 2, account: 'b@x.com', isolated: false }), ALIVE);

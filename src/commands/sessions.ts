@@ -1,14 +1,15 @@
 // src/commands/sessions.ts
 // `claude switch sessions [--json]` — show the claude sessions this machine is
 // running right now, as tracked by the live-session registry: which account,
-// isolated or global-bound, working dir, and age. It never starts or stops a
-// session; the underlying `listLiveSessions` prunes dead pids on read (a
-// self-healing write) so the answer never lies.
+// the profile it runs in (or global-bound), working dir, and age. It never
+// starts or stops a session; the underlying `listLiveSessions` prunes dead pids
+// on read (a self-healing write) so the answer never lies.
 //
 // It also surfaces the dangerous shape up front: two or more GLOBAL-bound
 // sessions on different accounts share `~/.claude/.credentials.json` and can
 // corrupt each other's tokens — the "one token good, the other bad" breakage.
 
+import path from 'node:path';
 import { type LiveSession, globalBoundSessions, listLiveSessions } from '../sessions/session-registry.js';
 
 interface SessionsOptions {
@@ -21,6 +22,32 @@ function ageLabel(startedAt: number, now: number): string {
   if (sec < 60) return `${sec}s`;
   if (sec < 3600) return `${Math.round(sec / 60)}m`;
   return `${Math.round(sec / 3600)}h`;
+}
+
+/**
+ * Human scope label for a session: `global` (shares ~/.claude), or — when the
+ * session is isolated against a profile/overlay — `profile "<name>"` so the
+ * user can tell which terminal is which. `isolated` (the stored flag) is the
+ * source of truth for global-vs-isolated; `configDir` only supplies the name,
+ * and only when it points into the profiles tree (a user's arbitrary
+ * CLAUDE_CONFIG_DIR isolates too but has no profile name → plain `isolated`).
+ * The profiles root is derived from accountsDirPath (`<~/.claude>/profiles`),
+ * NOT from profiles.ts — that module is heavy and this command is on the cli
+ * startup graph.
+ *
+ * (Forward note: when live migration lands — slice 5 — a session's CURRENT
+ * profile can diverge from the one it was SPAWNED with; that two-column view
+ * ships with the migration writer that produces the divergence, not here.)
+ */
+function scopeLabel(s: LiveSession, accountsDirPath: string): string {
+  if (!s.isolated) return 'global';
+  if (s.configDir) {
+    const profilesRoot = path.join(path.dirname(accountsDirPath), 'profiles');
+    if (s.configDir === profilesRoot || s.configDir.startsWith(profilesRoot + path.sep)) {
+      return `profile "${path.basename(s.configDir)}"`;
+    }
+  }
+  return 'isolated';
 }
 
 /** The distinct accounts running GLOBAL-bound right now. Two or more = a live
@@ -53,7 +80,7 @@ export function handleSessions(
 
   process.stdout.write(`Live claude sessions (${sessions.length}):\n`);
   for (const s of sessions) {
-    const scope = s.isolated ? 'isolated' : 'global';
+    const scope = scopeLabel(s, ctx.accountsDirPath);
     process.stdout.write(
       `  • ${s.account ?? '(unknown)'} — ${scope} · pid ${s.pid} · ${ageLabel(s.startedAt, now)} · ${s.cwd}\n`,
     );
