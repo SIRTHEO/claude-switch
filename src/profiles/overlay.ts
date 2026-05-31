@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { createProfile, profilePath } from './profiles.js';
+import { ensureDirSymlink } from './link-dir.js';
 
 /** Sentinel marking a profile as overlay. A file (not a dir) so it never reads
  *  as a profile name and the dir-only `listProfiles` scan ignores it. */
@@ -28,30 +29,38 @@ function globalHomeDir(sub: string): string {
   return path.join(os.homedir(), '.claude', sub);
 }
 
-function safeLstat(p: string): fs.Stats | null {
-  try {
-    return fs.lstatSync(p);
-  } catch {
-    return null; // absent -> caller treats as "nothing there"
-  }
+/**
+ * Symlink `<profileDir>/<sub>` -> `~/.claude/<sub>` (absolute target). The link
+ * primitive (ensure-target-exists + idempotent + refuse-clobber) lives in
+ * `link-dir.ts`, shared with the per-session work-dir seeder.
+ */
+function linkGlobalDir(profileDir: string, sub: string): void {
+  ensureDirSymlink(path.join(profileDir, sub), globalHomeDir(sub));
 }
 
 /**
- * Symlink `<profileDir>/<sub>` -> `~/.claude/<sub>`. Ensures the global target
- * exists first (a fresh machine may have no `projects/` yet) so the link is
- * never born broken. Idempotent when our own link is already in place; refuses
- * to clobber a real dir or a foreign symlink.
+ * Ensure a profile's data container `<sub>` exists with the CORRECT topology for
+ * the profile type, idempotently:
+ *   - overlay (as-global): the container is a whole-dir symlink to the global
+ *     home (`<globalConfigDir>/<sub>`), so every as-global session shares it;
+ *   - classic: the container is a real, isolated directory inside the profile.
+ *
+ * Shared by the overlay builder and the per-session work-dir seeder so the two
+ * never disagree on a container's shape — a raw `mkdir` from the seeder would
+ * later make the overlay's symlink throw ("exists and not our symlink"). On an
+ * already-correct container both branches are a safe no-op. `globalConfigDir`
+ * (normally `~/.claude`) is a parameter so tests isolate it from the real home.
  */
-function linkGlobalDir(profileDir: string, sub: string): void {
-  const target = globalHomeDir(sub);
-  fs.mkdirSync(target, { recursive: true, mode: 0o700 });
-  const link = path.join(profileDir, sub);
-  const existing = safeLstat(link);
-  if (existing) {
-    if (existing.isSymbolicLink() && fs.readlinkSync(link) === target) return; // already ours
-    throw new Error(`"${sub}" already exists in the profile and is not our symlink.`);
+export function ensureProfileContainer(
+  canonicalDir: string,
+  sub: string,
+  globalConfigDir: string,
+): void {
+  if (fs.existsSync(path.join(canonicalDir, OVERLAY_MARKER))) {
+    ensureDirSymlink(path.join(canonicalDir, sub), path.resolve(globalConfigDir, sub));
+  } else {
+    fs.mkdirSync(path.join(canonicalDir, sub), { recursive: true, mode: 0o700 });
   }
-  fs.symlinkSync(target, link, 'dir');
 }
 
 /**
