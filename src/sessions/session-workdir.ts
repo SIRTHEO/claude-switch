@@ -25,15 +25,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { type CredentialStore, defaultCredentialStore } from '../credentials/credential-store.js';
 import { ensureDirSymlink } from '../profiles/link-dir.js';
-import { ensureProfileContainer } from '../profiles/overlay.js';
+import { PROFILE_DATA_CONTAINERS, ensureProfileDataContainers } from '../profiles/overlay.js';
 import { profileKeychainTrustedBins } from '../profiles/profiles-credentials.js';
 
-/** Dir containers holding user data — symlinked to the canonical (DIRs only;
- *  single-file accumulators like `history.jsonl` are handled by reconcile, not a
- *  fragile file-symlink). */
-const LINKED_CONTAINERS = ['projects', 'sessions', 'skills', 'shell-snapshots', 'file-history', 'todos'];
 /** Per-session private files — copied, never symlinked (see header).
- *  `.credentials.json` is NOT here: it goes through the credential port below. */
+ *  `.credentials.json` is NOT here: it goes through the credential port below.
+ *  The shared data containers come from `PROFILE_DATA_CONTAINERS` (SSOT). */
 const COPIED_FILES = ['.claude.json', 'settings.json'];
 
 /** Internal — callers pass `deps` as an object literal (structurally checked),
@@ -103,12 +100,12 @@ export function prepareSessionWorkDir(
     );
   }
 
-  // Link the data containers to the canonical. ensureProfileContainer fixes the
-  // canonical's topology first (overlay → symlink to the global; classic → real
-  // dir) so the seeder and the overlay builder never disagree on a container's
-  // shape; then we link the work dir's entry to the canonical's.
-  for (const sub of LINKED_CONTAINERS) {
-    ensureProfileContainer(canonicalDir, sub, globalConfigDir);
+  // Fix the canonical's container topology first (overlay → symlink to the
+  // global; classic → real dir) — this also migrates an older overlay that
+  // predates the full container set — then link the work dir's entries to the
+  // canonical's.
+  ensureProfileDataContainers(canonicalDir, globalConfigDir);
+  for (const sub of PROFILE_DATA_CONTAINERS) {
     ensureDirSymlink(path.join(workDir, sub), path.resolve(canonicalDir, sub));
   }
 

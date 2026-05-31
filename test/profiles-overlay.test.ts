@@ -11,7 +11,12 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { handleProfileCreate, handleProfileList } from '../src/commands/profile.js';
-import { createOverlayProfile, isOverlayProfile } from '../src/profiles/overlay.js';
+import {
+  PROFILE_DATA_CONTAINERS,
+  createOverlayProfile,
+  ensureProfileDataContainers,
+  isOverlayProfile,
+} from '../src/profiles/overlay.js';
 import { createProfile, importProfileFromAccount } from '../src/profiles/profiles.js';
 import { restoreFakeHome, setFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
@@ -42,6 +47,28 @@ describe('createOverlayProfile', () => {
     assert.equal(fs.readlinkSync(skills), path.join(home, '.claude', 'skills'));
     assert.ok(fs.lstatSync(projects).isSymbolicLink());
     assert.equal(fs.readlinkSync(projects), path.join(home, '.claude', 'projects'));
+  });
+
+  it('symlinks the FULL data-container set to the global (sessions, todos, …)', () => {
+    const dir = createOverlayProfile('work');
+    for (const sub of PROFILE_DATA_CONTAINERS) {
+      assert.ok(fs.lstatSync(path.join(dir, sub)).isSymbolicLink(), `${sub} is a symlink`);
+      assert.equal(fs.readlinkSync(path.join(dir, sub)), path.join(home, '.claude', sub), `${sub} → global/${sub}`);
+    }
+  });
+
+  it('ensureProfileDataContainers migrates an existing overlay (adds the missing links)', () => {
+    // Simulate a pre-extension overlay: marker + only skills/projects linked.
+    const dir = createProfile('legacy');
+    fs.writeFileSync(path.join(dir, '.cs-overlay'), '', { mode: 0o600 });
+    fs.symlinkSync(path.join(home, '.claude', 'skills'), path.join(dir, 'skills'), 'dir');
+
+    ensureProfileDataContainers(dir, path.join(home, '.claude'));
+
+    for (const sub of PROFILE_DATA_CONTAINERS) {
+      assert.ok(fs.lstatSync(path.join(dir, sub)).isSymbolicLink(), `${sub} now linked`);
+      assert.equal(fs.readlinkSync(path.join(dir, sub)), path.join(home, '.claude', sub));
+    }
   });
 
   it('sees global skills + projects through the symlinks', () => {

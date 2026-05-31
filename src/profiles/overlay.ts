@@ -3,15 +3,18 @@
 //
 // An overlay profile isolates ONLY the identity (its own .credentials.json +
 // .claude.json, written later by the login / ensureProfileForAccount flow) and
-// SHARES the rest of the global Claude home via whole-dir symlinks:
-//   <profile>/skills   -> ~/.claude/skills    (every global skill, zero upkeep)
-//   <profile>/projects -> ~/.claude/projects  (transcripts, so history and
-//                                              `claude --resume` work in the overlay)
+// SHARES EVERYTHING ELSE with the global Claude home — an overlay is the global
+// home with a different identity attached. Each shared data container is a
+// whole-dir symlink into `~/.claude/<container>` (skills, projects/transcripts,
+// sessions, shell-snapshots, file-history, todos — `PROFILE_DATA_CONTAINERS`),
+// so history / `--resume` / skills behave exactly as in the global, and two
+// as-global accounts intentionally share one working experience.
 //
 // It is the middle ground between routing (everything shared, but two live
 // accounts collide on the shared default config dir) and a classic profile
-// (fully isolated, but starts empty). The identity/config split limits sharing
-// to skills + projects (the credential vault stays per-overlay).
+// (fully isolated, but starts empty). Only identity + credentials stay
+// per-overlay. (settings.json is per-overlay for now; aligning it to the global
+// is copy/reconcile work — never a fragile file-symlink.)
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -24,19 +27,14 @@ import { ensureDirSymlink } from './link-dir.js';
  *  as a profile name and the dir-only `listProfiles` scan ignores it. */
 const OVERLAY_MARKER = '.cs-overlay';
 
-/** A global Claude home subdirectory (e.g. 'skills', 'projects'). */
-function globalHomeDir(sub: string): string {
-  return path.join(os.homedir(), '.claude', sub);
-}
-
-/**
- * Symlink `<profileDir>/<sub>` -> `~/.claude/<sub>` (absolute target). The link
- * primitive (ensure-target-exists + idempotent + refuse-clobber) lives in
- * `link-dir.ts`, shared with the per-session work-dir seeder.
- */
-function linkGlobalDir(profileDir: string, sub: string): void {
-  ensureDirSymlink(path.join(profileDir, sub), globalHomeDir(sub));
-}
+/** The data containers a profile holds — shared (overlay → symlinked to the
+ *  global) or isolated (classic → real dirs). Single source of truth, also used
+ *  by the per-session work-dir seeder. Single-FILE accumulators (history.jsonl)
+ *  are NOT here — a file-symlink is clobbered by claude's atomic temp+rename;
+ *  they are handled by reconcile. */
+export const PROFILE_DATA_CONTAINERS = [
+  'skills', 'projects', 'sessions', 'shell-snapshots', 'file-history', 'todos',
+] as const;
 
 /**
  * Ensure a profile's data container `<sub>` exists with the CORRECT topology for
@@ -45,22 +43,30 @@ function linkGlobalDir(profileDir: string, sub: string): void {
  *     home (`<globalConfigDir>/<sub>`), so every as-global session shares it;
  *   - classic: the container is a real, isolated directory inside the profile.
  *
- * Shared by the overlay builder and the per-session work-dir seeder so the two
- * never disagree on a container's shape — a raw `mkdir` from the seeder would
- * later make the overlay's symlink throw ("exists and not our symlink"). On an
- * already-correct container both branches are a safe no-op. `globalConfigDir`
- * (normally `~/.claude`) is a parameter so tests isolate it from the real home.
+ * Shared (via `ensureProfileDataContainers`) by the overlay builder and the
+ * per-session work-dir seeder so the two never disagree on a container's shape —
+ * a raw `mkdir` from the seeder would later make the overlay's symlink throw
+ * ("exists and not our symlink"). On an already-correct container both branches
+ * are a safe no-op. `globalConfigDir` (normally `~/.claude`) is a parameter so
+ * tests isolate it from the real home.
  */
-export function ensureProfileContainer(
-  canonicalDir: string,
-  sub: string,
-  globalConfigDir: string,
-): void {
+function ensureProfileContainer(canonicalDir: string, sub: string, globalConfigDir: string): void {
   if (fs.existsSync(path.join(canonicalDir, OVERLAY_MARKER))) {
     ensureDirSymlink(path.join(canonicalDir, sub), path.resolve(globalConfigDir, sub));
   } else {
     fs.mkdirSync(path.join(canonicalDir, sub), { recursive: true, mode: 0o700 });
   }
+}
+
+/**
+ * Ensure ALL of a profile's data containers exist with the correct topology
+ * (idempotent). For a NEW overlay this links the full set to the global; on an
+ * EXISTING overlay (e.g. one created before the set was extended, with only
+ * skills+projects) it adds the missing links — the on-read migration. Used by
+ * `createOverlayProfile` and the per-session work-dir seeder.
+ */
+export function ensureProfileDataContainers(profileDir: string, globalConfigDir: string): void {
+  for (const sub of PROFILE_DATA_CONTAINERS) ensureProfileContainer(profileDir, sub, globalConfigDir);
 }
 
 /**
@@ -73,9 +79,11 @@ export function ensureProfileContainer(
  */
 export function createOverlayProfile(name: string): string {
   const dir = createProfile(name);
-  linkGlobalDir(dir, 'skills');
-  linkGlobalDir(dir, 'projects');
+  // Marker FIRST — `ensureProfileContainer` reads it to choose the symlink
+  // (overlay) vs real-dir (classic) topology, so it must be present before we
+  // link the containers, or they'd be created as isolated real dirs.
   fs.writeFileSync(path.join(dir, OVERLAY_MARKER), '', { mode: 0o600 });
+  ensureProfileDataContainers(dir, path.join(os.homedir(), '.claude'));
   return dir;
 }
 
