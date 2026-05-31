@@ -3,11 +3,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getCurrent, save, list, remove } from '../src/accounts/accounts.js';
-import { switchTo, fuzzyMatch, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switching/switcher.js';
+import { getCurrent, save, load, list, remove } from '../src/accounts/accounts.js';
+import { fuzzyMatch, savePendingRestore, checkPendingRestore, clearPendingRestore } from '../src/switching/switcher.js';
 import { setAlias, resolveAlias, getAliasesForEmail } from '../src/switching/aliases.js';
-import { setApiKey, getApiKey } from '../src/credentials/apikey.js';
-import { isFallbackEnabled, setFallbackEnabled } from '../src/fallback/fallback.js';
+
+// Swap the active account in ~/.claude — the save+load primitive that the
+// retired `switchTo` wrapped. Used as a test setup primitive now that the
+// switch verb re-points (doesn't swap). The swap behaviour itself (and its
+// non-account-data preservation + no-saved-account throw) is unit-tested in
+// accounts.test; here it only sets up state for the surrounding integration.
+function swap(email: string, claudeJson: string, accDir: string): void {
+  const current = getCurrent(claudeJson);
+  if (current) save(current, claudeJson, accDir);
+  load(email, claudeJson, accDir);
+}
 
 describe('integration: full account lifecycle', () => {
   let tmpDir: string;
@@ -40,14 +49,12 @@ describe('integration: full account lifecycle', () => {
     }));
     assert.deepEqual(list(accDir).sort(), ['a@test.com', 'b@test.com']);
 
-    // Switch to B
-    const msg1 = switchTo('b@test.com', claudeJson, accDir);
-    assert.match(msg1, /switched to b@test.com/i);
+    // Switch to B (re-point model: the swap is a save+load setup primitive now)
+    swap('b@test.com', claudeJson, accDir);
     assert.equal(getCurrent(claudeJson), 'b@test.com');
 
     // Switch back to A
-    const msg2 = switchTo('a@test.com', claudeJson, accDir);
-    assert.match(msg2, /switched to a@test.com/i);
+    swap('a@test.com', claudeJson, accDir);
     assert.equal(getCurrent(claudeJson), 'a@test.com');
 
     // Remove B
@@ -68,7 +75,7 @@ describe('integration: full account lifecycle', () => {
     }));
 
     // Switch to B
-    switchTo('b@test.com', claudeJson, accDir);
+    swap('b@test.com', claudeJson, accDir);
 
     // Verify customSetting preserved
     const data = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
@@ -106,8 +113,7 @@ describe('integration: fuzzy match + switch', () => {
     assert.equal(matches.length, 1);
     assert.equal(matches[0], 'personal@gmail.com');
 
-    const msg = switchTo(matches[0], claudeJson, accDir);
-    assert.match(msg, /switched to personal@gmail.com/i);
+    swap(matches[0]!, claudeJson, accDir);
     assert.equal(getCurrent(claudeJson), 'personal@gmail.com');
   });
 
@@ -122,23 +128,16 @@ describe('integration: fuzzy match + switch', () => {
 
 describe('integration: error cases', () => {
   let tmpDir: string;
-  let claudeJson: string;
   let accDir: string;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-int-'));
-    claudeJson = path.join(tmpDir, '.claude.json');
     accDir = path.join(tmpDir, 'accounts');
     fs.mkdirSync(accDir, { recursive: true });
   });
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it('switch to non-existent account throws', () => {
-    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
-    assert.throws(() => switchTo('nobody@x.com', claudeJson, accDir), /no saved account/i);
   });
 
   it('remove non-existent account throws', () => {
@@ -178,8 +177,8 @@ describe('integration: aliases', () => {
     setAlias('p', 'personal@gmail.com', accDir);
     const resolved = resolveAlias('p', accDir);
     assert.equal(resolved, 'personal@gmail.com');
-    const msg = switchTo(resolved, claudeJson, accDir);
-    assert.match(msg, /switched to personal@gmail.com/i);
+    swap(resolved, claudeJson, accDir);
+    assert.equal(getCurrent(claudeJson), 'personal@gmail.com');
   });
 
   it('getAliasesForEmail returns all aliases for an email', () => {
@@ -218,7 +217,7 @@ describe('integration: pending restore (--as crash recovery)', () => {
   it('saves and restores pending account', () => {
     savePendingRestore('work@co.com', accDir);
 
-    switchTo('personal@gmail.com', claudeJson, accDir);
+    swap('personal@gmail.com', claudeJson, accDir);
     assert.equal(getCurrent(claudeJson), 'personal@gmail.com');
 
     const restored = checkPendingRestore(claudeJson, accDir);
@@ -242,86 +241,3 @@ describe('integration: pending restore (--as crash recovery)', () => {
   });
 });
 
-describe('integration: fallback auto-sync on switch', () => {
-  let tmpDir: string;
-  let claudeJson: string;
-  let accDir: string;
-
-  // Simulate what cli.ts and select-account.ts do after switchTo:
-  // check if the new account has an API key and set fallback accordingly.
-  function switchAndSync(email: string): void {
-    switchTo(email, claudeJson, accDir);
-    setFallbackEnabled(accDir, !!getApiKey(email, accDir));
-  }
-
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-fb-sync-'));
-    claudeJson = path.join(tmpDir, '.claude.json');
-    accDir = path.join(tmpDir, 'accounts');
-    fs.mkdirSync(accDir, { recursive: true });
-
-    // Account A (with API key), account B (no key)
-    fs.writeFileSync(claudeJson, JSON.stringify({ oauthAccount: { emailAddress: 'a@x.com' } }));
-    save('a@x.com', claudeJson, accDir);
-    fs.writeFileSync(path.join(accDir, 'b@x.com.json'), JSON.stringify({ emailAddress: 'b@x.com' }));
-    setApiKey('a@x.com', 'sk-ant-test-key', accDir);
-  });
-
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it('enables fallback when switching to account with API key', () => {
-    switchAndSync('a@x.com');
-    assert.equal(isFallbackEnabled(accDir), true);
-  });
-
-  it('disables fallback when switching to account without API key', () => {
-    setFallbackEnabled(accDir, true); // start with fallback on
-    switchAndSync('b@x.com');
-    assert.equal(isFallbackEnabled(accDir), false);
-  });
-
-  it('fallback follows the active account as you switch between accounts', () => {
-    switchAndSync('a@x.com');
-    assert.equal(isFallbackEnabled(accDir), true, 'on after switch to account with key');
-    switchAndSync('b@x.com');
-    assert.equal(isFallbackEnabled(accDir), false, 'off after switch to account without key');
-    switchAndSync('a@x.com');
-    assert.equal(isFallbackEnabled(accDir), true, 'on again after switching back');
-  });
-
-  it('switchToAndSyncFallback bundles switch + flip atomically', async () => {
-    const { switchToAndSyncFallback } = await import('../src/switching/switcher.js');
-    setFallbackEnabled(accDir, true);
-
-    // Switching to a key-less account with autoFlipFallback=true should
-    // both load the new account AND turn fallback OFF in the SAME lock.
-    const out = switchToAndSyncFallback('b@x.com', claudeJson, accDir, { autoFlipFallback: true });
-    assert.equal(out.hasApiKey, false);
-    assert.equal(out.fallbackFlipped, true);
-    assert.equal(isFallbackEnabled(accDir), false);
-    // getCurrent must reflect the new account — both reads are inside the
-    // same lock so we never observe an inconsistent intermediate state.
-    const { getCurrent } = await import('../src/accounts/accounts.js');
-    assert.equal(getCurrent(claudeJson), 'b@x.com');
-  });
-
-  it('switchToAndSyncFallback respects autoFlipFallback=false', async () => {
-    const { switchToAndSyncFallback } = await import('../src/switching/switcher.js');
-    setFallbackEnabled(accDir, true);
-    const out = switchToAndSyncFallback('b@x.com', claudeJson, accDir, { autoFlipFallback: false });
-    assert.equal(out.fallbackFlipped, false);
-    assert.equal(isFallbackEnabled(accDir), true, 'caller opted out of auto-flip');
-  });
-
-  it('switchToAndSyncFallback is idempotent when no flip is needed', async () => {
-    const { switchToAndSyncFallback } = await import('../src/switching/switcher.js');
-    // Account a@x.com has key, fallback already ON.
-    setFallbackEnabled(accDir, true);
-    const out = switchToAndSyncFallback('a@x.com', claudeJson, accDir, { autoFlipFallback: true });
-    // Already on a@x.com so message reflects that, no flip needed.
-    assert.equal(out.fallbackFlipped, false);
-    assert.equal(isFallbackEnabled(accDir), true);
-  });
-});

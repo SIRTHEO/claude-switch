@@ -2,8 +2,10 @@
 // Project-aware routing for the passthrough hot path: resolve the routing
 // decision INSIDE the snapshot lock and, when it picks a different account,
 // perform the save+load swap directly (we already hold the accounts-dir lock,
-// so we can't call switchTo which re-locks). routing.ts is the pure resolver;
-// this is where the swap-and-update lifecycle lives.
+// so it runs inline rather than through a self-locking switch helper).
+// routing.ts is the pure resolver; this is where the swap-and-update lifecycle
+// lives. (Routing keeps its ephemeral cwd swap; the unified default-pointer is
+// a separate, sticky thing — see decision B2 in the design doc.)
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -88,9 +90,8 @@ export interface RoutingForPassthroughInput {
 /**
  * Resolve routing INSIDE the passthrough snapshot lock and, if the resolver
  * decides on a different account, perform the in-lock swap by directly
- * calling `save` + `load` (the primitives `switchTo` wraps). We can't call
- * `switchTo` itself because it acquires its own `withLock`, and we already
- * hold the accounts-dir lock here.
+ * calling `save` + `load`. It runs inline (not via a self-locking switch
+ * helper) because it already holds the accounts-dir lock here.
  *
  * Skip rules:
  *   - CLAUDE_CONFIG_DIR set externally → user is in a profile, don't override
@@ -190,7 +191,7 @@ export function resolveRoutingForPassthrough(input: RoutingForPassthroughInput):
     };
   }
 
-  // Perform the in-lock swap (mirrors switchTo's body without re-locking).
+  // Perform the in-lock save+load swap (inline; no re-lock).
   if (initialEmail) {
     save(initialEmail, claudeJsonPath, accountsDirPath);
   }

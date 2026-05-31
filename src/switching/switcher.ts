@@ -6,15 +6,12 @@
 // `./switcher.js`.
 
 import readline from 'node:readline';
-import { getApiKey } from '../credentials/apikey.js';
-import { getCurrent, list, load, save, syncActiveSnapshotIfStale } from '../accounts/accounts.js';
+import { getCurrent, list, load, save } from '../accounts/accounts.js';
 import { setAlias } from './aliases.js';
 import { ExitError } from '../platform/errors.js';
-import { isFallbackEnabled, setFallbackEnabledInLock } from '../fallback/fallback.js';
 import { withLock } from '../platform/lock.js';
 import { nodeProcessAdapter } from '../platform/process.js';
 import { buildSpawnArgs } from '../proxy/proxy.js';
-import { shouldTriggerUsageRefreshAfterSwitch, triggerBackgroundUsageRefresh } from '../usage/usage.js';
 import type { SwitcherDeps } from './switcher-deps.js';
 
 export type { SwitcherDeps } from './switcher-deps.js';
@@ -29,123 +26,6 @@ function defaultAsk(question: string): Promise<string> {
       rl.close();
       resolve(answer.trim());
     });
-  });
-}
-
-export function switchTo(targetEmail: string, claudeJsonPath: string, accountsDirPath: string): string {
-  return withLock(accountsDirPath, () => {
-    // Re-save the active snapshot if claude itself rotated tokens
-    // since the last switch (typically: user did `/login` inside a
-    // claude session). Without this the next switch would capture
-    // STALE state into the file we already saved.
-    syncActiveSnapshotIfStale(claudeJsonPath, accountsDirPath);
-
-    const currentEmail = getCurrent(claudeJsonPath);
-
-    if (targetEmail === currentEmail) {
-      return `Already on ${targetEmail}`;
-    }
-
-    if (currentEmail) {
-      save(currentEmail, claudeJsonPath, accountsDirPath);
-    }
-
-    const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
-
-    // Pre-fetch usage for the target so the next statusline redraw doesn't
-    // show "no badge" while the in-band stale check spawns its own refresh.
-    // Cheap detached spawn; only fires when the target account's per-account
-    // cache is missing or stale.
-    if (shouldTriggerUsageRefreshAfterSwitch(accountsDirPath, targetEmail)) {
-      triggerBackgroundUsageRefresh({ accountsDirPath });
-    }
-
-    const warning = keychainRestored
-      ? ''
-      : '\nWarning: no saved credentials for this account — API tokens may be wrong.\nRun: claude switch add (to re-authenticate and capture tokens)';
-    return `Switched to ${targetEmail}${warning}`;
-  });
-}
-
-interface SwitchOutcome {
-  /** Human-readable status line (already includes any warning). */
-  message: string;
-  /** Whether the new account has a saved API key. */
-  hasApiKey: boolean;
-  /** Whether the fallback flag was actually flipped during this call. */
-  fallbackFlipped: boolean;
-}
-
-/**
- * Switch + atomically reconcile the global fallback flag with the new
- * account's API-key capability, all under one `withLock`. The single-lock
- * invariant is what protects against this race: caller A reads `hasKey`
- * for account B, B becomes active, A's deferred `setFallbackEnabled(true)`
- * lands and the system is now `active=B / fallback=ON / B has no key`.
- *
- * Bundling the read and write here closes the window. Mirrors the lock
- * pattern in `bin/cli.ts:1263` (`passthrough` snapshot).
- */
-export function switchToAndSyncFallback(
-  targetEmail: string,
-  claudeJsonPath: string,
-  accountsDirPath: string,
-  options: { autoFlipFallback: boolean },
-): SwitchOutcome {
-  return withLock(accountsDirPath, () => {
-    // Same drift-prevention as switchTo: capture in-flight token
-    // rotations from a `/login` issued inside a running claude session.
-    syncActiveSnapshotIfStale(claudeJsonPath, accountsDirPath);
-
-    const currentEmail = getCurrent(claudeJsonPath);
-
-    if (targetEmail === currentEmail) {
-      const hasApiKey = !!getApiKey(targetEmail, accountsDirPath);
-      return { message: `Already on ${targetEmail}`, hasApiKey, fallbackFlipped: false };
-    }
-
-    if (currentEmail) {
-      save(currentEmail, claudeJsonPath, accountsDirPath);
-    }
-
-    const { keychainRestored } = load(targetEmail, claudeJsonPath, accountsDirPath);
-    const hasApiKey = !!getApiKey(targetEmail, accountsDirPath);
-    // `keychainRestored` doubles as our "the target account has OAuth
-    // creds available" signal — `load()` only reports it when the
-    // account file carried a `_keychain` snapshot.
-    const hasOAuth = keychainRestored;
-
-    let fallbackFlipped = false;
-    if (options.autoFlipFallback) {
-      // Auto-flip semantics: fallback should be ON only when the target
-      // account has API key AND no OAuth (key-only account — proxy has
-      // no other auth source). Accounts with OAuth + saved key should
-      // default to OAuth, with the API key kept as a manual emergency
-      // toggle. Pre-3.6 this flipped purely on `hasApiKey`, which
-      // silently routed every request through the API key (Anthropic
-      // Console billing) on accounts that had a perfectly good
-      // subscription OAuth — the exact regression that caused users to
-      // bleed credit after a routine `claude switch`.
-      const wantedFallback = hasApiKey && !hasOAuth;
-      const wasOn = isFallbackEnabled(accountsDirPath);
-      if (wasOn !== wantedFallback) {
-        setFallbackEnabledInLock(accountsDirPath, wantedFallback);
-        fallbackFlipped = true;
-      }
-    }
-
-    // Pre-fetch usage for the new account (same pattern as switchTo above).
-    // Fires only when the target's per-account cache is stale so
-    // back-to-back switches between two fresh-cached accounts don't waste
-    // network calls.
-    if (shouldTriggerUsageRefreshAfterSwitch(accountsDirPath, targetEmail)) {
-      triggerBackgroundUsageRefresh({ accountsDirPath });
-    }
-
-    const warning = keychainRestored
-      ? ''
-      : '\nWarning: no saved credentials for this account — API tokens may be wrong.\nRun: claude switch add (to re-authenticate and capture tokens)';
-    return { message: `Switched to ${targetEmail}${warning}`, hasApiKey, fallbackFlipped };
   });
 }
 

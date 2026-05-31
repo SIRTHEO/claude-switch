@@ -137,7 +137,7 @@ describe('handleSwitchTo — exact single match', () => {
   it('switches to the matched account and prints a confirmation', async () => {
     await handleSwitchTo(h.ctx, 'alice@example.com');
     const out = h.stdout.join('\n');
-    // switchToAndSyncFallback returns a message that includes the email
+    // re-point reports the target account in its message
     assert.match(out, /alice@example\.com/);
   });
 
