@@ -80,7 +80,11 @@ describe('migrateSession', () => {
       },
     });
 
-    cDir = path.join(claudeDir, 'profiles', 'personal');
+    // The running session's work dir is OUTSIDE the canonical profiles tree —
+    // the interim safety guard refuses migration of a session running in
+    // `<.claude>/profiles/*` (see the dedicated test below), so the writer can
+    // only be exercised on a non-canonical dir (the future per-session work dir).
+    cDir = path.join(home, 'session-work');
     writeJson(path.join(cDir, '.claude.json'), {
       userID: 'c'.repeat(64),
       hasCompletedOnboarding: true,
@@ -130,6 +134,26 @@ describe('migrateSession', () => {
     const cfg = readJson(path.join(cDir, '.claude.json'));
     assert.equal(cfg.userID, 'c'.repeat(64), 'userID untouched — only oauthAccount is replaced');
     assert.equal(cfg.hasCompletedOnboarding, true);
+  });
+
+  it('refuses a session running in the canonical profiles tree (interim safety guard)', async () => {
+    // A session whose configDir IS the account's canonical profile dir must be
+    // refused — rewriting it would corrupt that account's store (the live-migration
+    // canonical-dir corruption bug).
+    const canonical = path.join(claudeDir, 'profiles', 'personal');
+    writeJson(path.join(canonical, '.claude.json'), {
+      userID: 'p'.repeat(64),
+      oauthAccount: { emailAddress: PERSONAL, accountUuid: 'uuid-personal' },
+    });
+    await assert.rejects(
+      () => migrateSession(WORK, canonical, accountsDir, { ensureProfile: ensureWork }),
+      /not available yet|canonical profile/i,
+    );
+    // The canonical store is untouched by the refusal.
+    assert.equal(
+      (readJson(path.join(canonical, '.claude.json')).oauthAccount as Record<string, unknown>).emailAddress,
+      PERSONAL,
+    );
   });
 
   it('refuses a global-bound (null / ~/.claude) config dir — frozen default', async () => {

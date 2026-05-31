@@ -133,6 +133,25 @@ export async function migrateSession(
     );
   }
 
+  // Guard 1.5 — INTERIM SAFETY. Refuse a configDir inside the canonical profiles
+  // tree (`~/.claude/profiles/<name>`). Today every isolated session runs in its
+  // account's CANONICAL profile dir, which doubles as that account's credential
+  // store — so rewriting it would corrupt the account and let a later
+  // `profile use <name>` launch the wrong identity (token mixing). Until each
+  // session reads a disposable PER-SESSION copy (work dir) instead of the
+  // canonical, live migration is unsafe and this makes the command inert. When
+  // work dirs land (they sit OUTSIDE the profiles tree), this guard lifts on its
+  // own. The profiles root mirrors sessions.ts: `<~/.claude>/profiles`.
+  const profilesRoot = path.resolve(path.join(globalConfigDir, 'profiles'));
+  const resolvedConfig = path.resolve(configDir);
+  if (resolvedConfig === profilesRoot || resolvedConfig.startsWith(profilesRoot + path.sep)) {
+    throw new Error(
+      'Live migration is not available yet: this session runs in its account\'s ' +
+        'canonical profile directory, and rewriting it would corrupt that account. ' +
+        'Per-session working directories (the safe target) are not implemented yet.',
+    );
+  }
+
   // Resolve (mint on demand) the target profile; refuse if it has no creds.
   const ensure: EnsureProfileFn = deps.ensureProfile ?? (async (email, dir) => {
     const { ensureProfileForAccount } = await import('../profiles/profiles.js');
