@@ -9,7 +9,7 @@ import path from 'node:path';
 import { getCurrent } from '../accounts/accounts.js';
 import { listProfiles, readProfile, profileExists, profilePath } from './profiles.js';
 import { isOverlayProfile } from './overlay.js';
-import { readState } from '../switching/state-store.js';
+import { readState, updateState } from '../switching/state-store.js';
 import type { ProfileEntry } from '../contract.js';
 
 /** The isolated profiles as ProfileEntry rows. Never marked `isDefault`. */
@@ -71,6 +71,19 @@ export function readDefaultPointer(accountsDirPath: string): string {
   return readState(accountsDirPath).defaultPointer ?? DEFAULT_POINTER;
 }
 
+/**
+ * Persist the default-pointer (which workspace bare `claude` launches).
+ * `'default'` selects the global `~/.claude`; any other value must be an
+ * existing profile. Throws on an unknown profile so a caller surfaces a clear
+ * error rather than writing a pointer that silently falls back to the global.
+ */
+export function setDefaultPointer(accountsDirPath: string, name: string): void {
+  if (name !== DEFAULT_POINTER && !profileExists(name)) {
+    throw new Error(`Profile "${name}" does not exist.`);
+  }
+  updateState(accountsDirPath, (s) => ({ ...s, defaultPointer: name }));
+}
+
 interface ResolvedDefaultWorkspace {
   /** The pointer as resolved — `'default'` when it points at the global or
    *  falls back from a vanished profile, else the profile name. */
@@ -89,15 +102,14 @@ interface ResolvedDefaultWorkspace {
  * missing dir, so a stale pointer degrades to today's behaviour instead of
  * breaking launch. A pointer to an existing profile → that profile's dir.
  *
- * NB — this slice only READS + RESOLVES the pointer. Nothing on the launch hot
- * path injects `CLAUDE_CONFIG_DIR` from it yet: that wiring, and the
- * `claude switch X` writer that lets the pointer become non-`'default'`, land
- * together in the re-point slice where the behaviour change is
- * characterization-tested end to end. Injecting for the `'default'` case in
- * particular is deferred deliberately — a nested `claude→claude` re-entry
- * through this wrapper would otherwise see `CLAUDE_CONFIG_DIR` set and skip
- * routing / record the session as isolated (see passthrough-routing + the
- * design doc's always-inject constraint).
+ * The bare passthrough now DIVERTS on a non-`'default'` result (slice 4a):
+ * `handlePassthrough` runs that profile isolated via `launchPointedWorkspace`
+ * (its own creds + `CLAUDE_CONFIG_DIR`), bypassing the global-account snapshot.
+ * `'default'` falls through to today's global flow unchanged, so `'default'` is
+ * never injected — which also sidesteps the nested-`claude→claude` re-entry
+ * hazard (a wrapper seeing its own injected `CLAUDE_CONFIG_DIR` would skip
+ * routing / record isolated). The `claude switch X` writer that flips legacy
+ * switch from overwrite to re-point is the separate breaking slice (4b).
  */
 export function resolveDefaultWorkspace(accountsDirPath: string): ResolvedDefaultWorkspace {
   const pointer = readDefaultPointer(accountsDirPath);

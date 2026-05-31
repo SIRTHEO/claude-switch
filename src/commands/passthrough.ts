@@ -30,7 +30,7 @@ import {
   maybeAutoEngageFallback,
   maybeInitSmartFallback,
 } from '../fallback/auto-fallback.js';
-import { recordPassthroughSession, runIsolatedOrRefuse } from './passthrough-session.js';
+import { launchPointedWorkspace, recordPassthroughSession, runIsolatedOrRefuse } from './passthrough-session.js';
 import { startFallbackProxy } from '../proxy/api-proxy.js';
 import { resolveAccountPrefs, resolveEffectiveAuthMode } from '../switching/preferences.js';
 import { findClaude } from './_helpers.js';
@@ -62,6 +62,23 @@ export async function handlePassthrough(
   warnUntrackedApiKeyIfNeeded(claudeJsonPath, accountsDirPath);
 
   const claudeBin = findClaude(ctx.selfUrl);
+
+  // Default-pointer divert (unified-profile model, slice 4a). When a NON-default
+  // workspace is pointed AND the caller hasn't already pinned a profile via an
+  // external CLAUDE_CONFIG_DIR, run that profile isolated (its own creds) and
+  // return — bypassing the global-account snapshot below. The pointer overrides
+  // cwd-routing the same way an explicit CLAUDE_CONFIG_DIR does. `default`
+  // (the unset/sentinel pointer — every pre-unified install) falls through to
+  // today's global-account flow unchanged. Runs AFTER checkPendingRestore so an
+  // interrupted --as recovery is never skipped.
+  if (!process.env.CLAUDE_CONFIG_DIR) {
+    const { resolveDefaultWorkspace } = await import('../profiles/workspaces.js');
+    const pointed = resolveDefaultWorkspace(accountsDirPath);
+    if (!pointed.isDefault) {
+      await launchPointedWorkspace(pointed, claudeBin, passthroughArgs, accountsDirPath, runClaude);
+      return;
+    }
+  }
 
   // Pre-warm the usage cache when we're approaching auto-engage territory,
   // so maybeAutoEngageFallback below makes a decision based on the actual

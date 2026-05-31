@@ -15,6 +15,7 @@ import {
   defaultWorkspaceEntry,
   resolveDefaultWorkspace,
   readDefaultPointer,
+  setDefaultPointer,
 } from '../src/profiles/workspaces.js';
 import {
   createProfile,
@@ -192,5 +193,35 @@ describe('resolveDefaultWorkspace', () => {
     assert.equal(r.name, 'default');
     assert.equal(r.isDefault, true);
     assert.equal(r.configDir, globalDir());
+  });
+});
+
+describe('setDefaultPointer', () => {
+  it("persists 'default' (resolves back to the global)", () => {
+    setDefaultPointer(accountsDir, 'default');
+    assert.equal(readDefaultPointer(accountsDir), 'default');
+    assert.equal(resolveDefaultWorkspace(accountsDir).isDefault, true);
+  });
+
+  it('persists an existing profile name (resolves to its dir)', () => {
+    createProfile('work');
+    setDefaultPointer(accountsDir, 'work');
+    assert.equal(readDefaultPointer(accountsDir), 'work');
+    const r = resolveDefaultWorkspace(accountsDir);
+    assert.equal(r.name, 'work');
+    assert.equal(r.configDir, profilePath('work'));
+  });
+
+  it('throws on an unknown profile (never writes a silently-falling-back pointer)', () => {
+    assert.throws(() => setDefaultPointer(accountsDir, 'ghost'), /does not exist/);
+    // pointer remains default
+    assert.equal(readDefaultPointer(accountsDir), 'default');
+  });
+
+  it('can be re-pointed back to default', () => {
+    createProfile('work');
+    setDefaultPointer(accountsDir, 'work');
+    setDefaultPointer(accountsDir, 'default');
+    assert.equal(readDefaultPointer(accountsDir), 'default');
   });
 });

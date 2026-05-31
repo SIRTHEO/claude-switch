@@ -50,3 +50,33 @@ export function runIsolatedOrRefuse(
   // explicit `return` so a non-blocking test fake can't fall through.
   runClaude(claudeBin, args, { CLAUDE_CONFIG_DIR: routing.launchIsolated.configDir });
 }
+
+/**
+ * Default-pointer divert (unified-profile model, slice 4a). When bare `claude`
+ * resolves to a NON-default workspace, run that profile isolated — its OWN
+ * credential file via `CLAUDE_CONFIG_DIR` — bypassing the global-account
+ * snapshot, and never return. Refuses (ExitError) when the pointed profile has
+ * no login rather than launching a broken session.
+ *
+ * No api-key fallback proxy on this path: it runs on the profile's OAuth only
+ * (same as `runIsolatedOrRefuse`). Generalizing the fallback proxy to profiles
+ * is later work — named here so it isn't a silent gap.
+ */
+export async function launchPointedWorkspace(
+  pointed: { name: string; configDir: string },
+  claudeBin: string,
+  args: string[],
+  accountsDirPath: string,
+  runClaude: typeof proxyRun,
+): Promise<void> {
+  const { readProfile } = await import('../profiles/profiles.js');
+  const info = readProfile(pointed.name);
+  if (!info.hasLogin) {
+    throw new ExitError(
+      `Default workspace "${pointed.name}" has no login yet. ` +
+      `Run: claude switch profile login ${pointed.name}`,
+    );
+  }
+  recordPassthroughSession(accountsDirPath, info.emailAddress ?? pointed.name, pointed.configDir);
+  runClaude(claudeBin, args, { CLAUDE_CONFIG_DIR: pointed.configDir });
+}
