@@ -338,4 +338,18 @@ describe('parseCommand', () => {
       overlay: true,
     });
   });
+
+  // ---- default-pointer (re-point) ----
+
+  it('parses "switch default <name>"', () => {
+    assert.deepEqual(parseCommand(['switch', 'default', 'work']), { action: 'default-set', name: 'work' });
+  });
+
+  it('parses "switch default default" (re-point to the global)', () => {
+    assert.deepEqual(parseCommand(['switch', 'default', 'default']), { action: 'default-set', name: 'default' });
+  });
+
+  it('throws on "switch default" with no name', () => {
+    assert.throws(() => parseCommand(['switch', 'default']), /Usage: claude switch default/);
+  });
 });

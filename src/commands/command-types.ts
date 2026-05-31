@@ -52,6 +52,7 @@ export type Command =
   | { action: 'profile-remove'; name: string }
   | { action: 'profile-status'; name: string | undefined }
   | { action: 'profile-import'; email: string; profileName?: string; overlay: boolean }
+  | { action: 'default-set'; name: string }
   | { action: 'route-add'; pattern: string | undefined; target: string | undefined }
   | { action: 'route-list'; json: boolean }
   | { action: 'route-remove'; pattern: string | undefined }

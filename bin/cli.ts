@@ -47,6 +47,7 @@ import {
   handleProfileRemove,
 } from '../src/commands/profile.js';
 import { handleRouteAdd, handleRouteList, handleRouteRemove, handleRouteTest } from '../src/commands/route.js';
+import { handleDefaultSet } from '../src/commands/default-pointer.js';
 import { handlePassthrough } from '../src/commands/passthrough.js';
 import { handleCacheHealth } from '../src/commands/cache-health.js';
 import { handleDoctor } from '../src/commands/doctor.js';
@@ -136,6 +137,7 @@ async function main(): Promise<void> {
   }
   if (cmd.action === 'profile-import') { await handleProfileImport(statuslineCtx, cmd.email, cmd.profileName, cmd.overlay); return; }
   if (cmd.action === 'profile-remove') { await handleProfileRemove(cmd.name); return; }
+  if (cmd.action === 'default-set')    { await handleDefaultSet(aDir, cmd.name); return; }
 
   // Route subcommands — manage the per-machine global routing rules
   // (`<accountsDirPath>/.routing.json`). Read-only `list` + `test` are

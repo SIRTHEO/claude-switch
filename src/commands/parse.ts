@@ -159,6 +159,14 @@ export function parseCommand(args: string[]): Command {
       }
       throw new ExitError('Usage: claude switch skills list [--json]');
     }
+    case 'default': {
+      // `claude switch default <name>` — re-point which workspace bare `claude`
+      // launches. `default` selects the global ~/.claude; any other value must
+      // be an existing profile (the handler validates and reports).
+      const name = args[2];
+      if (!name) throw new ExitError('Usage: claude switch default <profile|default>');
+      return { action: 'default-set', name };
+    }
     case 'profile':
       return parseProfileCommand(args);
     case 'route': {
