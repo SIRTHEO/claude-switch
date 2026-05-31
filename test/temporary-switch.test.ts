@@ -93,16 +93,29 @@ describe('handleTemporarySwitch — --as launch-once-isolated (Fork C)', () => {
     const overlay = path.join(home, '.claude', 'profiles', 'work-ov');
     fs.mkdirSync(overlay, { recursive: true });
     fs.writeFileSync(path.join(overlay, '.cs-overlay'), '');
-    fs.writeFileSync(path.join(overlay, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'work@acme.com' } }));
+    // Inline token (test mode embeds tokens in .claude.json) so the work-dir
+    // seeder's no-creds guard is satisfied.
+    fs.writeFileSync(path.join(overlay, '.claude.json'), JSON.stringify({
+      oauthAccount: { emailAddress: 'work@acme.com', accessToken: 'tok', refreshToken: 'rtok', expiresAt: 9999999999999 },
+    }));
 
     const { calls, runClaude } = capture();
     await handleTemporarySwitch(ctx(), 'work@acme.com', ['--help'], { runClaude });
 
-    assert.equal(calls[0]?.CLAUDE_CONFIG_DIR, overlay, 'must spawn isolated against the overlay');
+    // Spawns in a DISPOSABLE per-session work dir (not the canonical overlay).
+    const ccd = calls[0]?.CLAUDE_CONFIG_DIR;
+    const sessionDirsRoot = path.join(home, '.claude', 'session-dirs');
+    assert.ok(ccd?.startsWith(sessionDirsRoot + path.sep), 'spawns in a per-session work dir');
+    assert.match(path.basename(ccd!), /^work-ov\.\d+$/, 'work dir named <profile>.<pid>');
+    assert.notEqual(ccd, overlay, 'the canonical overlay is NOT the spawn dir');
+    // The work dir is seeded: identity copied from the canonical.
+    const seeded = JSON.parse(fs.readFileSync(path.join(ccd!, '.claude.json'), 'utf-8'));
+    assert.equal(seeded.oauthAccount.emailAddress, 'work@acme.com');
     assert.equal(getCurrent(claudeJson), 'personal@gmail.com', 'global active untouched');
     const rec = readRaw(accDir).filter((s) => s.account === 'work@acme.com');
     assert.equal(rec.length, 1);
     assert.equal(rec[0]!.isolated, true);
+    assert.equal(rec[0]!.configDir, ccd, 'registry records the work dir');
   });
 
   it('mints the account profile on demand (with login) and launches it isolated', async () => {
@@ -127,7 +140,12 @@ describe('handleTemporarySwitch — --as launch-once-isolated (Fork C)', () => {
 
     const minted = path.join(profilesRoot, 'work'); // derived name = local-part
     assert.equal(fs.existsSync(minted), true, 'the profile must be minted on demand');
-    assert.equal(calls[0]?.CLAUDE_CONFIG_DIR, minted, 'must spawn isolated against the minted profile');
+    // The minted profile is the CANONICAL store; the session runs in a work-dir
+    // copy of it, not in the canonical itself.
+    const ccd = calls[0]?.CLAUDE_CONFIG_DIR;
+    assert.ok(ccd?.startsWith(path.join(home, '.claude', 'session-dirs') + path.sep), 'spawns in a work dir');
+    assert.match(path.basename(ccd!), /^work\.\d+$/);
+    assert.notEqual(ccd, minted, 'the canonical minted profile is NOT the spawn dir');
     assert.equal(getCurrent(claudeJson), 'personal@gmail.com', 'global active untouched');
   });
 

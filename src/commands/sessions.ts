@@ -42,9 +42,17 @@ function ageLabel(startedAt: number, now: number): string {
 function scopeLabel(s: LiveSession, accountsDirPath: string): string {
   if (!s.isolated) return 'global';
   if (s.configDir) {
-    const profilesRoot = path.join(path.dirname(accountsDirPath), 'profiles');
+    const home = path.dirname(accountsDirPath);
+    const profilesRoot = path.join(home, 'profiles');
     if (s.configDir === profilesRoot || s.configDir.startsWith(profilesRoot + path.sep)) {
       return `profile "${path.basename(s.configDir)}"`;
+    }
+    // Per-session work dir: `<home>/session-dirs/<profile>.<pid>` (the seeded copy
+    // a session actually runs in). Recover the profile name by stripping the
+    // trailing `.<pid>` — the profile name's own alphabet excludes `.`.
+    const sessionDirsRoot = path.join(home, 'session-dirs');
+    if (s.configDir.startsWith(sessionDirsRoot + path.sep)) {
+      return `profile "${path.basename(s.configDir).replace(/\.\d+$/, '')}"`;
     }
   }
   return 'isolated';

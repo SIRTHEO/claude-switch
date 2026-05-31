@@ -83,6 +83,13 @@ describe('handleSessions', () => {
     assert.match(out, /c@x\.com — profile "work"/);
   });
 
+  it('names the profile for a per-session work dir (session-dirs/<name>.<pid>)', () => {
+    const workDir = path.join(path.dirname(dir), 'session-dirs', 'work.4242');
+    recordSession(dir, SESSION({ pid: 6, account: 'f@x.com', isolated: true, configDir: workDir }), ALIVE);
+    const out = capture(() => handleSessions({ accountsDirPath: dir }, { json: false }, { ...ALIVE, now: () => NOW }));
+    assert.match(out, /f@x\.com — profile "work"/);
+  });
+
   it('shows plain "isolated" for a configDir outside the profiles tree', () => {
     recordSession(dir, SESSION({ pid: 4, account: 'd@x.com', isolated: true, configDir: '/some/custom/ccd' }), ALIVE);
     const out = capture(() => handleSessions({ accountsDirPath: dir }, { json: false }, { ...ALIVE, now: () => NOW }));

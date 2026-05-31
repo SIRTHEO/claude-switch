@@ -74,10 +74,19 @@ export async function handleTemporarySwitch(
       `${matched} has no isolated login yet. Run: claude switch profile login ${profile.profileName}`,
     );
   }
+  // Seed a DISPOSABLE per-session work dir from the profile (the canonical store)
+  // and run there — never in the canonical dir itself, so a future live migration
+  // can rewrite this session's dir without corrupting the account. Identity +
+  // credentials are copied; the data containers (history, sessions, …) link back
+  // to the canonical (and, for an as-global overlay, on up to the global).
+  const { prepareSessionWorkDir } = await import('../sessions/session-workdir.js');
+  const workDir = prepareSessionWorkDir(profile.profilePath, ctx.accountsDirPath);
   // Record AFTER the needsLogin gate — a refused launch must not register a live
-  // session. Isolated → configDir is the profile dir (not null). No fallback proxy
+  // session. Isolated → configDir is the work dir (not null). No fallback proxy
   // on the isolated path (OAuth only — per-profile fallback is later work).
-  markSessionLive(ctx.accountsDirPath, { account: matched, configDir: profile.profilePath, cwd: process.cwd() });
+  markSessionLive(ctx.accountsDirPath, { account: matched, configDir: workDir, cwd: process.cwd() });
   process.stderr.write(`🔑 ${matched} (isolated · --as)\n\n`);
-  runClaude(claudeBin, args, { CLAUDE_CONFIG_DIR: profile.profilePath });
+  // `workDir` is passed VERBATIM (the same resolved string the seeder built) — the
+  // opt-in Keychain service is SHA256(NFC(dir)), so it must match byte-for-byte.
+  runClaude(claudeBin, args, { CLAUDE_CONFIG_DIR: workDir });
 }
