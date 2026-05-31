@@ -9,8 +9,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { listWorkspaces, profileEntries, defaultWorkspaceEntry } from '../src/profiles/workspaces.js';
-import { createProfile, isValidProfileName, profilesDir } from '../src/profiles/profiles.js';
+import {
+  listWorkspaces,
+  profileEntries,
+  defaultWorkspaceEntry,
+  resolveDefaultWorkspace,
+  readDefaultPointer,
+} from '../src/profiles/workspaces.js';
+import {
+  createProfile,
+  isValidProfileName,
+  profilesDir,
+  profilePath,
+} from '../src/profiles/profiles.js';
+import { updateState } from '../src/switching/state-store.js';
 import { setFakeHome, restoreFakeHome, type SavedHome } from './_helpers/fake-home.js';
 
 let tmpHome: string;
@@ -110,5 +122,75 @@ describe('profileEntries', () => {
     const entries = profileEntries();
     assert.equal(entries.some((e) => e.name === 'default'), false);
     assert.equal(entries.every((e) => e.isDefault !== true), true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Default-pointer (slice 3 of the unified-profile model): state + resolver
+// only — no launch-time CLAUDE_CONFIG_DIR injection, no `claude switch X`
+// writer yet (both land with the re-point slice). The load-bearing property
+// here is behaviour-PRESERVATION: with no pointer set (missing state file OR
+// an older state.json without the field) the resolver yields the global
+// `~/.claude`, exactly as bare `claude` runs today.
+// ---------------------------------------------------------------------------
+
+describe('readDefaultPointer', () => {
+  it("defaults to 'default' when no state file exists", () => {
+    assert.equal(readDefaultPointer(accountsDir), 'default');
+  });
+
+  it("defaults to 'default' for a state file that predates the field", () => {
+    // updateState with an identity patch writes the canonical state (no
+    // defaultPointer) — simulating an older install's state.json.
+    updateState(accountsDir, (s) => ({ ...s }));
+    assert.equal(readDefaultPointer(accountsDir), 'default');
+  });
+
+  it('returns the persisted pointer once set', () => {
+    updateState(accountsDir, (s) => ({ ...s, defaultPointer: 'work' }));
+    assert.equal(readDefaultPointer(accountsDir), 'work');
+  });
+});
+
+describe('resolveDefaultWorkspace', () => {
+  const globalDir = (): string => path.join(tmpHome, '.claude');
+
+  it('missing state → global ~/.claude (behaviour-preserving)', () => {
+    const r = resolveDefaultWorkspace(accountsDir);
+    assert.equal(r.name, 'default');
+    assert.equal(r.isDefault, true);
+    assert.equal(r.configDir, globalDir());
+  });
+
+  it("older state.json without the field → global ~/.claude", () => {
+    updateState(accountsDir, (s) => ({ ...s }));
+    const r = resolveDefaultWorkspace(accountsDir);
+    assert.equal(r.isDefault, true);
+    assert.equal(r.configDir, globalDir());
+  });
+
+  it("explicit 'default' pointer → global ~/.claude", () => {
+    updateState(accountsDir, (s) => ({ ...s, defaultPointer: 'default' }));
+    const r = resolveDefaultWorkspace(accountsDir);
+    assert.equal(r.name, 'default');
+    assert.equal(r.isDefault, true);
+    assert.equal(r.configDir, globalDir());
+  });
+
+  it('pointer to an existing profile → that profile dir', () => {
+    createProfile('work');
+    updateState(accountsDir, (s) => ({ ...s, defaultPointer: 'work' }));
+    const r = resolveDefaultWorkspace(accountsDir);
+    assert.equal(r.name, 'work');
+    assert.equal(r.isDefault, false);
+    assert.equal(r.configDir, profilePath('work'));
+  });
+
+  it('stale pointer to a vanished profile → falls back to global (no throw)', () => {
+    updateState(accountsDir, (s) => ({ ...s, defaultPointer: 'ghost' }));
+    const r = resolveDefaultWorkspace(accountsDir);
+    assert.equal(r.name, 'default');
+    assert.equal(r.isDefault, true);
+    assert.equal(r.configDir, globalDir());
   });
 });

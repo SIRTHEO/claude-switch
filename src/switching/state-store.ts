@@ -62,6 +62,13 @@ const StateSchema = z.object({
    *  empty/partial entries). Older state files predate the field; the resolver
    *  tolerates an empty object. */
   lastUsedByDomain: z.record(z.string(), z.string()).optional().catch(undefined),
+  /** Default-pointer (unified-profile model): which workspace bare `claude`
+   *  launches — a profile name, or the `'default'` sentinel for the global
+   *  `~/.claude`. Absent on older state files / pre-unified installs → resolved
+   *  as `'default'`, so bare launch is unchanged. This slice only persists +
+   *  resolves it; the writer (`claude switch X` re-point) and the launch-time
+   *  CLAUDE_CONFIG_DIR injection land in the re-point slice. */
+  defaultPointer: z.string().optional().catch(undefined),
 });
 
 export type State = z.infer<typeof StateSchema>;
@@ -87,7 +94,7 @@ export function readState(accountsDirPath: string): State {
     const raw: unknown = JSON.parse(fs.readFileSync(statePath(accountsDirPath), 'utf-8'));
     const parsed = StateSchema.safeParse(raw);
     if (parsed.success) {
-      const { fallback, pendingRestore } = parsed.data;
+      const { fallback, pendingRestore, defaultPointer } = parsed.data;
       // lastUsedByDomain keeps its dedicated normaliser (lowercasing + dropping
       // empty/partial entries) applied to the RAW value, so a mixed map keeps
       // its valid entries instead of being dropped wholesale.
@@ -96,6 +103,7 @@ export function readState(accountsDirPath: string): State {
         version: 1,
         fallback,
         ...(pendingRestore ? { pendingRestore } : {}),
+        ...(defaultPointer ? { defaultPointer } : {}),
         ...(lastUsed ? { lastUsedByDomain: lastUsed } : {}),
       };
     }
