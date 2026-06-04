@@ -50,6 +50,11 @@ export interface LiveSession {
   cwd: string;
   /** Epoch-ms of the spawn. Display + a coarse pid-reuse guard. */
   startedAt: number;
+  /** Account the session speaks as RIGHT NOW, after any live migration. Absent
+   *  ⇒ unchanged since spawn (equals `account`). Additive: written only by the
+   *  migrate writer (`setCurrentAccountForConfigDir`), so `markSessionLive` never
+   *  sets it and the `--json` shape is unchanged for un-migrated sessions. */
+  currentAccount?: string | null;
 }
 
 /** Liveness probe seam so tests don't depend on real pids. */
@@ -70,8 +75,15 @@ function isLiveSession(v: unknown): v is LiveSession {
     (s.configDir === null || typeof s.configDir === 'string') &&
     typeof s.isolated === 'boolean' &&
     typeof s.cwd === 'string' &&
-    typeof s.startedAt === 'number'
+    typeof s.startedAt === 'number' &&
+    (s.currentAccount === undefined || s.currentAccount === null || typeof s.currentAccount === 'string')
   );
+}
+
+/** The account a session speaks as now: its migrated `currentAccount` if set,
+ *  else the spawn `account`. The single read every consumer should use. */
+export function effectiveAccount(s: LiveSession): string | null {
+  return s.currentAccount ?? s.account;
 }
 
 /** Read the on-disk registry, dropping any entry that fails the shape guard.
@@ -137,6 +149,30 @@ export function removeSession(accountsDirPath: string, pid: number): void {
   } catch {
     // best-effort: the entry's pid is dead, so the next prune removes it
   }
+}
+
+/**
+ * Set a live session's `currentAccount` by its config dir — the migrate writer's
+ * registry update (a session's first post-spawn account change, so a later
+ * conflict check sees the account it actually speaks as now). No-op when no
+ * session matches the dir (e.g. it isn't registered). The caller holds
+ * `withLock(accountsDirPath)`; this does NOT self-lock (matches recordSession).
+ */
+export function setCurrentAccountForConfigDir(
+  accountsDirPath: string,
+  configDir: string,
+  account: string,
+): void {
+  const resolved = path.resolve(configDir);
+  let changed = false;
+  const next = readRaw(accountsDirPath).map((s) => {
+    if (s.configDir && path.resolve(s.configDir) === resolved) {
+      changed = true;
+      return { ...s, currentAccount: account };
+    }
+    return s;
+  });
+  if (changed) writeJsonAtomic(registryPath(accountsDirPath), next);
 }
 
 /** List the live sessions, pruning dead pids. Opportunistically rewrites the

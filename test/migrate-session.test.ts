@@ -231,6 +231,28 @@ describe('migrateSession', () => {
     );
   });
 
+  it('records currentAccount in the live registry after migrating', async () => {
+    fs.writeFileSync(path.join(accountsDir, '.sessions.json'), JSON.stringify([
+      { pid: process.pid, account: PERSONAL, configDir: cDir, isolated: true, cwd: '/tmp', startedAt: 1 },
+    ]));
+    await migrateSession(WORK, cDir, accountsDir, { ensureProfile: ensureWork });
+    const reg = JSON.parse(fs.readFileSync(path.join(accountsDir, '.sessions.json'), 'utf-8')) as Array<Record<string, unknown>>;
+    assert.equal(reg.find((s) => s.configDir === cDir)?.currentAccount, WORK);
+  });
+
+  it('refuses when the target is the CURRENT (migrated) account of another live session', async () => {
+    // A session SPAWNED as personal but already migrated TO work — spawn `account`
+    // would miss it; `currentAccount` is what makes the conflict check exact.
+    const otherDir = path.join(home, 'other-session');
+    fs.writeFileSync(path.join(accountsDir, '.sessions.json'), JSON.stringify([
+      { pid: process.pid, account: PERSONAL, currentAccount: WORK, configDir: otherDir, isolated: true, cwd: '/tmp', startedAt: 1 },
+    ]));
+    await assert.rejects(
+      () => migrateSession(WORK, cDir, accountsDir, { ensureProfile: ensureWork }),
+      /already live/i,
+    );
+  });
+
   it('returns noop without rewriting when the session already runs the target', async () => {
     // C already runs WORK.
     writeJson(path.join(cDir, '.claude.json'), {

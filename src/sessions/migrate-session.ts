@@ -26,7 +26,7 @@ import {
   defaultCredentialStore,
 } from '../credentials/credential-store.js';
 import { embedTokensInIdentity, profileKeychainTrustedBins } from '../profiles/profiles-credentials.js';
-import { listLiveSessions } from './session-registry.js';
+import { effectiveAccount, listLiveSessions, setCurrentAccountForConfigDir } from './session-registry.js';
 
 export interface MigrateResult {
   target: string;
@@ -205,7 +205,7 @@ export async function migrateSession(
     const live = listLiveSessions(accountsDirPath);
     const conflict = live.some((s) => {
       if (s.configDir && path.resolve(s.configDir) === thisConfigResolved) return false; // the migrating session itself
-      if (s.account === target) return true; // target spawned global/isolated elsewhere
+      if (effectiveAccount(s) === target) return true; // target live elsewhere now (post-migration too)
       return s.configDir != null && path.resolve(s.configDir) === targetProfileResolved; // target's profile live
     });
     if (conflict) {
@@ -243,6 +243,11 @@ export async function migrateSession(
     const cfg = readJsonObject(claudeJsonFile) ?? {};
     cfg.oauthAccount = oauthAccount;
     writeJsonAtomic(claudeJsonFile, cfg);
+
+    // Record the new current account in the live registry (under this lock) so a
+    // later conflict check — and the cruscotto's spawned-vs-current view — see
+    // what this session speaks as now. No-op if the session isn't registered.
+    setCurrentAccountForConfigDir(accountsDirPath, configDir, target);
 
     // NOTE — mirror-back is not yet wired (a follow-up change). Until then: if
     // this session later rotates the target's token in-process, the rotated
